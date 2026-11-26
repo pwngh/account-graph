@@ -6,7 +6,7 @@ import type { CallTime, Counted, KeptCall, Subject } from '../contract/types.ts'
 /** A step as the board needs it: its name, and how long a person may stand at it before they have waited too long. */
 export interface BoardStep {
   name: string
-  /** In milliseconds. Left out: nobody at this step has waited too long. */
+  /** In milliseconds. When left out, nobody at this step has waited too long. */
   wait?: number
 }
 
@@ -40,7 +40,7 @@ export interface BoardColumn<Row = BoardPlace> {
   /** Of them, who came here today, and who has waited longer than `wait`. Null when no limit is set. */
   fresh: number
   late: number | null
-  /** Who left today: their call was returned or they rang again and got through, or they reached a further step. Null for the last step, which leads nowhere. */
+  /** Who left today because their call was returned, they rang again and got through, or they reached a further step. Null for the last step, which leads nowhere. */
   done: number | null
   /** Who has been here longest, first. */
   rows: Row[]
@@ -61,7 +61,7 @@ export function board(
   const column = (step: string | null, wait: number | undefined, last: boolean): BoardColumn<BoardPlace<CallTime> & { miss?: CallTime }> => ({ step, wait: wait ?? null, people: 0, fresh: 0, late: wait === undefined ? null : 0, done: last ? null : 0, rows: [] })
   const missed = column(null, returnWait, false)
   const columns = steps.map(({ name, wait }, i) => column(name, wait, i === steps.length - 1))
-  // Waited longer than the limit: since this or before. Counted in the time you were open, where that is known.
+  // Waited longer than the limit, so here since this time or before. Counted in the time you were open, where that is known.
   const limits = new Map([missed, ...columns].map((each) => [each, each.wait === null ? -Infinity : longAgo(hours, at, each.wait + 1)]))
   let unplaced = 0
 

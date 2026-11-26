@@ -13,7 +13,7 @@ export function withdrawable(id: Identifier): boolean {
 /** What no text may hold: a NUL, or half of a character. PostgreSQL refuses the first, and keeps every one of the second as the same replacement character, so two subjects would become one. */
 export const UNSTORABLE = /[\0\p{Surrogate}]/u
 
-/** Text somebody else made, with what cannot be kept left out, and no longer than that: a cut can leave half of a character. */
+/** Text somebody else made, with what cannot be kept left out, and no longer than that. A cut can leave half of a character. */
 export const keepableText = (text: string, most: number): string => text.slice(0, most).replace(/[\0\p{Surrogate}]/gu, '')
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
@@ -187,7 +187,7 @@ export function nameParts(first: string, last: string, previous = false): string
  * Name identifiers: one for the name with a zip code, one for the name with a
  * date of birth, whichever are known. A name alone is nobody's, so with
  * neither there is none, and none for a placeholder such as "Unknown". The
- * keys are made with a secret, because names are few enough to guess: a plain
+ * keys are made with a secret, because names are few enough to guess. A plain
  * hash could be reversed by hashing them all. Give the policy a `name` kind
  * that only corroborates, as `examples/household.json` does.
  */
@@ -225,7 +225,7 @@ export function birthKeys(secret: string, dob: string | undefined): Identifier[]
   return [key('birth', born), key('dated', born.slice(0, 4)), key('dated', born.slice(5))]
 }
 
-/** A date of birth that is one, or undefined: a date that systems write where none was given is nobody's birthday. */
+/** A date of birth that is one, or undefined. A date that systems write where none was given is nobody's birthday. */
 function birthday(dob: string | undefined): string | undefined {
   const born = dob?.trim() ?? ''
   const day = /^\d{4}-\d{2}-\d{2}$/.test(born) ? Date.parse(`${born}T00:00:00Z`) : NaN

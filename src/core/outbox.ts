@@ -5,7 +5,7 @@ import type { Attribution, AttributedTouch, Change, Consent, Counted, Deciding, 
 
 export type { Outcome }
 
-/** `held` waits for whoever held it: it is not sent until it is released. */
+/** `held` waits for whoever held it. It is not sent until it is released. */
 export type JobState = 'held' | 'pending' | 'sent' | 'skipped' | 'failed'
 
 /** An outcome on its way to one platform, and what became of it. */
@@ -61,7 +61,7 @@ export interface Target {
   clientUserAgent?: boolean
   /** The email and phone of an outcome, hashed the way this platform matches them. */
   keys(outcome: Outcome): Record<string, string>
-  /** The touch this platform can credit: the newest one that carries its click id at or above `confidence`. The outbox gives only touches it trusts, and 0. */
+  /** The touch this platform can credit, which is the newest one that carries its click id at or above `confidence`. The outbox gives only touches it trusts, and 0. */
   click(attribution: Attribution, confidence: number): AttributedTouch | undefined
   /** Sends jobs that share an action in one request. Throws when the platform refuses. */
   deliver(action: string, items: readonly Item[]): Promise<{ requestId?: string }>
@@ -85,7 +85,7 @@ export interface Target {
 export interface OutboxStore {
   /**
    * Stores the job unless one with its transaction id and target exists. Resolves to the stored job either way, or with
-   * `counted` to undefined when there is none and its outcome is not on record: its subject was forgotten meanwhile.
+   * `counted` to undefined when there is none and its outcome is not on record, because its subject was forgotten meanwhile.
    */
   add(job: Job, counted?: boolean): Promise<Job | undefined>
   /**
@@ -188,7 +188,7 @@ export interface Outbox {
    * restated to nothing on every platform that can restate. Others keep it.
    */
   withdraw(transactionId: string): Promise<Job[]>
-  /** Takes an outcome's jobs back and leaves the outcome: it was no lead. */
+  /** Takes an outcome's jobs back and leaves the outcome, because it was no lead. */
   takeBack(transactionId: string): Promise<Job[]>
   /** Gives back the jobs `takeBack` took, at what the outcome is worth now. */
   giveBack(transactionId: string): Promise<Job[]>
@@ -320,18 +320,18 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   function givenBack(job: Job, worth: Pick<Outcome, 'value' | 'currency'>): Job {
     const { withdrawn: _, note: __, ...rest } = job
     if (!reached(job)) return { ...worthNow(rest, worth), state: 'pending', due: now() + (options.delay ?? 0) }
-    // It had arrived, and may have been restated to nothing since: give it its value again.
+    // It had arrived, and may have been restated to nothing since. Give it its value again.
     if (!targets.get(job.target)?.restates) return { ...rest, state: 'sent' }
     return { ...worthNow(rest, worth), value: worth.value ?? 0, state: 'pending', attempts: 0, due: now() }
   }
 
   /**
    * A job that changed while `sent`, as it was before, was on its way. That
-   * one arrived, and possibly after a newer one did, so what the job says
+   * one arrived, and it may have come after a newer one did, so what the job says
    * now is sent once more where the platform keeps the last value it hears.
    */
   function landed(sent: Job, current: Job, target: Target): Job | undefined {
-    // Already known to have arrived, with the value it has now: there is nothing to put right.
+    // Already known to have arrived, with the value it has now. There is nothing to put right.
     if (current.delivered && current.value === sent.value) return undefined
     const { metaUserAgent, ...kept } = current
     const arrived: Job = { ...kept, delivered: true, ...(sent.click && { click: sent.click }) }
@@ -409,10 +409,10 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     const attributions = new Map<string, Attribution>()
     const spurned = await graph.notLeads(claimed.map((job) => job.transactionId))
     for (const job of claimed) {
-      // Said to be no lead before it was queued: it waits, and one that is taking a conversion back goes out.
+      // Said to be no lead before it was queued. It waits, and one that is taking a conversion back goes out.
       if (spurned.has(job.transactionId) && !job.withdrawn) {
         await change(job, (current) => (current.withdrawn ? undefined : takenBack(current)))
-        // Taken back in between, it is given back: whoever did that may have found nothing to give.
+        // Taken back in between, it is given back, because whoever did that may have found nothing to give.
         if ((await graph.notLeads([job.transactionId])).size === 0) await outbox.giveBack(job.transactionId)
         continue
       }
@@ -550,12 +550,12 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     for (const job of await store.get(transactionId)) {
       let done = false
       let last: Job | undefined
-      // Until nothing is left to change: a worth that came and went again while one was stored changed no job.
+      // Until nothing is left to change. A worth that came and went again while one was stored changed no job.
       do {
         done = false
         const next = await change(job, async (current) => {
           done = false
-          // Read after the job: whoever changes the worth later changes the job later too.
+          // Read after the job, so whoever changes the worth later changes the job later too.
           const outcome = await graph.outcomeOf(transactionId)
           const worth = outcome && !current.withdrawn ? worthNow(current, outcome) : current
           // One that never arrived is sent when it would have been. One that did is sent again where the platform takes it.
@@ -573,7 +573,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   const outbox: Outbox = {
     async record(outcome) {
       const jobs = await prepare(outcome, 'pending')
-      // Counted first: it checks the rest of the outcome, and a job must never be queued for an outcome the report refused.
+      // Counted first, because it checks the rest of the outcome, and a job must never be queued for an outcome the report refused.
       await graph.outcome(outcome)
       const counted = await graph.outcomeOf(outcome.transactionId)
       const added = await add(outcome, jobs, counted)
@@ -621,7 +621,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     },
 
     async restate(transactionId, value, currency, kind) {
-      // A loss is of something counted: without it there is nothing to say what was lost.
+      // A loss is of something counted. Without it there is nothing to say what was lost.
       if (!(await graph.restate(transactionId, value, currency, kind)) && kind) return []
       const changed: Job[] = []
       for (const job of await store.get(transactionId)) {
@@ -630,7 +630,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         const next = await change(job, async (current) => {
           done = !(current.state === 'skipped' || current.state === 'held' || current.withdrawn)
           if (!done) return undefined
-          // Read after the job: whoever restates later changes the job later too. One with no outcome on record is worth what was said.
+          // Read after the job, so whoever restates later changes the job later too. One with no outcome on record is worth what was said.
           const outcome = await graph.outcomeOf(transactionId)
           const worth = outcome ? { value: outcome.value, ...(outcome.currency && { currency: outcome.currency }) } : { value, ...(currency && { currency }) }
           return { ...current, ...worth, restated: true, state: 'pending', attempts: 0, due: now(), note: 'restated' }
@@ -642,7 +642,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 
     async pay(payment) {
       const paid = await graph.pay(payment)
-      // Told again when it is reported again: the first time may have been cut off here.
+      // Told again when it is reported again, because the first time may have been cut off here.
       return { ...paid, jobs: paid.value === undefined ? [] : await settle(payment.transactionId) }
     },
 

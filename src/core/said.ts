@@ -2,7 +2,7 @@ import type { CallParty, Loss } from '../contract/types.ts'
 
 /**
  * What was said of something, kept as it was said. What it comes to is worked
- * out from all of it, so it does not depend on the order it arrived in: the
+ * out from all of it, so it does not depend on the order it arrived in. The
  * newest by when it was said, and then by its key, stands.
  */
 export type Said = { about: string; key: string; at: number } & (

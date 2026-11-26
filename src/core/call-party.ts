@@ -89,7 +89,7 @@ export async function callTraces(tx: Tx, call: KeptCall, line: Subject, lineKind
     const reserved = other && text.at === call.at ? 1 : 0
     const remove = mark ? Math.max(0, at.length - reserved) : Math.min(1, at.length)
     const pruned = edge.count - all.length
-    // Losing the only dated row for a pruned boundary leaves just the bounds the other rows still establish.
+    // Losing the only dated row for a pruned boundary leaves only the bounds the other rows still establish.
     const otherPruned = other && all.length - remove === 0 ? 1 : 0
     // Each missing boundary accounts for one pruned sighting which cannot be this call.
     const elsewhere = !mark && pruned > 0 ? [...new Set([edge.first, edge.last])].filter(at => at !== call.at && !all.some(row => row.at === at)).length : 0

@@ -12,7 +12,7 @@ export interface Measured {
   alone: { pairs: number; same: number }
   /** Checked pairs that shared this kind at all. */
   any: { pairs: number; same: number }
-  /** `alone.same / alone.pairs`: the measured value for the kind's `weight`. Undefined with no pairs. */
+  /** `alone.same / alone.pairs`, the measured value for the kind's `weight`. Undefined with no pairs. */
   precision: number | undefined
 }
 
@@ -90,7 +90,7 @@ export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fit
     for (const part of parts) if (part.group !== undefined && !(best.has(part.group) && strength(best.get(part.group)!) >= strength(part))) best.set(part.group, part)
     return parts.filter((part) => part.group === undefined || best.get(part.group) === part)
   }
-  /** The parts that count under the given weights: what only corroborates counts where the rest is enough to relate the pair. */
+  /** The parts that count under the given weights. What only corroborates counts where the rest is enough to relate the pair. */
   const counting = (parts: readonly Part[], from: Record<string, number>): readonly Part[] => {
     if (!parts.some((part) => part.corroborates)) return strongest(parts, from)
     const makes = strongest(parts.filter((part) => !part.corroborates), from)
@@ -110,7 +110,7 @@ export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fit
   /** What is minimized: the loss, and how far the weights have gone from where they began. */
   const cost = (from: Record<string, number>) => loss(from) + (prior / count) * kinds.reduce((sum, kind) => sum + (from[kind]! - start[kind]!) ** 2, 0)
 
-  // Adam: plain descent crawls when a weight starts near 0 or 1, where the logistic is flat.
+  // Adam, because plain descent is slow when a weight starts near 0 or 1, where the logistic is flat.
   const descend = (from: Record<string, number>) => {
     const theta = { ...from }
     const mean = Object.fromEntries(kinds.map((kind) => [kind, 0]))

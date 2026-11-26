@@ -36,7 +36,7 @@ function restore(active: Edge[], rows: readonly CallEvidence[]) {
 
 type Reading = { rows: CallEvidence[]; omitted: CallEvidence[] }
 
-/** Carrier reports on the same line can give the very same interval, first sighting and holder count. Read each distinct effect once. */
+/** Carrier reports on the same line can give the same interval, first sighting and holder count. Read each distinct effect once. */
 function repeatedLines(choices: Reading[][], date: (row: CallEvidence) => number | undefined): Reading[][] {
   const separate: Reading[][] = []
   const lines = new Map<string, Reading[][]>()
@@ -139,7 +139,7 @@ export function callGroups(policy: Policy, subjects: Subject[], active: Edge[], 
     const relevant = new Set([...local, ...[...ids].flatMap(id => uncertainById.get(id) ?? [])].map(row => row.call))
     let labels = new Map(group.map(subject => [subject, current.get(subject)!]))
     if (relevant.size && group.some(subject => current.get(subject)!.cluster !== subject)) {
-      // Two rows whose dates are already inside a surviving edge give exactly the same evidence. A note may still say who came first.
+      // Two rows whose dates are already inside a surviving edge give the same evidence. A note may still say who came first.
       const stable = new Map(edges.map(edge => [keyOf(edge), edge]))
       const first = new Map<Subject, number>()
       for (const edge of edges) if (!edge.identifier.startsWith('review:')) first.set(edge.subject, Math.min(first.get(edge.subject) ?? Infinity, edge.first))
@@ -178,7 +178,7 @@ export function callGroups(policy: Policy, subjects: Subject[], active: Edge[], 
           for (const choice of choices[position]!) visit(position + 1, [...restored, ...choice.rows], [...omitted, ...choice.omitted])
         }
         visit(0, [], [])
-        // A former record can keep a caller out of another's journey even where nobody explicitly separated the two.
+        // A former record can keep a caller out of another's journey even where no decision separated the two.
         if (onCut && choices.length) for (const { a, b } of scorePairs(policy, edges, states)) {
           if (current.get(a)!.cluster === current.get(b)!.cluster && labels.get(a)!.cluster !== labels.get(b)!.cluster) onCut(a, b)
         }

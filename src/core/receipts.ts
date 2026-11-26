@@ -7,7 +7,7 @@ import { normalizeEmail } from './identifiers.ts'
 
 export const RECEIPT_RETENTION = 365 * 86_400_000
 
-/** What is written of a key that was used. Neither the key nor what came with it is in here: each is a hash only the secret can make. */
+/** What is written of a key that was used. Neither the key nor what came with it is in here. Each is a hash only the secret can make. */
 export interface Receipt {
   type: string
   mac: string
@@ -24,7 +24,7 @@ export interface Receipt {
   forgotten?: number
 }
 
-/** The country is in it: with another, the same digits are another number, and the two are not compared. */
+/** The country is in it. With another, the same digits are another number, and the two are not compared. */
 const versionOf = (country: string) => 10_000 + Number(country)
 const secretId = (secret: string) => createHmac('sha256', secret).update('receipt secret id').digest('hex').slice(0, 12)
 
