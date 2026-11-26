@@ -110,6 +110,18 @@ async function invoke(fn, request, params = {}) {
   }
 }
 
+test('the sign-in page serves its favicon before a reviewer signs in', async () => {
+  const html = await (await fetch(origin + '/signin')).text()
+  const icon = /<link\b[^>]*\brel="icon"[^>]*>/.exec(html)?.[0]
+  assert.ok(icon)
+  const href = /\bhref="([^"]+)"/.exec(icon)?.[1]
+  assert.equal(href, '/favicon.ico')
+  const response = await fetch(origin + href, {redirect: 'manual'})
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'image/svg+xml')
+  assert.match(await response.text(), /^<svg\b/)
+})
+
 test('loaders and actions check the graph token and submit a decision as the signed-in reviewer', async () => {
   const action = routeModule('signin').action
   const bad = await invoke(action, new Request(origin + '/signin', post({ token: 'wrong' })))

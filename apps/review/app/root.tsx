@@ -5,7 +5,7 @@ import { runtime } from './runtime.server'
 import { affectsPage, oldBookmark } from './navigation'
 import original from '../../../src/edge/review/style.css?url'
 import additions from './style.css?url'
-export const links = () => [{rel: 'stylesheet', href: original}, {rel: 'stylesheet', href: additions}]
+export const links = () => [{rel: 'icon', type: 'image/svg+xml', href: '/favicon.ico'}, {rel: 'stylesheet', href: original}, {rel: 'stylesheet', href: additions}]
 export async function loader({request}: LoaderFunctionArgs) { return {name: (await current(request))?.name, legacy: runtime().stage ? '/legacy' : runtime().graphUrl + '/review'} }
 const menu = [['accounts','Accounts'], ['journey','Journey'], ['board/90','Board'], ['decide','Matches'], ['calls','Calls'], ['channels','Channels'], ['health','Health']]
 
