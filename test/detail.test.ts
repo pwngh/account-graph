@@ -288,10 +288,15 @@ test('a card opens, closes, stays through a refresh, and says when something is 
       ;[x, y] = [nx, ny]
       await page.mouse('mouseMoved', x, y)
     }
+    const under = await run(`(() => { const h = document.elementFromPoint(${x}, ${y}); return [h?.outerHTML.slice(0, 120), h === ${icon} || ${icon}.contains(h)] })()`)
     await page.mouse('mousePressed', x, y)
     if (pressed) await reread(late)
     await page.mouse('mouseReleased', x, y)
-    await page.settled()
+    await page.settled().catch(async (error) => {
+      // What the page held when the card did not fill, for a failure seen only on CI.
+      console.error('CARD DIAG', JSON.stringify({ pressed, under, now: await run(`[document.getElementById('card').matches(':popover-open'), document.getElementById('card').innerText.slice(0, 200), ${icon}?.isConnected, ${icon}?.getAttribute('aria-expanded'), document.activeElement?.outerHTML.slice(0, 120), typeof pending === 'undefined' ? null : pending, location.hash]`) }))
+      throw error
+    })
     assert.deepEqual(await expanded(), [true, 'Missed call', 'true'], pressed ? 'pressed' : 'resting')
     if (!pressed) await key('Escape')
   }
