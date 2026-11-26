@@ -28,6 +28,7 @@ export interface HandlerOptions extends Omit<EdgeHandlerOptions, 'calls'> {
   outbox?: Outbox
   identifierSecret?: string
   ops?: Ops
+  sendsPaused?: Core['sendsPaused']
   calls?: CallOptions & { twilio?: { authToken: string; url: string } }
   v1?: Core['v1']
 }
@@ -58,6 +59,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     service,
     outbox: options.outbox,
     ops: options.ops,
+    ...(options.sendsPaused && { sendsPaused: options.sendsPaused }),
     called: (call) => recordCall(graph, call, calling()),
     texted: (text) => recordText(graph, text, textOptions()),
     async forget(subjects, why, retract) {

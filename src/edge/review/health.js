@@ -86,6 +86,7 @@ view('health', 'Health', async (box) => {
   // What needs a person, first and by name. Everything under it is there to say why.
   const needs = [
     !audit.sound && ['Audit log altered.', `Verification failed at entry ${audit.brokenAt}.`],
+    ops?.paused && ['Sends to ad platforms are paused.', el('span', {}, `${ops.paused.reason}. Since `, ago(ops.paused.at, ops.at), '. Run account-graph sends resume once the cause is fixed.')],
     policy.warning && [policy.warning, ''],
     ...quiet.map((feed) => [`${NAMES[feed.name]} feed is stale.`, feed.last === null ? 'No records.' : el('span', {}, 'Last record ', ago(feed.last, ops.at), '.')]),
     ...broken.map((job) => [`${job.name}: ${job.state === 'stuck' ? 'stuck' : 'failed'}.`, job.error ?? '']),

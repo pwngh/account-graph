@@ -50,6 +50,8 @@ export interface Core {
   service: Service
   outbox?: Outbox | undefined
   ops?: Ops | undefined
+  /** The stop on sends that stands, if one does. */
+  sendsPaused?(): Promise<{ at: number; reason: string } | undefined>
   called(call: Call): Promise<unknown>
   texted(text: Text): Promise<unknown>
   forget(subjects: readonly Subject[], why: Deciding, retract: boolean): Promise<{ changes: Change[]; sent: unknown[] }>
@@ -885,7 +887,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
         return profile(subject)
       case 'GET /ops':
         if (!core.ops) break
-        return { ...(await core.ops.state()), visits: tally, pool: pool.length > 0 ? { numbers: pool.length, held: await graph.leasesAt(pool, now()), since: tally.since, leased: tally.leased, exhausted: tally.exhausted, minutes: options.pool!.minutes } : null, outbox: core.outbox ? await core.outbox.counts() : null }
+        return { ...(await core.ops.state()), visits: tally, pool: pool.length > 0 ? { numbers: pool.length, held: await graph.leasesAt(pool, now()), since: tally.since, leased: tally.leased, exhausted: tally.exhausted, minutes: options.pool!.minutes } : null, outbox: core.outbox ? await core.outbox.counts() : null, paused: (await core.sendsPaused?.()) ?? null }
       case 'GET /pulse': {
         // One small row, because a screen asks this often, and reads the rest only when the answer differs.
         const version = await graph.version()

@@ -12,6 +12,7 @@ import { Outdated } from '../core/graph.ts'
 import type { Graph } from '../core/graph.ts'
 import { keepableText } from '../core/identifiers.ts'
 import { createRangeLookup } from '../core/lookups.ts'
+import { sendsPaused } from '../core/pause.ts'
 import type { IpLookup } from '../core/ports.ts'
 import { createFingerprintVerifier } from '../providers/fingerprint.ts'
 import type { FingerprintOptions } from '../providers/fingerprint.ts'
@@ -107,6 +108,7 @@ export function createEdge(graph: AccountGraph, options: EdgeOptions): Edge {
       service: engine.service,
       outbox: engine.outbox,
       ops,
+      sendsPaused: () => sendsPaused(engine.store),
       called: ({ id, at, from, to, duration, direction = 'inbound', answered, voicemail, waited, tags }) =>
         reported({ type: 'call', key: id, at, direction, to, ...(from && from.length <= 64 && { from }), ...(duration !== undefined && { duration }), ...(answered !== undefined && { result: { answered, ...(voicemail !== undefined && { voicemail }), ...(waited !== undefined && { waited }) } }), ...(tags && { tags }) }),
       texted: ({ id, at, from, to, direction = 'inbound', text, code, tags }) => reported({ type: 'text', key: id, at, direction, from, to, ...(text !== undefined && { text: keepableText(text, 20_000) }), ...(code && { code }), ...(tags && { tags }) }),
