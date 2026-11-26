@@ -77,6 +77,11 @@ test('an IPv6 address keeps its /64 prefix and an IPv4 address stays whole', () 
   assert.equal(ip('2001:db8:85a3::8a2e:370:7334'), 'ip:2001:db8:85a3:0::/64')
   assert.equal(ip('::ffff:203.0.113.9'), 'ip:203.0.113.9')
   assert.equal(ip('203.0.113.9'), 'ip:203.0.113.9')
+  assert.equal(ip('64:ff9b::1.2.3.4'), ip('64:ff9b::102:304'))
+})
+
+test('a value that is not an IP address is refused, not kept as a key nobody can share', () => {
+  for (const bad of ['not-an-ip', '', '203.0.113', '203.0.113.256', '1.2.3.4.5', '01.2.3.4', '203.0.113.9/24', 'gggg::1', '2001::db8::1', '2001:db8:::1', '1:2:3:4:5:6:7:8:9', '1:2:3:4:5:6:7::8', '64:ff9b::1.2.3.400']) assert.throws(() => ip(bad), TypeError, bad)
 })
 
 test('separations in one component share their link strengths', (t) => {
