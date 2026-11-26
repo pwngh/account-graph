@@ -11,20 +11,20 @@ npm run firm
 | Component | Location |
 | --- | --- |
 | PostgreSQL | Set `DATABASE_URL` to a database that permits creating schemas, or supply Docker with a local `postgres:16` image. Each run uses its own schema. |
-| Stage with the caller’s phone and scenes | `http://localhost:8790/stage`. Signs anyone who opens it in as the demo reviewer, with no token. This is for the demo only. |
+| Stage with the caller's phone and scenes | `http://localhost:8790/stage`. Signs anyone who opens it in as the demo reviewer, with no token. This is for the demo only. |
 | Graph server and review app | `http://localhost:8790/accounts`. Sign in with the reviewer token `demo`. The previous screen is at `/legacy`. |
 | Firm site, in English and Spanish | `http://localhost:8791/?gclid=you&utm_id=30111` and `/es` |
 | Two months of seeded history | The stage shows the number of people prepared, then reports when the history is saved. |
 
 `npm run firm -- injury` shows an injury firm in place of a family firm. See [Injury firm](#injury-firm).
 
-`npm run firm` builds the graph package and review app before starting. With neither a database nor a local Docker image available, run `MEMORY=1 npm run firm` to keep the same graph in memory. Use `PORT` for the graph and stage and `SITE_PORT` for the firm’s site if the default ports are occupied. The demo runs on loopback, includes its own ad platform and alert receiver, and uses fictional names, numbers, amounts and addresses.
+`npm run firm` builds the graph package and review app before starting. With neither a database nor a local Docker image available, run `MEMORY=1 npm run firm` to keep the same graph in memory. Use `PORT` for the graph and stage and `SITE_PORT` for the firm's site if the default ports are in use. The demo runs on loopback, includes its own ad platform and alert receiver, and uses fictional names, numbers, amounts and addresses.
 
 The generator makes its usual observations, call results and decisions against the same graph policy in memory. The store writes the resulting evidence, history and cluster labels to PostgreSQL in batches, in one transaction. Restart uses a fresh schema and loads the same history. Run `npm run review:test` with `DATABASE_URL` to time the original writes, the batched start and the restart, compare their counts, and verify the clusters. The two batched loads must each finish in under ten seconds.
 
 Campaigns are named as an agency would name them, such as `North | Family law | Search` and `North | Family law | Búsqueda`. A visit is recorded at `https://www.firm.example.org`, while the site of the demo runs on this machine.
 
-The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes one from the pool, held for you while the page is open. The form and the text link work too: send the form and the contact it makes is on the Board. Ticked as about somebody else, your browser and number are recorded as the [speaker's](identify.md#speaking-for-somebody-else). What was written and the consent to texts are not recorded here: the firm's own system keeps both.
+The site works like a real one. Open it with `?gclid=you&utm_id=30333` and its number becomes one from the pool, held for you while the page is open. The form and the text link work too. Send the form, and the contact it makes appears on the Board. If you tick the form as about somebody else, the graph records your browser and number as the [speaker's](identify.md#speaking-for-somebody-else). The graph does not record what was written or the consent to texts. The firm's own system keeps both.
 
 ## Setup
 
