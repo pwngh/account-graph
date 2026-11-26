@@ -40,13 +40,14 @@ function Metric({ card, note, change, bars }) {
   return card && <div><dt>{card.title}</dt><dd><span className="tile-line"><b>{card.value ?? '—'}</b>{change}</span>{note && <span className="reason">{note}</span>}<Detail card={card}/>{bars}</dd></div>
 }
 
+const ACTIVE = 'Today is the people active today, with a call or a step, in the time zone of the line under the numbers. Overdue counts only those people.'
 function Board({ data }) {
   const { board, cards } = data
   const periods = [[1,'Today'],[7,'7 days'],[30,'30 days'],[90,'90 days'],[365,'1 year']]
   const textLane = !!data.texts.length && <section aria-label="Unanswered texts"><h2>Unanswered texts</h2><p>{data.texts.length}{data.moreTexts && '+'} {data.texts.length === 1 ? 'person' : 'people'}</p><ol>{data.texts.map(({ text, card }) => <li key={text.id}><Subject id={text.subject} journey/> <Time at={text.at}/><p>{cameFrom(text) || 'Unattributed'}</p><span className="chip related">{amount(text.unanswered)} unanswered</span><Detail card={cards[card]}/></li>)}</ol></section>
-  return <><section><div className="page-head"><h2>Board</h2><nav aria-label="Period">{periods.map(([days,name]) => <Link key={days} className="button" aria-current={days === board.days ? 'page' : undefined} to={'/board/' + days}>{name}</Link>)}</nav></div>
+  return <><section><div className="page-head"><h2>Board</h2><div className="row"><span id="board-period-label" title={ACTIVE}>Period</span><nav aria-labelledby="board-period-label" aria-describedby="board-period">{periods.map(([days,name]) => <Link key={days} className="button" aria-current={days === board.days ? 'page' : undefined} to={'/board/' + days}>{name}</Link>)}</nav></div></div>
     <dl className="tiles">{data.metrics.map((key,i) => <Metric key={key} card={cards[key]} note={i === 1 && board.columns.every(col => col.late === null) && 'No limits set'}/>)}</dl><Range from={board.from} to={board.day} timeZone={board.timeZone}/>
-    {board.days === 1 && <p>Today is the people active today, with a call or a step, in the time zone of the line under the numbers. Overdue counts only those people.</p>}
+    <p className={board.days === 1 ? 'meta' : 'sr-only'} id="board-period">{ACTIVE}</p>
     {board.unplaced > 0 && <p>{amount(board.unplaced)} more at steps outside STAGES</p>}{board.columns.length === 1 && <p>Set STAGES to add a column for each step.</p>}</section>
     <div className="board wide" tabIndex="0" role="region" aria-label="Columns">{board.columns.map((column, i) => {
       const name = column.step === null ? 'Missed calls' : column.step.toLowerCase() === 'missed calls' ? column.step + ', a step' : column.step
