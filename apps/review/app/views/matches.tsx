@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import { subjectPath } from '../navigation'
 import { amount, Badge, DecisionForm, DecisionScope, Meter, PageHead, percent, Reasons, Subject, Tiles, Time, type Reason, type WriteContext } from './shared'
 import { idText } from './report-words.js'
+import { Term } from './terms'
 
 /** A pair as a row of the queue has it: who, how strong, and the kinds of what they share. */
 export interface Pair { a: string, b: string, score: number, level: 'same' | 'related', kinds: string }
@@ -54,17 +55,17 @@ export function Matches({ model }: { model: MatchesModel }) {
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   }, [])
-  const groups: [string, Pair[]][] = [['High confidence', queue.pairs.filter(each => each.level === 'same')], ['Possible', queue.pairs.filter(each => each.level !== 'same')]]
+  const groups: [string, string, Pair[]][] = [['High confidence', 'confident', queue.pairs.filter(each => each.level === 'same')], ['Possible', 'possible', queue.pairs.filter(each => each.level !== 'same')]]
   const next = queue.pairs[(model.at + 1) % queue.pairs.length]
-  return <DecisionScope key={pair ? pairName(pair) : 'none'}><section><PageHead view="decide" title="Matches"/><Tiles items={[['Pending', amount(queue.total)], ['IDs checked', amount(queue.seen)]]}/>
+  return <DecisionScope key={pair ? pairName(pair) : 'none'}><section><PageHead view="decide" title="Matches"/><Tiles items={[[['Pending', 'pending'], amount(queue.total)], [['IDs checked', 'checked'], amount(queue.seen)]]}/>
     {queue.total > queue.pairs.length && <p className="meta">The strongest {amount(queue.pairs.length)} are listed. The rest follow as these are decided.</p>}
     {queue.window?.kind === 'recent' && queue.window.older && <p className="meta older">Pairs among sightings before <Time at={queue.window.oldest}/> are not in this queue. {model.legacy ? <a href={model.legacy}>Check older records on the original reviewer screen</a> : 'Check older records on the original reviewer screen'}.</p>}</section>
-    {pair && sides ? <div className="deck" ref={deck}><div className="queue-rail scroll" tabIndex={0} role="region" aria-label="Queue">{groups.map(([name, list]) => list.length > 0 && <div key={name}><p className="inbox-age">{name}<span className="count">{amount(list.length)}</span></p>
+    {pair && sides ? <div className="deck" ref={deck}><div className="queue-rail scroll" tabIndex={0} role="region" aria-label="Queue">{groups.map(([name, term, list]) => list.length > 0 && <div key={name}><p className="inbox-age"><Term id={term}>{name}</Term><span className="count">{amount(list.length)}</span></p>
       {list.slice(0, 40).map(each => <Link key={pairName(each)} className="queue-pair" aria-current={each === pair ? 'true' : undefined} to={pairPath(each)} preventScrollReset><span className="queue-names"><span title={each.a}>{idText(each.a)}</span><span title={each.b}>{idText(each.b)}</span></span><b>{percent(each.score)}</b><span className="meta">{each.kinds}</span><Meter share={each.score}/></Link>)}
       {list.length > 40 && <p className="meta queue-more">{amount(list.length - 40)} more</p>}</div>)}</div>
       <section className="pair" aria-label="Pair"><div className="pair-top"><span className={'chip ' + pair.level}>{pair.level === 'same' ? 'High confidence' : 'Possible'}</span><span className="meta">{amount(model.at + 1)} of {amount(queue.pairs.length)}</span></div>
         <Versus left={sides[0]} right={sides[1]} pair={pair}/>
-        <div className="pair-why"><p className="inbox-age">Evidence</p><Reasons reasons={reasons} context={context} subject={pair.a}/></div>
+        <div className="pair-why"><p className="inbox-age"><Term id="evidence"/></p><Reasons reasons={reasons} context={context} subject={pair.a}/></div>
         <p className="pair-effect" role="status">{model.effect}</p>
         <div className="choices"><DecisionForm context={context} intent="join" subject={pair.a} other={pair.b} look="primary" keys="j"/><DecisionForm context={context} intent="separate" subject={pair.a} other={pair.b} keys="k"/>{next !== pair && <Link className="button choice" to={pairPath(next)} aria-keyshortcuts="s" preventScrollReset>Skip<kbd>S</kbd></Link>}</div></section></div>
       : <section><p className="muted">No pending matches</p></section>}</DecisionScope>
