@@ -266,7 +266,9 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   if (!saved) await graph.keepCall(kept, phone ? (phone.startsWith('voip:') ? 'voip' : 'phone') : 'none')
 
   const { holder, grace, visitor: found, notes, doubtful, undone, former } = await visitorFor(graph, kept, options)
-  for (const other of undone) await graph.doubtCall(other.id, other.ambiguous, line)
+  // A call a nearby one already doubted, with nothing on it to take back, is passed over in one read, so a busy line does not redo every recent call.
+  const doubted = await graph.ignored(undone.filter((other) => other.quiet).map((other) => `dial:${other.id}`))
+  for (const other of undone) if (!(other.quiet && doubted.has(`dial:${other.id}`))) await graph.doubtCall(other.id, other.ambiguous, line)
   if (former?.visitor) await reserveRoute(graph, kept, former)
   if (saved?.visitor !== undefined && !saved.flags.includes('pool') && saved.visitor !== found) await graph.doubtCall(id, doubtful, line)
   // A visitor already tied to a different caller is passed over, so a browser cannot collect call after call by tapping again.
@@ -390,7 +392,7 @@ async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Prom
   return { holder: false, grace: 0, notes: [], doubtful: true, undone: original.undone, former: original, withheld: true }
 }
 
-async function visitorForReading(graph: Graph, call: Heard, options: CallOptions, reading: 'current' | 'original' | 'alone'): Promise<{ withheld: boolean; holder: boolean; grace: number; visitor?: Subject; notes: Identifier[]; doubtful: boolean; undone: { id: string; ambiguous: boolean }[] }> {
+async function visitorForReading(graph: Graph, call: Heard, options: CallOptions, reading: 'current' | 'original' | 'alone'): Promise<{ withheld: boolean; holder: boolean; grace: number; visitor?: Subject; notes: Identifier[]; doubtful: boolean; undone: { id: string; ambiguous: boolean; quiet: boolean }[] }> {
   const { to, at } = call
   const window = options.clickWindow ?? 3 * 60_000
   const near = Math.min(window, NEAR)
@@ -455,7 +457,11 @@ async function visitorForReading(graph: Graph, call: Heard, options: CallOptions
   const may = (each: Heard, visitor: Subject) => !apart.get(visitor)!.has(each.subject) && (views.get(each.id)?.own?.has(visitor) ?? true)
 
   const result = ties(tapped, heard, taps, owners, may, redone, { window, near, claim })
-  const undone = kept.filter((each) => redone.has(each.id) && !each.flags.includes('pool') && !byCode(each) && views.get(each.id)?.holder === undefined && (each.visitor === undefined ? result.get(each.id)!.visitor === undefined && (each.recorded > (options.now ?? Date.now)() - STAGED || (result.get(each.id)!.doubtful && !each.flags.includes('ambiguous'))) : result.get(each.id)!.visitor !== each.visitor)).map((each) => ({ id: each.id, ambiguous: result.get(each.id)!.doubtful }))
+  const undone = kept.filter((each) => redone.has(each.id) && !each.flags.includes('pool') && !byCode(each) && views.get(each.id)?.holder === undefined && (each.visitor === undefined ? result.get(each.id)!.visitor === undefined && (each.recorded > (options.now ?? Date.now)() - STAGED || (result.get(each.id)!.doubtful && !each.flags.includes('ambiguous'))) : result.get(each.id)!.visitor !== each.visitor)).map((each) => {
+    const ambiguous = result.get(each.id)!.doubtful
+    // Nothing on it that doubting could take back. Doubted once already, doubting again changes nothing.
+    return { id: each.id, ambiguous, quiet: each.visitor === undefined && !each.party && (!ambiguous || each.flags.includes('ambiguous')) }
+  })
   if (byCode(call)) return { withheld, holder: false, grace: 0, notes: [], doubtful: false, undone }
   if (here.holder !== undefined) {
     const free = !(await graph.separations(call.subject)).includes(here.holder) && (await heldTies(here.holder)).every((tie) => tie.subject === call.subject)

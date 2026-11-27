@@ -251,6 +251,8 @@ export interface Graph {
    * or came of it, or makes the number busy. Untied, it is filed under `line`, the channel of the number it rang.
    */
   doubtCall(id: string, ambiguous: boolean, line?: Omit<Touch, 'subject' | 'at'>): Promise<void>
+  /** Which of these identifiers are ignored, read at once. */
+  ignored(identifiers: readonly Identifier[]): Promise<Set<Identifier>>
   /**
    * Gives a call that was recorded without it the visitor its code names, as `tieCall` would have. Whoever it was tied to by a
    * tap or a number shown to them is untied, and it is flagged `code`, or `taken` and filed under `line` where the two cannot
@@ -2212,6 +2214,12 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         return record(tx, [caller, visitor].map((subject) => ({ subject, identifier, at, event: 'call', recorded: now() })))
       })
       return tied
+    },
+
+    async ignored(identifiers) {
+      if (identifiers.length === 0) return new Set()
+      const states = await store.read((tx) => tx.states(identifiers))
+      return new Set(identifiers.filter((identifier) => states.get(identifier)?.ignored))
     },
 
     async doubtCall(id, ambiguous, line) {
