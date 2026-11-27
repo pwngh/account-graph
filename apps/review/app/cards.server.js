@@ -185,6 +185,8 @@ function peak(counts) {
 }
 const sumOf = (cells, at, places, ...kinds) => Array.from({ length: places }, (_, i) => (cells ?? []).filter((cell) => at(cell) === i).reduce((sum, cell) => sum + kinds.reduce((all, kind) => all + (cell[kind] ?? 0), 0), 0))
 
+/** The feeds of the graph, as Health names them. */
+export const FEEDS = { touches: 'Visits', calls: 'Calls', results: 'Call results', costs: 'Campaign costs' }
 export function cardModels(recent) {
   const DETAILS = {}
   function callCard(data, whole) {
@@ -310,6 +312,27 @@ export function cardModels(recent) {
         links: [open[0] && { text: 'Show Missed Call', href: journeyHash(row.subject, open[0].call.id) }],
       }
     }),
+  }
+  /** The setting that watches each feed, and how its records come. */
+  const WATCHED = {
+    touches: ['QUIET_TOUCHES_HOURS', 'Visits arrive at any hour.'], calls: ['QUIET_CALLS_HOURS', 'Any call counts, inbound or outbound.'],
+    results: ['QUIET_RESULTS_HOURS', 'A result is recorded when your phone system or staff report it.'], costs: ['QUIET_COSTS_HOURS', 'Costs arrive when the platform sends them, which can be a day or more later.'],
+  }
+  DETAILS['health.feed'] = {
+    now({ feed, at, limits, alerts } = {}) {
+      if (!feed) return undefined
+      const [setting, comes] = WATCHED[feed.name] ?? []
+      const open = limits?.openHours && (feed.name === 'calls' || feed.name === 'results')
+      const silent = feed.last === null || feed.last === undefined ? undefined : at - feed.last
+      const left = silent === undefined || open ? undefined : feed.hours * 3600000 - silent
+      const watched = feed.hours > 0
+      return { title: FEEDS[feed.name] ?? feed.name, value: feed.quiet ? 'Stale' : watched ? 'OK' : 'Not monitored',
+        rows: [['Last record', silent === undefined ? 'None yet' : moment(feed.last)], ['Silent for', silent === undefined ? undefined : lasted(Math.max(0, silent))],
+          ['Limit', watched ? `${amount(feed.hours)} h${left === undefined ? '' : left > 0 ? ` · ${lasted(left)} left` : ` · over by ${lasted(-left)}`}` : undefined], ['Counted', watched ? (open ? 'In open hours' : 'Around the clock') : undefined],
+          [watched ? 'Set by' : 'Not set', setting]],
+        say: [comes, watched ? (alerts ? 'Past the limit an alert is posted, once each time.' : 'Past the limit it is marked stale. ALERT_WEBHOOK is not set, so nothing is posted.') : `Set ${setting} to a number of hours, and it is marked stale past them.`],
+        links: [docs('Stale Feeds', 'operations.md#stale-feeds')] }
+    },
   }
   DETAILS['board.text'] = {
     now: ({ text, at } = {}) => text && { title: reviewDisplay.idText(text.subject), value: 'Unanswered texts', roomy: true,

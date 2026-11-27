@@ -22,8 +22,7 @@ export function remaining(request: Request, view: string) {
       const {rows} = await reviewGet(request, session, 'report')
       return {...base, rows: rows.map((r: Record<string,unknown>) => ({source:r.source, name:r.campaign || r.campaignId, visits:r.visits, cost:r.cost, value:r.value, outcomes:r.outcomes}))}
     }
-    const ops = await reviewGet(request, session, 'ops')
-    return {...base, feeds: ops.feeds, paused: ops.paused ?? null}
+    throw new Response('Unknown view', {status: 404})
   })
 }
 

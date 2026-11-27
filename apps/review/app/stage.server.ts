@@ -30,7 +30,7 @@ export async function loadStage(request: Request) {
   if (state.ready && !state.running) {
     try {
       if (view === 'accounts') content = {accounts: await loadAccounts(request, which)}
-      else if (view === 'board' || view === 'journey' || view === 'calls') content = {report: await loadReport(request, view, which)}
+      else if (view === 'board' || view === 'journey' || view === 'calls' || view === 'health') content = {report: await loadReport(request, view, which)}
       else content = {other: await remaining(request, view)}
     } catch (error) {
       if (error instanceof Response && error.status < 400) throw error

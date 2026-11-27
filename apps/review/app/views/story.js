@@ -1,9 +1,8 @@
 import { createElement } from 'react'
-import { ACTIONS, CLICKS, SENT, amount, idText, lasted, waiting, worthOf } from './report-words.js'
+import { ACTIONS, CLICKS, SENT, amount, idText, lasted, toneOf, waiting, worthOf } from './report-words.js'
 
 const el = (type, attrs, ...children) => createElement(type, { className: attrs.class }, ...children)
 const display = { idText, chip: (text, tone = '') => el('span', { class: 'chip ' + tone }, text), callTone: state => ({ answered: 'same', missed: 'apart', voicemail: 'related', waiting: 'related' })[state] || '' }
-const toneOf = name => 'tone' + [...name].reduce((sum, letter) => (sum * 31 + letter.codePointAt(0)) >>> 0, 7) % 6
 /** Where something came from: a letter in its color, which is drawn and not text, and its name. */
 const sourced = name => el('span', { class: 'sourced' }, createElement('i', { className: 'letter ' + toneOf(name), 'aria-hidden': 'true', 'data-letter': name.slice(0, 1).toUpperCase() }), name)
 const author = by => by?.startsWith('system:') ? 'system ' + by.slice(7) : by || 'Unknown'

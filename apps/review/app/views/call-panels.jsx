@@ -23,25 +23,6 @@ export function Bars({ values, title }) {
   })}</svg>
 }
 
-export function Coverage({ coverage }) {
-  const measures = [['Visitor',coverage.visitor], ['Phone number',coverage.channel], ['Unmatched',coverage.neither]]
-  const [off,setOff] = useState([])
-  const [enabled,setEnabled] = useState(false)
-  useEffect(() => setEnabled(true), [])
-  const full = measures.reduce((sum,[,n]) => sum + n, 0)
-  const kept = measures.reduce((sum,[key,n]) => sum + (off.includes(key) ? 0 : n), 0)
-  let left = 0
-  return <><div className="split-bar"><p className="parts-whole"><b>{amount(kept)}</b>{off.length ? ' of ' + amount(full) : ' total'}</p><svg className="coverage-bar" viewBox="0 0 100 14" preserveAspectRatio="none" aria-hidden="true">{measures.map(([name,n],i) => {
-    if (!n || off.includes(name)) return null
-    const x = left
-    left += n / kept * 100
-    return <rect key={name} className={'part' + i} x={x} width={left - x} height="14"/>
-  })}</svg><ul className="legend labels">{measures.map(([name,n],i) => {
-    const contents = <><span className={'key part' + i}/><span>{name}</span> <b>{amount(n)}</b> <span className="muted">{off.includes(name) ? 'hidden' : kept ? percent(n / kept) : '—'}</span></>
-    return <li key={name}>{enabled ? <button type="button" aria-pressed={!off.includes(name)} onClick={() => setOff(off.includes(name) ? off.filter(k => k !== name) : [...off,name])}>{contents}</button> : contents}</li>
-  })}</ul>{off.length > 0 && <p role="status">Shares exclude hidden items.</p>}</div>{coverage.noResult > 0 && <p>{amount(coverage.noResult)} without a result</p>}</>
-}
-
 // Copying needs a script. Without one the time is on the page to select.
 function CopyTime({ at }) {
   const [enhanced, setEnhanced] = useState(false)

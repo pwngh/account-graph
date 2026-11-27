@@ -71,6 +71,8 @@ export function ticksOf(low, high, timeZone = 'UTC') {
 }
 /** The time of day, for a row under the heading of its day. */
 export const hourOf = (at, timeZone = 'UTC') => new Date(at).toLocaleTimeString('en-US', { timeZone, hour: 'numeric', minute: '2-digit' })
+/** One of six colors for a name, the same each time, so a source or a tag is told apart at a glance. */
+export const toneOf = name => 'tone' + [...name].reduce((sum, letter) => (sum * 31 + letter.codePointAt(0)) >>> 0, 7) % 6
 export const idText = value => value.length > 24 ? value.slice(0, 18) + '…' : value
 export const inWords = name => String(name).replaceAll('_', ' ')
 export const cameFrom = row => row?.source ? row.source + (row.campaign || row.campaignId ? ' · ' + (row.campaign ?? row.campaignId) : '') : undefined

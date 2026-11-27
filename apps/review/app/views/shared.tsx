@@ -67,8 +67,34 @@ export function Reasons({ reasons, context, subject }: { reasons: Reason[], cont
 }
 
 /** A share drawn as a bar beside its number. The number says it, and the bar only lets rows be compared. */
-export function Meter({ share }: { share: number }) {
-  return <span className="meter" aria-hidden="true"><svg viewBox="0 0 100 8" preserveAspectRatio="none" focusable="false"><rect className="track" x="0" y="2" width="100" height="4"/><rect className="fill" x="0" y="2" width={Math.max(0, Math.min(1, share)) * 100} height="4"/></svg></span>
+/** A share as a bar. `marks` are lines across it at other shares, each with a class, as a scale has. */
+export function Meter({ share, marks = [] }: { share: number, marks?: [number, string][] }) {
+  const at = (n: number) => Math.max(0, Math.min(1, n)) * 100
+  return <span className={marks.length ? 'meter scale' : 'meter'} aria-hidden="true"><svg viewBox="0 0 100 8" preserveAspectRatio="none" focusable="false"><rect className="track" x="0" y="2" width="100" height="4"/><rect className="fill" x="0" y="2" width={at(share)} height="4"/>{marks.map(([n, name]) => <line key={name} className={name} x1={at(n)} x2={at(n)} y1="0" y2="8" vectorEffect="non-scaling-stroke"/>)}</svg></span>
+}
+
+/**
+ * Parts of a whole as one bar, and the same numbers as a list under it.
+ * A part pressed in the list is left out, and the rest are shares of what is left.
+ */
+export function Parts({ label, list }: { label: string, list: [string, number][] }) {
+  const [off, setOff] = useState<string[]>([])
+  const [enabled, setEnabled] = useState(false)
+  useEffect(() => setEnabled(true), [])
+  const full = list.reduce((sum, [, n]) => sum + n, 0)
+  const kept = list.reduce((sum, [name, n]) => sum + (off.includes(name) ? 0 : n), 0)
+  let left = 0
+  return <div className="split-bar"><p className="parts-whole"><b>{amount(kept)}</b>{off.length ? ' of ' + amount(full) : ' total'}</p>
+    <svg className="parts-bar" width="100%" height="30" aria-hidden="true" focusable="false">{list.map(([name, n], i) => {
+      if (!n || off.includes(name)) return null
+      const [x, wide] = [left, n / kept * 100]
+      left += wide
+      return <g key={name}><rect className={'part' + i} x={x + '%'} width={wide + '%'} height="30"/>{wide >= 9 && <text x={x + wide / 2 + '%'} y="19" textAnchor="middle">{percent(n / kept)}</text>}</g>
+    })}</svg>
+    <ul className="legend labels" aria-label={label}>{list.map(([name, n], i) => {
+      const contents = <><span className={'key part' + i}/><span>{name}</span> <b>{amount(n)}</b> <span className="muted">{off.includes(name) ? 'hidden' : kept ? percent(n / kept) : '—'}</span></>
+      return <li key={name}>{enabled ? <button type="button" aria-pressed={!off.includes(name)} onClick={() => setOff(off.includes(name) ? off.filter(each => each !== name) : [...off, name])}>{contents}</button> : contents}</li>
+    })}</ul>{off.length > 0 && <p className="meta" role="status">Shares exclude hidden items.</p>}</div>
 }
 export function Compare({ share, children }: { share: number, children: ReactNode }) {
   return <span className="compare"><Meter share={share}/><span>{children}</span></span>
@@ -79,8 +105,9 @@ export function Scroll({ label, children }: { label: string, children: ReactNode
   return <div className="scroll" tabIndex={0} role="region" aria-label={label}>{children}</div>
 }
 
-export function Tiles({ items }: { items: ([string, ReactNode, ReactNode?] | false | undefined)[] }) {
-  return <dl className="tiles">{items.map(item => item && <div key={item[0]}><dt>{item[0]}</dt><dd><span className="tile-line"><b>{item[1]}</b></span>{item[2] && <span className="reason">{item[2]}</span>}</dd></div>)}</dl>
+/** The few numbers a view is about, large, each with what it is of. The fourth of an item is its tone, for one that needs someone. */
+export function Tiles({ items }: { items: ([string, ReactNode, ReactNode?, string?] | false | undefined | null | 0 | '')[] }) {
+  return <dl className="tiles">{items.map(item => item && <div key={item[0]} className={item[3] || undefined}><dt>{item[0]}</dt><dd><span className="tile-line"><b>{item[1]}</b></span>{item[2] && <span className="reason">{item[2]}</span>}</dd></div>)}</dl>
 }
 
 export interface ActionResult {

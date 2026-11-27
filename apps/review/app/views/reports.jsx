@@ -1,10 +1,11 @@
 import './reports.css'
 import { createContext, Fragment, useContext, useEffect, useId, useRef, useState } from 'react'
 import { Form, Link, useFetcher } from 'react-router'
-import { PageHead, Table, Tiles, Time, Subject, ZoneContext, stamp } from './shared'
+import { PageHead, Parts, Table, Tiles, Time, Subject, ZoneContext, stamp } from './shared'
 import { amount, brief, callTone, cameFrom, dayOf, dayWords, detailReply, hourOf, lasted, percent, subjectHash, ticksOf, tieWords, WHAT } from './report-words'
 import { GLYPHS, Glyph, looksLike } from './marks'
-import { Bars, CallInbox, Change, Coverage } from './call-panels'
+import { Bars, CallInbox, Change } from './call-panels'
+import { Health } from './health'
 import { told } from './story'
 
 export function CardBody({ card }) {
@@ -202,11 +203,11 @@ function Calls({ data }) {
   return <><section><PageHead view="calls" title="Calls"><Form className="row period" action="/calls" method="get"><label>From <input type="date" name="from" required defaultValue={summary.from}/></label><label>To <input type="date" name="to" required defaultValue={summary.to}/></label><button className="primary">Show</button><Presets today={data.today} from={summary.from} to={summary.to}/></Form></PageHead><Range {...summary}/>
   {total.calls > 0 && <dl className="tiles">{data.metrics.map((key,i) => (i !== 3 || lost > 0) && <Metric key={key} card={cards[key]} tone={i === 4 && (open.calls.length > 0 ? 'apart' : 'same')} note={notes[i]} change={changes[i]} bars={bars[i]}/>)}</dl>}</section><section id="calls-missed"><h2>Missed calls</h2>
   {open.calls.length ? <CallInbox data={data} Detail={Detail} Story={Story}/> : <p className="muted">{total.calls === 0 ? 'No inbound calls' : lost > 0 ? 'All missed callers have been reached.' : 'No missed calls'}</p>}
-  {total.hidden > 0 && <p className="muted">{amount(total.hidden)} more with a withheld number</p>}</section>{total.calls > 0 && <><div className="panel-grid call-grid"><section><h2>Call results</h2><Table title="Call results" headers={['Result',['Calls','num'],['Share','num'],'Detail']}>{results.map(([name,n,all,note], i) => <Behind key={name} part={all > 0 ? n / all : 0} className={i === 5 ? 'second' : undefined}><th scope="row"><span className={'chip ' + callTone(name.toLowerCase())}>{name}</span></th><td className="num">{n > 0 ? amount(n) : <span className="muted">0</span>}<Detail card={cards[data.results[name]]} label={'Details of ' + name + ', ' + amount(n) + ', in Call results'}/></td><td className="num share">{all > 0 ? percent(n / all) : <span className="muted">—</span>}</td><td className="muted">{note}</td></Behind>)}</Table></section><section><h2>Call attribution</h2><Coverage coverage={coverage}/></section></div><Hours data={data}/></>}</>
+  {total.hidden > 0 && <p className="muted">{amount(total.hidden)} more with a withheld number</p>}</section>{total.calls > 0 && <><div className="panel-grid call-grid"><section><h2>Call results</h2><Table title="Call results" headers={['Result',['Calls','num'],['Share','num'],'Detail']}>{results.map(([name,n,all,note], i) => <Behind key={name} part={all > 0 ? n / all : 0} className={i === 5 ? 'second' : undefined}><th scope="row"><span className={'chip ' + callTone(name.toLowerCase())}>{name}</span></th><td className="num">{n > 0 ? amount(n) : <span className="muted">0</span>}<Detail card={cards[data.results[name]]} label={'Details of ' + name + ', ' + amount(n) + ', in Call results'}/></td><td className="num share">{all > 0 ? percent(n / all) : <span className="muted">—</span>}</td><td className="muted">{note}</td></Behind>)}</Table></section><section><h2>Call attribution</h2><Parts label="Call attribution" list={[['Visitor', coverage.visitor], ['Phone number', coverage.channel], ['Unmatched', coverage.neither]]}/>{coverage.noResult > 0 && <p className="meta">{amount(coverage.noResult)} without a result</p>}</section></div><Hours data={data}/></>}</>
 }
 
 /** @param {{ data: Record<string, any>, openCard?: string }} props */
 export function Report({ data, openCard }) {
-  const view = data.kind === 'journey' ? <Journey key={data.which} data={data}/> : data.kind === 'board' ? <Board data={data}/> : <Calls data={data}/>
+  const view = data.kind === 'journey' ? <Journey key={data.which} data={data}/> : data.kind === 'board' ? <Board data={data}/> : data.kind === 'health' ? <Health data={data} Detail={Detail}/> : <Calls data={data}/>
   return <reportSnapshot.Provider value={data.snapshot}><presentedCard.Provider value={openCard}>{view}</presentedCard.Provider></reportSnapshot.Provider>
 }
