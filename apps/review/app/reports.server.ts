@@ -73,7 +73,9 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
         if (!groups.has(k)) groups.set(k, [])
         groups.get(k)!.push(event)
       }
-      report.groups = [...groups.values()].map(events => ({ at: events[0].entry.at, kind: events[0].entry.kind, count: events.length, card: events.length === 1 ? events[0].mark : add('chart.number', events.map(e => e.mark).join('/'), { list: events.map(e => e.entry) }) }))
+      // A mark for calls nobody answered is drawn only where every call it stands for was one.
+      const unanswered = (entry: any) => entry.kind === 'call' && (entry.state === 'missed' || entry.state === 'voicemail')
+      report.groups = [...groups.values()].map(events => ({ at: events[0].entry.at, kind: events[0].entry.kind, look: events.every(e => unanswered(e.entry)) ? 'missed' : events[0].entry.kind, count: events.length, card: events.length === 1 ? events[0].mark : add('chart.number', events.map(e => e.mark).join('/'), { list: events.map(e => e.entry) }) }))
     }
   } else if (kind === 'board') {
     const board = report.board = await get('board', { days: which || '90' })

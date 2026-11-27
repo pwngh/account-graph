@@ -200,6 +200,7 @@
 - The review app has that card too, in the Detail column of Call results. A test fails when the original screen gains a card the app lacks.
 - The review app's menu, Board and Calls are laid out as on the original screen: a mark for each view, short ages on Board cards, the list of missed calls with its marks, and the history of the selected call with a mark for each kind of event. An overdue name stays on one line at every width.
 - In the review app a detail card opens over the page from the mark beside its number or row, before any script has loaded.
+- The review app's Journey is laid out as on the original screen. The chart is a panel with a lane for each kind of event, the mark of each event, and lines on whole hours or days of the reviewer's zone. A row of the timeline has the time of day and the mark of its kind.
 - A mark, a number or a dashed wait on the Journey chart shows a short card when it is pointed at or focused. The panel beside the chart has every row.
 - `#/journey/ID/CALL` opens a journey at one call.
 - Each kind of event has one icon, drawn the same in the timeline, its filters, the chart, the story of a missed call and the feeds. A call nobody answered has a phone with a cross.

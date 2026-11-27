@@ -2,7 +2,8 @@ import './reports.css'
 import { createContext, Fragment, useContext, useEffect, useId, useRef, useState } from 'react'
 import { Form, Link, useFetcher } from 'react-router'
 import { PageHead, Table, Tiles, Time, Subject, ZoneContext, stamp } from './shared'
-import { amount, brief, callTone, cameFrom, dayOf, dayWords, detailReply, lasted, percent, subjectHash, tieWords, WHAT } from './report-words'
+import { amount, brief, callTone, cameFrom, dayOf, dayWords, detailReply, hourOf, lasted, percent, subjectHash, ticksOf, tieWords, WHAT } from './report-words'
+import { GLYPHS, Glyph, looksLike } from './marks'
 import { Bars, CallInbox, Change, Coverage } from './call-panels'
 import { told } from './story'
 
@@ -110,6 +111,12 @@ const kinds = Object.keys(WHAT)
 function Story({ entry, icon }) {
   return <>{told(entry, icon).map((part,i) => <Fragment key={i}>{part}</Fragment>)}</>
 }
+const LANE = 36
+const RULER = 42
+/**
+ * Events by kind and time: a lane for each kind, a mark for each event, and a number where several are too close to tell apart.
+ * The marks are placed as shares of the width, so the drawing is as sharp at any size and needs no script.
+ */
 function Chart({ events, groups, cards }) {
   const zone = useContext(ZoneContext)
   const marks = events.filter(e => e.entry.at > 0)
@@ -117,14 +124,27 @@ function Chart({ events, groups, cards }) {
   const tracks = kinds.filter(kind => marks.some(e => e.entry.kind === kind))
   const low = marks[0].entry.at
   const high = marks.at(-1).entry.at
-  const x = at => 114 + 640 * (high === low ? .5 : (at - low) / (high - low))
-  const y = kind => 32 + tracks.indexOf(kind) * 34
-  return <section><h2>Journey chart</h2><svg className="report-chart" viewBox={'0 0 784 ' + (tracks.length * 34 + 36)} aria-label="Events by type and time" role="group"><g>{
-    tracks.map(kind => <g key={kind}><text x="8" y={y(kind) + 5}>{WHAT[kind]}</text><line x1="104" x2="767" y1={y(kind)} y2={y(kind)}/></g>)
-  }{marks.filter(item => item.wait).map(item => <a key={item.wait} href={'#' + item.wait} aria-label={cards[item.wait]?.title}><line className="wait" x1={x(item.entry.at)} x2={x(Math.min(high,item.entry.at + item.entry.followUp.delay))} y1={y('call') + 9} y2={y('call') + 9}/></a>)}{
-    groups.filter(group => tracks.includes(group.kind)).map(group => <a key={group.card} href={'#' + group.card} aria-label={cards[group.card]?.title + ', ' + dayOf(group.at, zone)}><title>{cards[group.card]?.title}</title><circle cx={x(group.at)} cy={y(group.kind)} r={group.count === 1 ? 6 : 12}/>{group.count > 1 && <text className="group-count" x={x(group.at)} y={y(group.kind) + 3} textAnchor="middle">{group.count}</text>}</a>)
-  }</g><text x="100" y={tracks.length * 34 + 28}>{dayOf(low, zone)}</text><text x="770" textAnchor="end" y={tracks.length * 34 + 28}>{dayOf(high, zone)}</text></svg>
-  {groups.filter(g => g.count > 1 && tracks.includes(g.kind)).map(group => <Detail key={group.card} id={group.card} card={cards[group.card]} title={cards[group.card]?.title}/>)}</section>
+  // A margin at each side keeps the first and the last mark whole.
+  const x = at => 4 + 92 * (high === low ? .5 : (at - low) / (high - low)) + '%'
+  const y = kind => RULER + tracks.indexOf(kind) * LANE + LANE / 2
+  const tall = RULER + tracks.length * LANE
+  /** Brings the card of a mark into view and opens it. Without a script the link goes to the card's own mark. */
+  const show = card => event => {
+    const mark = document.getElementById(card)
+    if (!mark || event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    mark.scrollIntoView({ block: 'center' })
+    mark.click()
+  }
+  const heaps = groups.filter(group => group.count > 1 && tracks.includes(group.kind))
+  return <section aria-label="Journey chart" className="chart"><div className="chart-head"><span className="meta">{stamp(low, zone)} – {stamp(high, zone)}</span>{heaps.length > 0 && <span className="row chart-heaps">{heaps.map(group => <span key={group.card} className="meta">{cards[group.card]?.title}<Detail id={group.card} card={cards[group.card]} title={cards[group.card]?.title}/></span>)}</span>}</div>
+    <div className="chart-body"><div className="names"><div className="ruler"/>{tracks.map(kind => <div key={kind} className={'name ' + kind}><Glyph kind={kind}/><span>{WHAT[kind]}</span><span className="count">{amount(marks.filter(e => e.entry.kind === kind).length)}</span></div>)}</div>
+    <div className="track"><svg className="plot" width="100%" height={tall} role="group" aria-label="Events by type and time">
+      {ticksOf(low, high, zone).map(tick => <g key={tick.at}><line className="rule" x1={x(tick.at)} x2={x(tick.at)} y1={RULER} y2={tall}/>{tick.over && <text className="tick over" x={x(tick.at)} dx="6" y="19">{tick.over}</text>}<text className="tick" x={x(tick.at)} dx="6" y="35">{tick.text}</text></g>)}
+      {marks.filter(item => item.wait).map(item => <a key={item.wait} href={'#' + item.wait} onClick={show(item.wait)} aria-label={cards[item.wait]?.title}><line className="wait" x1={x(item.entry.at)} x2={x(Math.min(high, item.entry.at + item.entry.followUp.delay))} y1={y('call')} y2={y('call')}/></a>)}
+      {groups.filter(group => tracks.includes(group.kind)).map(group => <a key={group.card} className={'mark ' + group.kind + (group.look === 'missed' ? ' missed' : '')} href={'#' + group.card} onClick={show(group.card)} aria-label={cards[group.card]?.title + ', ' + dayOf(group.at, zone)}><title>{cards[group.card]?.title}</title>
+        <svg x={x(group.at)} y={y(group.kind) - 13} width="1" height="26" overflow="visible">{group.count === 1 ? <><circle className="hit" cx="0" cy="13" r="13"/><path transform="translate(-8 5)" d={GLYPHS[group.look] ?? GLYPHS[group.kind]}/></> : <><rect className="heap" x="-13" y="2" width="26" height="22" rx="11"/><text className="group-count" x="0" y="17" textAnchor="middle">{group.count}</text></>}</svg></a>)}
+    </svg></div></div></section>
 }
 function Journey({ data }) {
   const { journey, which, cards } = data
@@ -133,8 +153,8 @@ function Journey({ data }) {
   const zone = useContext(ZoneContext)
   // The server supplies a complete timeline. Its type checkboxes appear after React can act on them.
   useEffect(() => setEnhanced(true), [])
-  if (!which) return <section><h2>Journey</h2><p>Select an ID</p><a href="#find">Search</a></section>
-  if (!journey?.entries.length) return <section><h2><bdi>{which}</bdi></h2><Subject id={which}/><p>No events</p></section>
+  if (!which) return <section><PageHead view="journey" title="Journey"/><p className="muted">Select an ID</p><a href="#find">Search</a></section>
+  if (!journey?.entries.length) return <section><PageHead view="journey" title={<bdi>{which}</bdi>}><Link className="button" to={subjectHash(which)}>Account</Link></PageHead><p className="muted">No events</p></section>
   const visible = data.events.filter(event => !hidden.includes(event.entry.kind))
   const dates = data.events.map(event => event.entry.at).filter(at => at > 0)
   const days = new Map()
@@ -143,12 +163,11 @@ function Journey({ data }) {
     if (!days.has(day)) days.set(day, [])
     days.get(day).push(event)
   }
-  return <><section><div className="page-head"><h2><bdi>{which}</bdi></h2><Link className="button" to={subjectHash(which)}>Account</Link></div>
-    <Tiles items={[[ 'Events', amount(data.events.length) + (journey.next === null ? '' : '+')], ['IDs', amount(Object.keys(journey.subjects).length)], dates.length > 0 && ['First event', <Time at={dates[0]}/>], dates.length > 0 && ['Last event', <Time at={dates.at(-1)}/>, dates.at(-1) > dates[0] && lasted(dates.at(-1) - dates[0]) + ' later'] ]}/>{journey.more > 0 && <p>{amount(journey.more)} more IDs are not shown.</p>}</section>
-    <Chart events={visible} groups={data.groups} cards={cards}/><section><h2>Timeline</h2>
-    {enhanced && <div className="row filters" role="group" aria-label="Show">{kinds.filter(kind => data.events.some(e => e.entry.kind === kind)).map(kind => <label key={kind}><input type="checkbox" checked={!hidden.includes(kind)} onChange={() => setHidden(hidden.includes(kind) ? hidden.filter(k => k !== kind) : [...hidden,kind])}/>{WHAT[kind]}</label>)}</div>}
-    {days.size === 0 && <p>All event types are hidden.</p>}<div className="wide timeline"><ol className="journey">{[...days].map(([day, events]) => <li className="day" key={day}><h3>{day}</h3><ol>{events.map(({entry, mark, call, wait}, i) => <li className="timeline-entry" key={mark ?? i} id={call ? 'call-' + encodeURIComponent(entry.call.id) : undefined}><span className="num"><Time at={entry.at || undefined}/></span><span className={'chip kind ' + entry.kind}>{WHAT[entry.kind]}</span><div className="what"><Story entry={entry}/>{call && <Detail card={cards[call]}/>}</div><div className="why"><Subject id={entry.subject}/><span className="reason">{tieWords(journey.subjects[entry.subject],which)}</span>{mark && <Detail card={cards[mark]} id={mark} title={WHAT[entry.kind] + ' details'}/>}
-    {wait && <Detail card={cards[wait]} id={wait} title={cards[wait]?.title}/>}</div></li>)}</ol></li>)}</ol></div>{journey.next != null && <Link className="button" to={data.canonical + '?before=' + journey.next}>Show earlier</Link>}</section></>
+  return <><section><PageHead view="journey" title={<bdi title={which}>{which}</bdi>}><Link className="button" to={subjectHash(which)}>Account</Link></PageHead>
+    <Tiles items={[[ 'Events', amount(data.events.length) + (journey.next === null ? '' : '+')], ['IDs', amount(Object.keys(journey.subjects).length)], dates.length > 0 && ['First event', <Time at={dates[0]} short/>], dates.length > 0 && ['Last event', <Time at={dates.at(-1)} short/>, dates.at(-1) > dates[0] && lasted(dates.at(-1) - dates[0]) + ' later'] ]}/>{journey.more > 0 && <p className="meta">{amount(journey.more)} more IDs are not shown.</p>}
+    <Chart events={visible} groups={data.groups} cards={cards}/></section><section><h2>Timeline</h2>
+    {enhanced && <div className="row filters" role="group" aria-label="Show">{kinds.filter(kind => data.events.some(e => e.entry.kind === kind)).map(kind => <label key={kind} className={kind}><input type="checkbox" checked={!hidden.includes(kind)} onChange={() => setHidden(hidden.includes(kind) ? hidden.filter(k => k !== kind) : [...hidden,kind])}/><Glyph kind={kind}/>{WHAT[kind]}<span className="count">{amount(data.events.filter(e => e.entry.kind === kind).length)}</span></label>)}</div>}
+    {days.size === 0 && <p className="muted">All event types are hidden.</p>}<div className="wide timeline"><ol className="journey">{[...days].map(([day, events]) => <li className="day" key={day}><h3>{day}</h3><ol>{events.map(({entry, mark, call, wait}, i) => <li className="timeline-entry" key={mark ?? i} id={call ? 'call-' + encodeURIComponent(entry.call.id) : undefined}><span className="num">{entry.at > 0 ? <time dateTime={new Date(entry.at).toISOString()} title={stamp(entry.at, zone)}>{hourOf(entry.at, zone)}</time> : <span className="muted">No data</span>}</span><span className={'chip kind ' + entry.kind}><Glyph kind={looksLike(entry)}/>{WHAT[entry.kind]}</span><div className="what"><Story entry={entry} icon={call && <Detail card={cards[call]}/>}/></div><div className="why"><Subject id={entry.subject}/>{mark && <Detail card={cards[mark]} id={mark} title={WHAT[entry.kind] + ' details'}/>}{wait && <Detail card={cards[wait]} id={wait} title={cards[wait]?.title}/>}<span className="reason">{tieWords(journey.subjects[entry.subject],which)}</span></div></li>)}</ol></li>)}</ol></div>{journey.next != null && <Link className="button" to={data.canonical + '?before=' + journey.next}>Show earlier</Link>}</section></>
 }
 
 const measures = [['calls','All calls'],['answered','Answered'],['missed','Missed'],['voicemail','Voicemail'],['unknown','Unknown'],['waiting','Waiting for result'],['returned','Returned']]
