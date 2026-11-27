@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { KeptMap, KeptSet, begin, createJournal, end, undo } from '../src/core/journal.ts'
 import { accountGraph } from '../src/index.ts'
+import { createMemoryStore } from '../src/core/memory.ts'
 
 type Edge = { first: number; last: number; count: number }
 
@@ -47,6 +48,46 @@ test('a write that reads a whole map and then changes it is put back whole', () 
   undo(journal)
 
   assert.deepEqual(Object.fromEntries(calls), { a: { at: 1, flags: [] }, b: { at: 2, flags: [] } })
+})
+
+test('an entry deleted and put back keeps its place', () => {
+  const journal = createJournal()
+  const alerts = new KeptMap<string, number>(journal)
+  const ignored = new KeptSet<string>(journal)
+  for (const key of ['a', 'b', 'c']) {
+    alerts.set(key, 1)
+    ignored.add(key)
+  }
+  begin(journal)
+  alerts.delete('a')
+  alerts.set('d', 1)
+  ignored.delete('b')
+  ignored.add('b')
+  undo(journal)
+  assert.deepEqual([[...alerts.keys()], [...ignored]], [['a', 'b', 'c'], ['a', 'b', 'c']])
+  // Emptied, then given and losing another key, a map comes back as it was.
+  begin(journal)
+  alerts.clear()
+  alerts.set('e', 1)
+  alerts.delete('e')
+  undo(journal)
+  assert.deepEqual([...alerts.keys()], ['a', 'b', 'c'])
+})
+
+test('a failed write to the memory store puts back the events it removed and the decisions it added', async () => {
+  const store = createMemoryStore()
+  await store.write((tx) => tx.emit([1, 2, 3].map((at) => ({ type: 'cluster.changed', at, subject: `s${at}`, data: { subject: `s${at}`, from: null, to: `s${at}` } }))))
+  const head = await store.read((tx) => tx.eventHead())
+  await assert.rejects(store.write(async (tx) => {
+    // An event added before the first is removed is in the copy kept of the list, and must not stay.
+    await tx.emit([{ type: 'cluster.changed', at: 4, subject: 's4', data: { subject: 's4', from: null, to: 's4' } }])
+    await tx.pruneEvents(3)
+    await tx.addDecision({ seq: 1, at: 4, action: 'ignore', about: ['email:x'], by: 'dana', reason: 'test', hash: 'h' } as never)
+    throw new Error('undone')
+  }, { whole: true }), /undone/)
+  assert.deepEqual(await store.read((tx) => tx.eventHead()), head)
+  assert.deepEqual((await store.read((tx) => tx.eventsAfter(0, 10))).map((event) => event.at), [1, 2, 3])
+  assert.equal(await store.read((tx) => tx.lastDecision()), undefined)
 })
 
 test('a write that ends keeps what it changed', () => {

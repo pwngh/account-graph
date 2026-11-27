@@ -768,11 +768,12 @@ export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true,
     async start(given, send, subjects = []) {
       send(given.filter(unchanged), partyRevision(), refusals(subjects))
     },
+    // A read that copies what it finds walks the jobs without the store's journal, so a write that asks pays only for what it changes.
     async get(transactionId) {
-      return [...jobs.values()].filter((job) => job.transactionId === transactionId).map((job) => structuredClone(job))
+      return [...Map.prototype.values.call(jobs)].filter((job) => job.transactionId === transactionId).map((job) => structuredClone(job))
     },
     async list(state, limit) {
-      const found = [...jobs.values()].filter((job) => job.state === state)
+      const found = [...Map.prototype.values.call(jobs)].filter((job) => job.state === state)
       return found.sort((x, y) => y.due - x.due || (x.transactionId < y.transactionId ? -1 : 1)).slice(0, limit).map((job) => structuredClone(job))
     },
     async oldestDue() {

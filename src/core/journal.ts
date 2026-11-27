@@ -17,6 +17,8 @@ type Undo = {
   used: Map<object, Set<unknown> | true>
   /** Collections kept whole, with every entry they held. */
   whole: [Map<unknown, unknown> | Set<unknown>, [unknown, unknown][]][]
+  /** The order of keys in each collection, kept before the write first deletes one, since an entry put back goes last. */
+  order: Map<Map<unknown, unknown> | Set<unknown>, unknown[]>
 }
 
 export function createJournal(): Journal {
@@ -25,7 +27,7 @@ export function createJournal(): Journal {
 
 /** Starts keeping what a write changes. */
 export function begin(journal: Journal) {
-  journal.open = { objects: new Map(), entries: [], used: new Map(), whole: [] }
+  journal.open = { objects: new Map(), entries: [], used: new Map(), whole: [], order: new Map() }
 }
 
 /** Stops keeping. What was kept is dropped. */
@@ -64,6 +66,11 @@ export function undo(journal: Journal) {
     else if (collection instanceof Map) collection.set(key, value)
     else collection.add(key)
   }
+  for (const [collection, keys] of undo.order) {
+    const held = keys.filter((key) => collection.has(key)).map((key) => [key, collection instanceof Map ? collection.get(key) : undefined] as const)
+    collection.clear()
+    for (const [key, value] of held) collection instanceof Map ? collection.set(key, value) : collection.add(key)
+  }
 }
 
 /** Copies, one level deep, each object `value` reaches that is not copied yet. Frozen objects and class instances never change, so they are left. */
@@ -79,7 +86,7 @@ function keep(undo: Undo, value: unknown) {
     } else if (each instanceof Set) {
       const copy = [...Set.prototype.values.call(each)]
       undo.objects.set(each, copy)
-      stack.push(...copy)
+      for (const inner of copy) stack.push(inner)
     } else if (Array.isArray(each)) {
       const copy = each.slice()
       undo.objects.set(each, copy)
@@ -106,6 +113,14 @@ function note(undo: Undo, collection: Map<unknown, unknown> | Set<unknown>, key:
   keep(undo, value)
 }
 
+/** Keeps the order of a collection's keys before the first key it held is deleted. */
+function keepOrder(undo: Undo, collection: Map<unknown, unknown> | Set<unknown>, key: unknown) {
+  // A collection kept whole is put back in its order already.
+  if (undo.order.has(collection) || undo.used.get(collection) === true) return
+  const held = collection instanceof Map ? Map.prototype.has.call(collection, key) : Set.prototype.has.call(collection, key)
+  if (held) undo.order.set(collection, collection instanceof Map ? [...Map.prototype.keys.call(collection)] : [...Set.prototype.values.call(collection)])
+}
+
 function noteAll(undo: Undo, collection: Map<unknown, unknown> | Set<unknown>) {
   if (undo.used.get(collection) === true) return
   undo.used.set(collection, true)
@@ -130,7 +145,10 @@ export class KeptMap<K, V> extends Map<K, V> {
     return super.set(key, value)
   }
   override delete(key: K) {
-    if (this.#journal.open) note(this.#journal.open, this, key)
+    if (this.#journal.open) {
+      note(this.#journal.open, this, key)
+      keepOrder(this.#journal.open, this, key)
+    }
     return super.delete(key)
   }
   override clear() {
@@ -170,7 +188,10 @@ export class KeptSet<T> extends Set<T> {
     return super.add(value)
   }
   override delete(value: T) {
-    if (this.#journal.open) note(this.#journal.open, this, value)
+    if (this.#journal.open) {
+      note(this.#journal.open, this, value)
+      keepOrder(this.#journal.open, this, value)
+    }
     return super.delete(value)
   }
   override clear() {

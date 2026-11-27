@@ -80,6 +80,11 @@ export function createMemoryStore() {
   const once = new KeptMap<string, Subject | undefined>(journal)
   const deliveries = new KeptMap<string, Delivery & { lease: number }>(journal)
   const pruned = { seq: 0 }
+  /** The events as a whole write found them, copied before it first removes or replaces one. */
+  let eventsBefore: typeof events | undefined
+  const changingEvents = () => {
+    if (journal.open && !eventsBefore) eventsBefore = events.slice()
+  }
   let lastEvent = 0
   let epoch = randomUUID().slice(0, 8)
   let writes = 0
@@ -144,6 +149,7 @@ export function createMemoryStore() {
       const event = events[i]!
       if ((event.type === 'callback.overdue' && (ids.has(event.data.call) || event.calls?.some(id => sources.has(id)) || (event.notice && notices.has(event.notice)))) || (event.type === 'conversion.failed' && conversions.has(event.data.conversion))) {
         if (event.notice) once.delete(event.notice)
+        changingEvents()
         events.splice(i, 1)
       }
     }
@@ -347,7 +353,10 @@ export function createMemoryStore() {
       consents.delete(subject)
       ops.forget(subject)
       for (const [name, about] of once) if (about === subject) once.delete(name)
-      for (let i = events.length - 1; i >= 0; i--) if (events[i]!.subject === subject) events.splice(i, 1)
+      for (let i = events.length - 1; i >= 0; i--) if (events[i]!.subject === subject) {
+        changingEvents()
+        events.splice(i, 1)
+      }
       // Last, so a job added meanwhile has no outcome to be added for.
       return [...gone, ...await outbox.remove(subject)]
     },
@@ -652,7 +661,7 @@ export function createMemoryStore() {
     async callbacksThrough(sources) {
       const paths = new Set(sources)
       const notices = ops.callbacksThrough(paths)
-      for (const event of events) if (event.notice && event.calls?.some(id => paths.has(id))) notices.set(event.notice, event.calls)
+      for (const event of events) if (event.notice && event.calls?.some(id => paths.has(id))) notices.set(event.notice, [...event.calls])
       return notices
     },
 
@@ -660,7 +669,10 @@ export function createMemoryStore() {
       const gone = new Set(keys)
       ops.dropCallbacks(keys)
       for (const key of gone) once.delete(key)
-      for (let i = events.length - 1; i >= 0; i--) if (gone.has(events[i]!.notice ?? '')) events.splice(i, 1)
+      for (let i = events.length - 1; i >= 0; i--) if (gone.has(events[i]!.notice ?? '')) {
+        changingEvents()
+        events.splice(i, 1)
+      }
     },
 
     async eventHead() {
@@ -677,6 +689,7 @@ export function createMemoryStore() {
 
     async pruneEvents(before) {
       const keep = events.findIndex((each) => each.at >= before)
+      if (keep !== 0 && events.length > 0) changingEvents()
       const gone = events.splice(0, keep < 0 ? events.length : keep)
       if (gone.length > 0) pruned.seq = Math.max(pruned.seq, gone.at(-1)!.seq)
       return gone.length
@@ -1034,7 +1047,7 @@ export function createMemoryStore() {
     async openCalls(from, to, limit, after) {
       const answered = new Map<Subject, number>()
       // When each was last spoken to, by a call answered or by a return reported for one of theirs.
-      for (const call of calls.values()) {
+      for (const call of calls.peek()) {
         // What was no lead is no conversation with them either.
         if (spurned.has(`call:${call.id}`)) continue
         const { answered: spoke, returned = -Infinity } = results.get(call.id) ?? {}
@@ -1256,6 +1269,8 @@ export function createMemoryStore() {
       events.forEach((event, i) => {
         if (event.type !== 'cluster.changed') return
         const { subject, from, to } = event.data
+        if (!(from !== null && gone.has(from)) && !(to !== null && gone.has(to))) return
+        changingEvents()
         events[i] = { ...event, data: { subject, from: from !== null && gone.has(from) ? null : from, to: to !== null && gone.has(to) ? null : to } }
       })
       ops.unname(keys)
@@ -1390,7 +1405,8 @@ export function createMemoryStore() {
     },
 
     async lastDecision() {
-      return decisions.at(-1)
+      const last = decisions.at(-1)
+      return last && copied(last)
     },
 
     async decisions() {
@@ -1483,24 +1499,34 @@ export function createMemoryStore() {
     return run
   }
   const write = <T>(work: (tx: Tx) => Promise<T>, { whole = false } = {}) => queue(async (bound) => {
-    // The journal keeps the maps and sets. Events and decisions are only added, removed or replaced, so a copy of each list does.
-    const before = whole ? { lastEvent, epoch, writes, built, events: events.slice(), decisions: decisions.slice() } : undefined
-    if (whole) begin(journal)
+    // The journal keeps the maps and sets. Decisions are only added, so their count is enough, and events are copied only if the write removes or replaces one.
+    const before = whole ? { lastEvent, epoch, writes, built, pruned: pruned.seq, events: events.length, decisions: decisions.length } : undefined
+    if (whole) {
+      begin(journal)
+      eventsBefore = undefined
+    }
     writes += 1
     try {
       return await work(bound)
     } catch (error) {
       if (before) {
         undo(journal)
-        for (const [list, then] of [[events, before.events], [decisions, before.decisions]] as const) {
-          list.length = 0
-          for (const each of then) (list as unknown[]).push(each)
+        // The copy may hold events this write added before it first removed one. Those are last, so the count cuts them off.
+        if (eventsBefore) {
+          events.length = 0
+          for (const each of eventsBefore) events.push(each)
         }
+        events.length = before.events
+        decisions.length = before.decisions
+        pruned.seq = before.pruned
         ;({ lastEvent, epoch, writes, built } = before)
       }
       throw error
     } finally {
-      if (whole) end(journal)
+      if (whole) {
+        end(journal)
+        eventsBefore = undefined
+      }
     }
   })
 
