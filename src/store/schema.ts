@@ -167,8 +167,7 @@ create table ${schema}.flow (
 create table ${schema}.identifier (
   id text not null,
   fanout integer not null,
-  ignored boolean default false not null,
-  old_empty boolean
+  ignored boolean default false not null
 );
 create table ${schema}.job (
   name text not null,
@@ -379,33 +378,6 @@ create table ${schema}.withdrawn_edge (
   profile_key text collate pg_catalog."C",
   source_fact text
 );
-create function ${schema}.fold_old_fact() returns trigger language plpgsql as $$
-  begin
-  if not ${schema}.old_fact_cut(new.subject, new.identifier) then return new; end if;
-  if exists (select from ${schema}.edge e where e.subject = new.subject and e.identifier = new.identifier) then return new; end if;
-  if tg_table_name = 'sighting' then
-    -- Old writers read a state for every identifier they attempted. Give them a zero-holder state in this transaction only.
-    insert into ${schema}.identifier as i (id, fanout, ignored, old_empty) values (new.identifier, 0, true, true)
-      on conflict (id) do update set ignored = true, old_empty = true where i.fanout = 0 and not i.ignored;
-    return new;
-  end if;
-  insert into ${schema}.withdrawn_edge as w (subject, identifier, first_at, last_at, sightings)
-    values (new.subject, new.identifier, new.first_at, new.last_at, new.sightings)
-    on conflict (subject, identifier) do update set first_at = least(w.first_at, excluded.first_at),
-      last_at = greatest(w.last_at, excluded.last_at), sightings = w.sightings + excluded.sightings;
-  return null;
-  end;
-$$;
-create function ${schema}.forget_profile_created() returns trigger language plpgsql as $$
-  begin
-  with hidden as (delete from ${schema}.withdrawn_edge where subject = new.about->>0),
-    facts as (delete from ${schema}.fact_withdrawal where subject = new.about->>0),
-    stops as (delete from ${schema}.text_stop where subject = new.about->>0 or line = new.about->>0),
-    phones as (delete from ${schema}.text_phone_profile where subject = new.about->>0)
-  delete from ${schema}.profile_created where subject = new.about->>0;
-  return new;
-  end;
-$$;
 create function ${schema}.keep_pruned_phone_profiles() returns trigger language plpgsql as $$
   begin
   insert into ${schema}.text_phone_profile (subject, line, at, key)
@@ -420,29 +392,6 @@ $$;
 create function ${schema}.keep_withdrawal_receipt() returns trigger language plpgsql as $$
   begin
   return null;
-  end;
-$$;
-create function ${schema}.old_fact_cut(owner text, fact text) returns boolean language sql stable as $$
-  select exists (select from ${schema}.fact_withdrawal f where f.subject = owner and (regexp_replace(f.identifier, '^voip:', 'phone:') = regexp_replace(fact, '^voip:', 'phone:') or
-  (starts_with(fact, 'named:') and (starts_with(f.identifier, 'email:') or starts_with(f.identifier, 'phone:') or starts_with(f.identifier, 'voip:')))))
-$$;
-create function ${schema}.reject_stated_report() returns trigger language plpgsql as $$
-  begin
-  if tg_op = 'UPDATE' or (exists (select from ${schema}.said where topic = 'party' and about = new.id) and not exists (select from ${schema}.call where id = new.id)) then
-    raise exception using errcode = '23514', message = 'A staff statement owns this call. Retry the report on an upgraded server.';
-  end if;
-  return new;
-  end;
-$$;
-create function ${schema}.release_old_empty() returns trigger language plpgsql as $$
-  begin
-  if tg_when = 'AFTER' then
-    delete from ${schema}.identifier where id = new.id and old_empty;
-    return null;
-  end if;
-  if tg_name = 'old_empty_holder' then new.ignored := false; end if;
-  new.old_empty := null;
-  return new;
   end;
 $$;
 alter table only ${schema}.alert
@@ -576,16 +525,8 @@ create index touch_clicked on ${schema}.touch using gin ((array[(detail ->> 'gcl
 create index touch_subject on ${schema}.touch using btree (subject, at);
 create index transfer_source on ${schema}.transfer using btree (source);
 create index transfer_target on ${schema}.transfer using btree (target);
-create trigger fold_old_fact before insert on ${schema}.edge for each row when ((current_setting('account_graph.fact_writer'::text, true) is distinct from 'on'::text)) execute function ${schema}.fold_old_fact();
-create trigger forget_profile_created after insert on ${schema}.decision for each row when ((new.action = 'forget'::text)) execute function ${schema}.forget_profile_created();
 create trigger keep_pruned_phone_profiles after delete on ${schema}.sighting referencing old table as gone for each statement execute function ${schema}.keep_pruned_phone_profiles();
 create trigger keep_withdrawal_receipt before delete on ${schema}.receipt for each row when ((old.ref_type = 'withdraw'::text)) execute function ${schema}.keep_withdrawal_receipt();
-create trigger old_empty_decision before update of ignored on ${schema}.identifier for each row when ((old.old_empty and new.old_empty)) execute function ${schema}.release_old_empty();
-create trigger old_empty_holder before update of fanout on ${schema}.identifier for each row when ((old.old_empty and (new.fanout > 0))) execute function ${schema}.release_old_empty();
-create trigger pending_call_report before insert on ${schema}.call for each row when ((new.line_subject is null)) execute function ${schema}.reject_stated_report();
-create trigger prepare_old_fact before insert on ${schema}.sighting for each row when ((current_setting('account_graph.fact_writer'::text, true) is distinct from 'on'::text)) execute function ${schema}.fold_old_fact();
-create constraint trigger release_old_empty after insert or update on ${schema}.identifier deferrable initially deferred for each row when (new.old_empty) execute function ${schema}.release_old_empty();
-create trigger stated_call_report before update of recorded_at on ${schema}.call for each row when ((old.party is not null)) execute function ${schema}.reject_stated_report();
 alter table only ${schema}.call_evidence
   add constraint call_evidence_call_id_fkey foreign key (call_id) references ${schema}.call(id) on delete cascade;
 alter table only ${schema}.receipt_subject

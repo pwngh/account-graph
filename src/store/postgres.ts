@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { contactFact, factActive, type FactProfile, type FactStamp } from '../core/fact-fold.ts'
 import { later } from '../core/said.ts'
 import { affectedMisses, callTraces, creditSubject, ownerOf, partyOf, reopenWaits, stopCallJob, withoutGuesses } from '../core/call-party.ts'
@@ -82,8 +82,6 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
   if (!(Number.isSafeInteger(page) && page > 0)) throw malformed('`page` must be a positive integer')
   const t = (table: string) => `${schema}.${table}`
   watch(pool)
-  let factSchema = true
-  let textSchema = true
 
   const callRows = `select c.*, r.answered, r.voicemail, r.waited, r.returned_at, r.recorded_at as result_at from ${t('call')} c left join ${t('call_result')} r on r.id = c.id`
 
@@ -176,7 +174,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
   /** Numbers the savepoints of this store, so each nested write names its own. */
   let savepoints = 0
   // `kept` is the savepoint of the last nested write that succeeded. It is released with the next savepoint, in the same trip.
-  const bind = (db: Queryable, readOnly: boolean, factSchema: boolean, textSchema: boolean, snapshot = evidenceIn(db, readOnly), nesting: { kept?: string | undefined } = {}): Tx => ({
+  const bind = (db: Queryable, readOnly: boolean, snapshot = evidenceIn(db, readOnly), nesting: { kept?: string | undefined } = {}): Tx => ({
     async insertActivity(rows) {
       // PostgreSQL decodes these arrays against the destination column types. Generated ids keep their defaults.
       const insert = async (table: string, columns: string, values: readonly object[]) => {
@@ -229,13 +227,13 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         folded.set(edgeKey(edge), previous ? combine(previous, edge) : edge)
       }
       let edges = [...folded.values()]
-      const insert = `insert into ${t('sighting')} (subject, identifier, at, event, recorded_at${factSchema ? ', profile_key, source_fact' : ''})
-         select * from unnest($1::text[], $2::text[], $3::bigint[], $4::text[], $5::bigint[]${factSchema ? ', $6::text[], $7::text[]' : ''})`
-      const found = await db.query(factSchema
-        ? `with observed as (${insert}) select subject from (select distinct unnest($1::text[]) as subject) written
-           where exists (select from ${t('fact_withdrawal')} f where f.subject = written.subject)`
-        : insert, [rows.map(r => r.subject), rows.map(r => r.identifier), rows.map(r => r.at), rows.map(r => r.event ?? null), rows.map(r => r.recorded ?? r.at),
-          ...(factSchema ? [rows.map(r => r.profileKey ?? null), rows.map(r => r.fact ?? null)] : [])])
+      const found = await db.query(
+        `with observed as (insert into ${t('sighting')} (subject, identifier, at, event, recorded_at, profile_key, source_fact)
+           select * from unnest($1::text[], $2::text[], $3::bigint[], $4::text[], $5::bigint[], $6::text[], $7::text[]))
+         select subject from (select distinct unnest($1::text[]) as subject) written
+           where exists (select from ${t('fact_withdrawal')} f where f.subject = written.subject)`,
+        [rows.map(r => r.subject), rows.map(r => r.identifier), rows.map(r => r.at), rows.map(r => r.event ?? null), rows.map(r => r.recorded ?? r.at),
+          rows.map(r => r.profileKey ?? null), rows.map(r => r.fact ?? null)])
       await db.query(
         `insert into ${t('subject')} (id, component, cluster)
          select distinct s, s, s from unnest($1::text[]) as s on conflict (id) do nothing`,
@@ -271,15 +269,15 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const newer = `excluded.profile_at is not null and (${table}.profile_at is null or (excluded.profile_at, excluded.profile_key) > (${table}.profile_at, ${table}.profile_key))`
       const { rows: tally } = await db.query(
         `with upserted as (
-           insert into ${table} (${factSchema ? rawFields : 'subject, identifier, first_at, last_at, sightings'})
-           select * from ${factSchema ? rawValues : 'unnest($1::text[], $2::text[], $3::bigint[], $4::bigint[], $5::int[])'}
+           insert into ${table} (${rawFields})
+           select * from ${rawValues}
            on conflict (subject, identifier) do update set
              first_at = least(${t('edge')}.first_at, excluded.first_at),
              last_at = greatest(${t('edge')}.last_at, excluded.last_at),
-             sightings = ${table}.sightings + excluded.sightings${factSchema ? `,
+             sightings = ${table}.sightings + excluded.sightings,
              profile_at = case when ${newer} then excluded.profile_at else ${table}.profile_at end,
              profile_key = case when ${newer} then excluded.profile_key else ${table}.profile_key end,
-             source_fact = case when ${newer} then excluded.source_fact else ${table}.source_fact end` : ''}
+             source_fact = case when ${newer} then excluded.source_fact else ${table}.source_fact end
            returning identifier, (xmax = 0) as fresh
          ), tally as (
            select identifier, count(*) filter (where fresh)::int as added from upserted group by identifier
@@ -288,7 +286,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
            on conflict (id) do update set fanout = ${t('identifier')}.fanout + excluded.fanout
          )
          select identifier, added from tally where added > 0`,
-        fieldsOf(edges).slice(0, factSchema ? 8 : 5),
+        fieldsOf(edges),
       )
       const added: AddedSightings = new Map(tally.map((row) => [row.identifier as Identifier, row.added as number]))
       if (regained.size) added.restored = regained
@@ -345,8 +343,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       await db.query(`delete from ${t('said')} where topic = 'party' and data->>'subject' = $1 and ($2::text[] is null or about = any($2))`, [subject, only ?? null])
       if (only) return callJobs
       await db.query(`with created as (delete from ${t('profile_created')} where subject = $1)
-        ${factSchema ? `, facts as (delete from ${t('fact_withdrawal')} where subject = $1), hidden as (delete from ${t('withdrawn_edge')} where subject = $1)` : ''}
-        ${textSchema ? `, stops as (delete from ${t('text_stop')} where subject = $1 or line = $1), phones as (delete from ${t('text_phone_profile')} where subject = $1)` : ''} delete from ${t('call_evidence')} where subject = $1`, [subject])
+        , facts as (delete from ${t('fact_withdrawal')} where subject = $1), hidden as (delete from ${t('withdrawn_edge')} where subject = $1)
+        , stops as (delete from ${t('text_stop')} where subject = $1 or line = $1), phones as (delete from ${t('text_phone_profile')} where subject = $1) delete from ${t('call_evidence')} where subject = $1`, [subject])
       if (!ids.length) await dropCallNotices(db, ids, [subject], [], [creditSubject(subject)])
       const { rows: left } = await db.query(
         `with gone as (delete from ${t('edge')} where subject = $1 returning identifier)
@@ -455,7 +453,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const { rows } = await db.query(
         `select s.subject, p.created_at, least(
            (select min(first_at) from ${t('edge')} where subject = s.subject and not starts_with(identifier, 'review:')),
-           ${factSchema ? `(select min(first_at) from ${t('withdrawn_edge')} where subject = s.subject),` : ''}
+           (select min(first_at) from ${t('withdrawn_edge')} where subject = s.subject),
            (select min(at) from ${t('sighting')} where subject = s.subject and not starts_with(identifier, 'review:')),
            (select min(at) from ${t('touch')} where subject = s.subject),
            (select min(at) from ${t('outcome')} where subject = s.subject),
@@ -473,9 +471,6 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
     async textNumbers(subjects) {
       if (!subjects.length) return []
-      if (!textSchema) return (await this.edgesOf(subjects)).filter(e => /^(phone|voip):/.test(e.identifier)).map(e => ({
-        subject: e.subject, line: 'caller:' + e.identifier.slice(e.identifier.indexOf(':') + 1), active: true, first: e.first,
-      }))
       // Only a number with a withdrawal needs the dated statements. Ordinary numbers still use their line's last word.
       const line = (id: string) => `'caller:' || substr(${id}, strpos(${id}, ':') + 1)`
       const phone = (id: string) => `(starts_with(${id}, 'phone:') or starts_with(${id}, 'voip:'))`
@@ -580,7 +575,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         db,
         page,
         `select coalesce(s.id, held.subject) as id, s.component, s.cluster, held.subject is not null as held
-         from ${t('subject')} s full join (select distinct subject from ${t('edge')}${factSchema ? ` union select subject from ${t('withdrawn_edge')}` : ''}) held on held.subject = s.id`,
+         from ${t('subject')} s full join (select distinct subject from ${t('edge')} union select subject from ${t('withdrawn_edge')}) held on held.subject = s.id`,
         [],
       )
       for await (const batch of rows) yield batch.map((row) => ({ subject: row.id, labels: row.component === null ? undefined : { component: row.component, cluster: row.cluster }, held: row.held }))
@@ -1467,7 +1462,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     async partyReturn(subject, call) {
       const { rows: [row] } = await db.query(`select erased.seq, exists (select from ${t('call')} c where c.id = $2 and c.at > erased.at)
         and (exists (select from ${t('edge')} e where e.subject = $1 and not starts_with(e.identifier, 'review:'))
-          ${factSchema ? `or exists (select from ${t('withdrawn_edge')} w where w.subject = $1 and not starts_with(w.identifier, 'review:'))` : ''}) as allowed
+          or exists (select from ${t('withdrawn_edge')} w where w.subject = $1 and not starts_with(w.identifier, 'review:'))) as allowed
         from (${erasedRecord('$1')}) erased`, [subject, call])
       return !row ? undefined : row.allowed ? Number(row.seq) : 'forgotten'
     },
@@ -1535,13 +1530,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     let lost = false
     try {
       await client.query(lock !== 'none' && lockTimeout > 0 ? `${begin}; set local lock_timeout = ${Math.ceil(lockTimeout)}` : begin)
-      // A writer on the preceding schema can still fold sightings while the migration is waiting for its DDL lock.
-      const locked = lock === 'none' ? undefined : await client.query(`select pg_advisory_xact_lock${lock === 'shared' ? '_shared' : ''}(hashtext($1)),
-        set_config('account_graph.fact_writer', case when fact_schema then 'on' else 'off' end, true), fact_schema, to_regclass($3) is not null as text_schema
-        from (select to_regclass($2) is not null as fact_schema) schema_version`, [`account-graph:${schema}`, t('fact_withdrawal'), t('text_stop')])
-      if (typeof locked?.rows[0]?.fact_schema === 'boolean') factSchema = locked.rows[0].fact_schema
-      if (typeof locked?.rows[0]?.text_schema === 'boolean') textSchema = locked.rows[0].text_schema
-      const result = await work(bind(client, begin === READ_ONLY, factSchema, factSchema && textSchema))
+      if (lock !== 'none') await client.query(`select pg_advisory_xact_lock${lock === 'shared' ? '_shared' : ''}(hashtext($1))`, [`account-graph:${schema}`])
+      const result = await work(bind(client, begin === READ_ONLY))
       // A write is counted as it commits, in the same trip to the database.
       try {
         await client.query(lock === 'exclusive' ? `update ${t('pulse')} set writes = writes + 1; commit` : 'commit')
@@ -1748,8 +1738,6 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
           applied.push(upgrade.name)
         }
         await client.query('commit')
-        factSchema = true
-        textSchema = true
         return applied
       } catch (error) {
         await client.query('rollback').catch(() => undefined)
@@ -1891,7 +1879,11 @@ interface Upgrade {
  * ones a database has not had. The first entry makes everything for a new
  * database. To change the shape after a release, add an entry with the next
  * id, and never edit one that has shipped.
+ *
+ * Until the first release the schema itself is edited, so its step is named
+ * by a mark of its text. A database made from another text is then refused,
+ * and is never run on a shape this code does not expect.
  */
 export function upgrades(schema = 'account_graph'): Upgrade[] {
-  return [{ id: 1, name: 'the schema', sql: schemaSql(schema) }]
+  return [{ id: 1, name: `the schema ${createHash('sha256').update(schemaSql('s')).digest('hex').slice(0, 8)}`, sql: schemaSql(schema) }]
 }
