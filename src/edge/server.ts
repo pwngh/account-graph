@@ -40,7 +40,7 @@ import { browserScripts, scriptHeaders } from './tag.ts'
 import { TOUCH_FIELDS } from '../core/touch.ts'
 import type { Change, Deciding, Identifier, Level, Observation, Subject, Touch } from '../contract/types.ts'
 
-import { credentials, limitedCall, serviceTokenProblems } from './tokens.ts'
+import { credentials, limitedCall, serviceTokenProblems, statementBy } from './tokens.ts'
 import type { Reviewers, ServiceToken } from './tokens.ts'
 export type { Reviewers } from './tokens.ts'
 
@@ -718,8 +718,9 @@ export function createHandler(core: Core, options: HandlerOptions) {
       }
       if (owner.role === 'reviewer') {
         const reviewer = owner.name
-        const party = name === 'record' && Array.isArray(body?.entries) && body.entries.length > 0 && body.entries.every((entry: any) => entry?.type === 'call_update' && entry.change?.kind === 'party' && entry.change.by === reviewer)
-        const opens = party || name === 'report' || (((name === 'decide' && body?.action !== 'withdraw') || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find' || body?.kind === 'party'))
+        // What a reviewer may record is what they say themselves about a call or a lead, each entry signed with their own name.
+        const says = name === 'record' && Array.isArray(body?.entries) && body.entries.length > 0 && body.entries.every((entry: any) => statementBy(entry) === reviewer)
+        const opens = says || name === 'report' || (((name === 'decide' && body?.action !== 'withdraw') || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find' || body?.kind === 'party'))
         if (!opens) throw fault(FAULT_CODES.AUTH.FORBIDDEN, name === 'decide' || name === 'forget' ? '`by` must match the owner of the token' : 'The token does not open this call')
       }
       const run = (input: unknown) => core.v1!(name as CallName, input, gone.signal)

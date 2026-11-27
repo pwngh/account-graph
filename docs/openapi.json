@@ -3181,6 +3181,9 @@
                       "spam",
                       "other"
                     ]
+                  },
+                  "by": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -3195,6 +3198,9 @@
                   "kind": {
                     "type": "string",
                     "const": "lead"
+                  },
+                  "by": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -3407,6 +3413,10 @@
                   "reachedAt": {
                     "$ref": "#/components/schemas/At",
                     "description": "When the caller was reached."
+                  },
+                  "by": {
+                    "type": "string",
+                    "description": "Who says so. A reviewer signs their own name, and a named service its own."
                   }
                 },
                 "required": [
@@ -3421,6 +3431,9 @@
                   "kind": {
                     "type": "string",
                     "const": "not_returned"
+                  },
+                  "by": {
+                    "type": "string"
                   }
                 },
                 "required": [

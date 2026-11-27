@@ -125,9 +125,11 @@ const recordedParty: Check = both(subject, (value, path) => {
   if (/^(visitor|caller|call):/.test(value as string)) throw bad(path, 'must name a record')
 })
 const seenParty: Check = (value, path) => { if (value !== null) key(value, path) }
-const signedParty = { kind: any, role: any, 'seen?': seenParty, by: both(string(1, 100), (value, path) => {
+/** Who says something: a name, never blank. */
+const signer = both(string(1, 100), (value, path) => {
   if (!(value as string).trim()) throw bad(path, 'must name who said it')
-}) }
+})
+const signedParty = { kind: any, role: any, 'seen?': seenParty, by: signer }
 const namedParty = shape({ ...signedParty, subject: recordedParty })
 const party = byField('role', { self: namedParty, representative: namedParty, excluded: namedParty, unknown: shape(signedParty) })
 
@@ -154,13 +156,13 @@ const ENTRIES: Record<string, Check> = {
       refund: shape({ kind: any, amount: money, 'currency?': currency }),
       write_off: shape({ kind: any, amount: money, 'currency?': currency }),
       reverse: shape({ kind: any, restatement: key }),
-      not_lead: shape({ kind: any, why: oneOf('spam', 'other') }),
-      lead: shape({ kind: any }),
+      not_lead: shape({ kind: any, why: oneOf('spam', 'other'), 'by?': signer }),
+      lead: shape({ kind: any, 'by?': signer }),
     }),
   }),
   payment: entry({ conversion: key, direction: oneOf('received', 'refunded'), amount: number(1e-5, 1e10), 'currency?': currency }),
   call: entry({ direction: oneOf('inbound', 'outbound'), 'from?': phone, to: phone, 'duration?': number(0, 1e7), 'result?': callResult, 'code?': string(1, 64), 'tags?': tags }, providerId),
-  call_update: entry({ call: providerId, change: byField('kind', { result: shape({ kind: any, result: callResult }), returned: shape({ kind: any, reachedAt: at }), not_returned: shape({ kind: any }), party }) }),
+  call_update: entry({ call: providerId, change: byField('kind', { result: shape({ kind: any, result: callResult }), returned: shape({ kind: any, reachedAt: at, 'by?': signer }), not_returned: shape({ kind: any, 'by?': signer }), party }) }),
   text: entry({ direction: oneOf('inbound', 'outbound'), from: phone, to: phone, 'text?': string(0, 20_000), 'code?': string(1, 64), 'tags?': tags }, providerId),
   consent: entry({ subject, consent, 'source?': short }),
   link: entry({ subject, url: text, expires: at, 'purpose?': name }, string(1, 200, /^[^\r\n]+$/)),

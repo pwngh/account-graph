@@ -33,7 +33,7 @@ Send a token in the `authorization` header as `Bearer …`.
 
 | Call | Main service token | Reviewer token | Named service token |
 | --- | --- | --- | --- |
-| `record` | Every entry | A batch consisting entirely of call party statements signed with the reviewer's name | Listed entry types. Party statements require the service's own signature. |
+| `record` | Every entry | A batch made up only of the reviewer's own statements about a call or a lead, each signed with the reviewer's name: who a call was with, that a caller was reached or was not, and that a call or a text is or is not from a lead | Listed entry types. Party statements require the service's own signature, and any other signed statement may carry no other name. |
 | `decide` | Any action and author | Own signature for merge, unmerge, split, unsplit, mute and unmute | Listed actions and own signature |
 | `forget` | Any author | Own signature, including platform retraction | Explicit grant and own signature |
 | `lookup` | Every kind | `journey`, `find` and `party`. An excluded party's subject is hidden. | Listed kinds |
@@ -135,8 +135,8 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 | `refund` | `amount`, `currency?` | How much was given back |
 | `write_off` | `amount`, `currency?` | How much will not be paid |
 | `reverse` | `restatement` | Takes back one earlier refund or write-off, by its key |
-| `not_lead` | `why`: `spam` or `other` | It was nobody's inquiry |
-| `lead` | none | It is a lead after all |
+| `not_lead` | `why`: `spam` or `other`, optional `by` | It was nobody's inquiry |
+| `lead` | optional `by` | It is a lead after all |
 
 A refund and a write-off are amounts, and not what is left. `of.type` is `conversion`, `call` or `text`.
 
@@ -145,11 +145,11 @@ A refund and a write-off are amounts, and not what is left. `of.type` is `conver
 | `kind` | Fields | Meaning |
 | --- | --- | --- |
 | `result` | `result: { answered, voicemail?, waited? }` | How the call went |
-| `returned` | `reachedAt` | Somebody reached the caller then |
-| `not_returned` | none | Nobody did |
+| `returned` | `reachedAt`, optional `by` | Somebody reached the caller then |
+| `not_returned` | optional `by` | Nobody did |
 | `party` | `role`, `by`, optional `seen`, and `subject` for every role except `unknown` | Who was on this call |
 
-`role` is `self`, `representative`, `excluded` or `unknown`. The subject names one of your records. A reviewer can sign only their own name. A later party statement can name a different record or undo identification with `unknown`. Results, returns and parties each have their own newest statement, ordered by time and then key. On a retry, `stands` says whether that statement still stands. A return statement on an outbound call always answers `false`. A statement may precede the call for a record that has never been deleted. For a returning record, first record its new profile and the call. Its start time must be after the most recent deletion. Earlier or missing calls receive `FORGOTTEN`.
+`role` is `self`, `representative`, `excluded` or `unknown`. The subject names one of your records. `by` is who says so, and it is kept with the statement. A reviewer can sign only their own name, and must sign every statement they record. A later party statement can name a different record or undo identification with `unknown`. Results, returns and parties each have their own newest statement, ordered by time and then key. On a retry, `stands` says whether that statement still stands. A return statement on an outbound call always answers `false`. A statement may precede the call for a record that has never been deleted. For a returning record, first record its new profile and the call. Its start time must be after the most recent deletion. Earlier or missing calls receive `FORGOTTEN`.
 
 <!-- schema RecordEntry -->
 ```json

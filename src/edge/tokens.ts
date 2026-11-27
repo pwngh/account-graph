@@ -95,6 +95,19 @@ export async function filterRecord(body: unknown, allow: (entry: RecordEntry) =>
   return { results: entries.map(({ type, key }, i) => screened[i] ? results[index++] : { type, key, ok: false, reason: 'FORBIDDEN' }) }
 }
 
+/**
+ * Who signed an entry that says something about a call or about whether someone is a lead: who a call was with,
+ * that a caller was reached or was not, and that a call or a text is or is not from a lead.
+ * `null` is such an entry with no signature, and `undefined` any other entry.
+ */
+export function statementBy(entry: any): string | null | undefined {
+  const kind = entry?.change?.kind
+  const said = (entry?.type === 'call_update' && (kind === 'party' || kind === 'returned' || kind === 'not_returned'))
+    || (entry?.type === 'restatement' && (kind === 'not_lead' || kind === 'lead') && (entry.of?.type === 'call' || entry.of?.type === 'text'))
+  if (!said) return undefined
+  return typeof entry.change.by === 'string' ? entry.change.by : null
+}
+
 export async function limitedCall(owner: Extract<Owner, { role: 'limited' }>, name: CallName, body: any, dispatch: (input: unknown) => Promise<unknown>) {
   const grant = owner.calls[name]
   if (grant === undefined) throw forbidden()
@@ -103,7 +116,9 @@ export async function limitedCall(owner: Extract<Owner, { role: 'limited' }>, na
   if (name === 'record') {
     return filterRecord(body, entry => {
       if (kinds !== true && !kinds.includes(entry.type)) return undefined
-      if (entry.type === 'call_update' && entry.change.kind === 'party' && entry.change.by !== author) return undefined
+      // A statement signed with another name is not this service's to make. One of the older kinds with no signature is taken as before.
+      const by = statementBy(entry)
+      if (entry.type === 'call_update' && entry.change.kind === 'party' ? by !== author : typeof by === 'string' && by !== author) return undefined
       return entry
     }, dispatch)
   }

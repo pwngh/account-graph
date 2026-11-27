@@ -7,10 +7,10 @@ import type { CallParty, Loss } from '../contract/types.ts'
  */
 export type Said = { about: string; key: string; at: number } & (
   | { topic: 'worth'; data: WorthSaid }
-  | { topic: 'lead'; data: { kind: 'spam' | 'other' | null } }
+  | { topic: 'lead'; data: { kind: 'spam' | 'other' | null; by?: string } }
   | { topic: 'result'; data: { answered: boolean; voicemail?: boolean; waited?: number } }
   | { topic: 'party'; data: CallParty & { by: string } }
-  | { topic: 'return'; data: { reachedAt: number | null } }
+  | { topic: 'return'; data: { reachedAt: number | null; by?: string } }
 )
 export type Topic = Said['topic']
 export type SaidOf<T extends Topic> = Extract<Said, { topic: T }>

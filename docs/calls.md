@@ -398,6 +398,7 @@ curl -q --noproxy 127.0.0.1 -X POST http://127.0.0.1:8080/v1/record -H "@${GRAPH
 | Scope | Closes every missed call of that caller that began before `reachedAt` |
 | Eligibility | Applies to a missed call, from after it began. An answered call that reached them sooner takes precedence. |
 | `not_returned` | Withdraws the report |
+| `by` | Optional. Who says so. A reviewer's token may record a return or its withdrawal signed with the reviewer's own name. |
 | Order | The newest by `at`, then by `key`, stands. It may arrive before the call. |
 | Checks | None. A report is applied as received. |
 

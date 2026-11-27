@@ -89,6 +89,7 @@
 
 ### Calls and texts
 
+- `call_update` with `returned` or `not_returned`, and `restatement` with `not_lead` or `lead`, take an optional `by`, kept with the statement. A reviewer's token may record these for a call or a text when each is signed with the reviewer's own name. A named service token may sign them with its own name or none.
 - A call no longer doubts again every call to its number recorded in the last minute. One already doubted, with nothing on it to take back, is passed over in one read, so a busy line keeps its speed: on PostgreSQL, 20 calls a second answer with a p95 of 767 ms where 244 of 400 timed out.
 - `call` saves a new call once when the search for a visitor leaves it unchanged and skips unused reads of the dial and the channel.
 - `caller` shows both records as possible when staff linked a line to two people they keep apart.
