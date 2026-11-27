@@ -106,4 +106,39 @@ Check(eventPages.SelectMany(page => page["value"]!["events"]!.AsArray().Select(e
 var lostPages = await graph.EventPagesAsync(Json("""{"after":"another-history.1","limit":1}""")).ToListAsync();
 Check(lostPages.Count == 1 && (string?)lostPages[0]["reason"] == "CURSOR_LOST", "a lost cursor is one page");
 
+// The outbox: a lost answer leaves the row pending, and after a restart the same key is sent and found a duplicate.
+var outboxPath = args[2];
+var queuedSale = Json($$"""{"type":"conversion","key":"queued-sale","subject":"contact:7","stage":"sale","value":12,"currency":"USD","at":{{At}}}""");
+using (var queue = new Outbox(outboxPath))
+{
+    queue.Enqueue("order-7", queuedSale);
+    using var once = new Client(lossyUrl, Token, retries: 0);
+    var lostAnswer = await Refused(() => queue.FlushAsync(once));
+    Check(lostAnswer.Code == "TRANSPORT.INDETERMINATE" && lostAnswer.Retryable, "a lost answer is a retryable fault");
+    Check(queue.Rows().Select(row => row.Status).SequenceEqual(new[] { "pending" }), "the row waits after a lost answer");
+}
+using (var queue = new Outbox(outboxPath))
+{
+    using var lossyAgain = new Client(lossyUrl, Token);
+    Check(await queue.FlushAsync(lossyAgain) == 1, "after a restart the row is sent");
+    Check(queue.Rows().Select(row => row.Status).SequenceEqual(new[] { "sent" }), "the row is sent");
+    Check(await queue.FlushAsync(graph) == 0, "nothing is sent twice");
+
+    // A refused row is set aside with its reason. A row of the same record after it still goes, and a row that
+    // depends on it is blocked.
+    var refusedRow = queue.Enqueue("order-8", Json($$"""{"type":"profile","key":"reserved-8","subject":"contact:8","facts":{"identifiers":["review:reserved"]},"at":{{At}}}"""));
+    var after = queue.Enqueue("order-8", Json($$"""{"type":"conversion","key":"sale-8","subject":"contact:8","stage":"sale","at":{{At}}}"""));
+    var blocked = queue.Enqueue("order-9", Json($$"""{"type":"conversion","key":"sale-9","subject":"contact:9","stage":"sale","at":{{At}}}"""), dependsOn: refusedRow);
+    Check(await queue.FlushAsync(graph) == 3, "three rows are settled");
+    var rows = queue.Rows().ToDictionary(row => row.Id);
+    Check(rows[refusedRow].Status == "refused" && rows[refusedRow].Reason == "KIND_RESERVED", "a refused row keeps its reason");
+    Check(rows[after].Status == "sent", "a later row of the same record goes after a refusal");
+    Check(rows[blocked].Status == "blocked", "a row that depends on a refused row is blocked");
+
+    var missing = await Refused(() => Task.FromResult(queue.Enqueue("order-10", Json($$"""{"type":"conversion","key":"sale-10","subject":"contact:10","at":{{At}}}"""))));
+    Check(missing.Code == "INPUT.MALFORMED" && (string)missing.Detail["path"] == "entry.stage", "an entry without a required field is not queued");
+}
+var queuedJourney = (await graph.LookupAsync(Json("""{"kind":"journey","subject":"contact:7"}""")))!;
+Check(queuedJourney["entries"]!.AsArray().Count(entry => (string?)entry!["kind"] == "conversion" && (string?)entry["conversion"] == "queued-sale") == 1, "the queued sale is recorded once");
+
 Console.WriteLine("ok");

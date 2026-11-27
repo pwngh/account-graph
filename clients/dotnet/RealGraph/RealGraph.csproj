@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../AccountGraph/AccountGraph.csproj" />
+    <ProjectReference Include="../AccountGraph.Outbox/AccountGraph.Outbox.csproj" />
   </ItemGroup>
 
 </Project>
