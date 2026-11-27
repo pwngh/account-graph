@@ -53,6 +53,16 @@ export function PageHead({ view, title, children }: { view: ViewName, title: Rea
   return <div className="page-head"><h2 className="page-title"><ViewMark name={view}/>{title}</h2>{children}</div>
 }
 
+/** A share drawn as a bar beside its number. The number says it, and the bar only lets rows be compared. */
+export function Compare({ share, children }: { share: number, children: ReactNode }) {
+  return <span className="compare"><span className="meter" aria-hidden="true"><svg viewBox="0 0 100 8" preserveAspectRatio="none" focusable="false"><rect className="track" x="0" y="2" width="100" height="4"/><rect className="fill" x="0" y="2" width={Math.max(0, Math.min(1, share)) * 100} height="4"/></svg></span><span>{children}</span></span>
+}
+
+/** A list that scrolls inside its own height, so a long one does not push the rest of the page down. */
+export function Scroll({ label, children }: { label: string, children: ReactNode }) {
+  return <div className="scroll" tabIndex={0} role="region" aria-label={label}>{children}</div>
+}
+
 export function Tiles({ items }: { items: ([string, ReactNode, ReactNode?] | false | undefined)[] }) {
   return <dl className="tiles">{items.map(item => item && <div key={item[0]}><dt>{item[0]}</dt><dd><span className="tile-line"><b>{item[1]}</b></span>{item[2] && <span className="reason">{item[2]}</span>}</dd></div>)}</dl>
 }
@@ -90,7 +100,8 @@ export function DecisionScope({ children }: { children: ReactNode }) {
 
 export interface WriteContext { key: string, at: number, seen: number }
 export type Intent = 'join' | 'separate' | 'rejoin' | 'mute' | 'restore' | 'forget'
-export function DecisionForm({ context, intent, subject, other, identifier, targets, label }: { context: WriteContext, intent: Intent, subject: string, other?: string, identifier?: string, targets?: string[], label?: string }) {
+/** A decision, behind the control that opens its form. `look` is how the control is drawn: a button, or a quiet link inside a row. */
+export function DecisionForm({ context, intent, subject, other, identifier, targets, label, look = 'button' }: { context: WriteContext, intent: Intent, subject: string, other?: string, identifier?: string, targets?: string[], label?: string, look?: 'button' | 'link' }) {
   const id = useId()
   const { pathname, search } = useLocation()
   const scope = useContext(decisionKey)
@@ -111,7 +122,7 @@ export function DecisionForm({ context, intent, subject, other, identifier, targ
   }, [fetcher.data, fetcher.state])
   const busy = fetcher.state !== 'idle'
   const button = { join: 'Join', separate: 'Separate', rejoin: 'Remove', mute: 'Ignore', restore: 'Restore', forget: 'Delete data' }[intent]
-  return <details className="decision-form" ref={details} onToggle={event => {
+  return <details className={'decision-form ' + look + (intent === 'forget' ? ' danger' : '')} ref={details} onToggle={event => {
     // A live read may replace the audit head while the reviewer is writing a reason.
     setOpened(event.currentTarget.open ? context : null)
   }}><summary>{label || button}</summary><fetcher.Form method="post" action={pathname + search} preventScrollReset onSubmit={event => {

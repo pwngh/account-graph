@@ -5,7 +5,34 @@
 .segments a[aria-current], .presets a[aria-current] { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgb(0 0 0 / .08) }
 @media (prefers-color-scheme: dark) { .segments a[aria-current], .presets a[aria-current] { background: #3a3a38; box-shadow: 0 1px 2px rgb(0 0 0 / .3) } }
 details > summary { cursor: pointer }
-details form { display: grid; gap: .6rem; margin-block: .75rem }
+/* A decision opens from a button, as on the original screen, and its form is a card beside the button where the browser can place it there. */
+.decision-form { display: inline-block; vertical-align: middle; text-align: left }
+.decision-form > summary { list-style: none; display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border: 1px solid var(--edge); border-radius: 8px; color: var(--ink); font-weight: 500; white-space: nowrap; user-select: none }
+.decision-form > summary::-webkit-details-marker { display: none }
+.decision-form > summary::after { content: none }
+.account-rail .section-head .row { flex-wrap: nowrap; gap: 4px }
+.account-rail .section-head select { width: 6.5rem; height: 28px }
+.account-rail .section-head button { height: 28px; min-height: 0; padding: 0 8px }
+.decision-form > summary:hover, .decision-form[open] > summary { background: var(--raise) }
+.decision-form.danger > summary { color: var(--apart) }
+td .decision-form.button > summary { height: 26px; padding: 0 9px; border-color: transparent; background: var(--raise); font-size: var(--small) }
+td .decision-form.button > summary:hover { background: color-mix(in srgb, var(--ink) 12%, transparent) }
+.decision-form.link > summary { height: auto; margin-left: 4px; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--faint); font-size: var(--small); font-weight: 400; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--edge) }
+.decision-form.link > summary:hover, .decision-form.link[open] > summary { background: none; color: var(--ink) }
+@media (hover: hover) {
+  td .reason .decision-form.link:not([open]) > summary { opacity: 0; transition: opacity .12s }
+  tr:hover .reason .decision-form.link > summary, tr:focus-within .reason .decision-form.link > summary { opacity: 1 }
+}
+.decision-form form { display: grid; gap: .6rem; width: min(340px, calc(100vw - 32px)); margin-block: .5rem; padding: 13px 15px; border: 1px solid var(--edge); border-radius: 11px; background: var(--card); color: var(--ink); box-shadow: 0 14px 40px rgb(0 0 0 / .3); font-size: var(--body); font-weight: 400; white-space: normal }
+.decision-form form p { color: var(--muted); overflow-wrap: anywhere }
+@supports (anchor-scope: all) and (position-area: block-end) {
+  .decision-form { anchor-scope: --decision }
+  .decision-form > summary { anchor-name: --decision }
+  .decision-form[open] > form { position: fixed; z-index: 30; margin: 6px 0; position-anchor: --decision; position-area: block-end span-inline-start; position-try-fallbacks: flip-inline, flip-block, flip-block flip-inline }
+}
+#decisions li > .decision-form { position: absolute; right: 0; top: 7px }
+.graph .keys .joined { --hue: var(--same) } .graph .keys .related { --hue: var(--related) } .graph .keys .apart { --hue: var(--apart) }
+.graph .keys .count { margin-left: 0 }
 summary:focus-visible, a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px }
 #view { min-width: 0; overflow-wrap: anywhere }
 @media (max-width: 600px) {

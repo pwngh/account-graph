@@ -319,6 +319,8 @@ function outlines(nodes, edges) {
 }
 
 
+/** The least room a drawing is given, about the size of its frame on a laptop. */
+const FRAME = { width: 520, height: 392 }
 export function clusterLayout(profile) {
   const others = [...new Set([...profile.separated, ...profile.links.map(link => link.subject), ...profile.cluster.members])].filter(subject => subject !== profile.subject)
   const members = new Set(profile.cluster.members)
@@ -373,10 +375,12 @@ export function clusterLayout(profile) {
     const [p, q] = [points[Math.floor((points.length - 1) / 2)], points[Math.ceil((points.length - 1) / 2)]]
     return { a: line.a, b: line.b, d: path(points), kind: line.kind, score: line.score, x: (p.x + q.x) / 2, y: (p.y + q.y) / 2, label: line.label || Math.round(line.score * 100) + '%' }
   })
-  const left = Math.min(...boxes.map(box => box.x - box.w)) - 28
-  const top = Math.min(...boxes.map(box => box.y - box.h)) - 24
-  const width = Math.max(...boxes.map(box => box.x + box.w)) - left + 28
-  const height = Math.max(...boxes.map(box => box.y + box.h)) - top + 24
+  const tight = { left: Math.min(...boxes.map(box => box.x - box.w)) - 28, top: Math.min(...boxes.map(box => box.y - box.h)) - 24, right: Math.max(...boxes.map(box => box.x + box.w)) + 28, bottom: Math.max(...boxes.map(box => box.y + box.h)) + 24 }
+  // A small group is drawn at its own size in the middle of the frame, not stretched to fill it.
+  const width = Math.max(FRAME.width, tight.right - tight.left)
+  const height = Math.max(FRAME.height, tight.bottom - tight.top)
+  const left = (tight.left + tight.right - width) / 2
+  const top = (tight.top + tight.bottom - height) / 2
   return { viewBox: [left, top, width, height].join(' '), total: others.length, paths, hulls: outlines(nodes, lines).filter(hull => hull.clear).map(hull => path(hull.points) + 'Z'),
     nodes: nodes.map(node => {
       const [, label] = shapes(node)

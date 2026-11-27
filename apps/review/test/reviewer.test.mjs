@@ -331,7 +331,7 @@ test('pasted and linked subjects reopen the same record with their ID preserved'
     for (let read = 0; read < 2; read++) {
       const linked = await fetch(new URL(href, search.url), { headers, redirect: 'manual' })
       assert.equal(linked.status, 200)
-      assert.ok((await linked.text()).split('<script')[0].includes('<h2><bdi>' + id + '</bdi></h2>'), id)
+      assert.ok((await linked.text()).split('<script')[0].includes('<bdi>' + id + '</bdi></h2>'), id)
       assert.equal(requests.findLast(call => call.path === '/review/api/subject').query.get('subject'), id)
     }
   }
@@ -724,7 +724,7 @@ test('Chrome with scripts disabled signs in, posts a native form, follows an acc
     const detail = await node('#detail').catch(() => 0)
     if (!detail) return false
     const { outerHTML } = await cdp('DOM.getOuterHTML', { nodeId: detail })
-    return outerHTML.includes('<h2><bdi>' + other + '</bdi></h2>') && outerHTML.includes('No records') && active.loaderId
+    return outerHTML.includes('<bdi>' + other + '</bdi></h2>') && outerHTML.includes('No records') && active.loaderId
   }
   const followed = await until('the linked account without scripts', linkedAccount)
   await cdp('Page.reload')
