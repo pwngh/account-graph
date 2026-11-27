@@ -18,10 +18,6 @@ export function remaining(request: Request, view: string) {
       const sides = await Promise.all([pair.a, pair.b].map(async subject => sideOf(subject, await reviewGet(request, session, 'subject', {subject}))))
       return {...base, queue, context, at, sides, effect: await effectOf(session.token, pair)}
     }
-    if (view === 'channels') {
-      const {rows} = await reviewGet(request, session, 'report')
-      return {...base, rows: rows.map((r: Record<string,unknown>) => ({source:r.source, name:r.campaign || r.campaignId, visits:r.visits, cost:r.cost, value:r.value, outcomes:r.outcomes}))}
-    }
     throw new Response('Unknown view', {status: 404})
   })
 }

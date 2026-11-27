@@ -11,7 +11,8 @@ export default [
   route('details/:report/:which?', 'routes/detail.tsx'),
   route('card/:report/:which?', 'routes/card.ts'),
   route('health', 'routes/reports.tsx', {id: 'health'}),
-  ...['decide', 'channels'].map(name => route(name, 'routes/remaining.tsx', {id: name})),
+  route('decide', 'routes/remaining.tsx', {id: 'decide'}),
+  route('channels', 'routes/channels.tsx', {id: 'channels'}), route('channels/csv', 'routes/channels-csv.ts'),
   route('guide/:section', 'routes/guide.tsx'),
   route('events', 'routes/events.ts'),
 ] satisfies RouteConfig

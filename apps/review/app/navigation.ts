@@ -42,7 +42,11 @@ export function oldBookmark(hash: string, pathname: string, legacy?: string) {
     return view === 'journey' && last ? path + '#call-' + encodeURIComponent(encodeURIComponent(last)) : path
   }
   if (view === 'calls' && first && last && [first, last].every(day => /^\d{4}-\d{2}-\d{2}$/.test(day))) return '/calls?' + new URLSearchParams({from: first, to: last})
-  if (view === 'channels' && parts.length && legacy) return legacy + '#/channels/' + parts.map(encodeURIComponent).join('/')
+  if (view === 'channels' && first && last && [first, last].every(day => /^\d{4}-\d{2}-\d{2}$/.test(day))) {
+    // The original screen kept the breakdown, the step of Call outcomes, its days and the step a cost is per, in that order.
+    const [, , by, step, days, per] = parts
+    return '/channels?' + new URLSearchParams({from: first, to: last, ...(by && {by}), ...(step && {step}), ...(step && days && {days}), ...(per && {per})})
+  }
   if (view === 'board') return '/board/' + (first && /^\d+$/.test(first) ? first : '90')
   if (view && ['decide', 'calls', 'channels', 'health'].includes(view)) return '/' + view
 }

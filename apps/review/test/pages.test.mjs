@@ -87,3 +87,44 @@ test('Health has what runs and what needs someone: the tiles, a card for each fe
   const guest = await fetch(firm.graph + '/health', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ intent: 'retry', transactionId: 'x', target: 'google' }), redirect: 'manual' })
   assert.ok([302, 303].includes(guest.status) && /signin/.test(guest.headers.get('location')), 'a retry without a session goes to sign-in')
 })
+
+test('Channels has what each campaign cost and brought in, ranked and in a table that agrees with the report, and gives the same as a CSV file', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const get = async path => (await (await fetch(firm.graph + path, { headers: { cookie } })).text()).split('</main>')[0].replaceAll('<!-- -->', '')
+  const report = await (await fetch(firm.graph + '/review/api/report', { headers: { authorization: 'Bearer demo' } })).json()
+  const usd = n => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
+  const html = await get('/channels')
+  assert.deepEqual([...html.matchAll(/<dt>([^<]+)<\/dt>/g)].map(([, name]) => name).slice(0, 5), ['Spend', 'Value', 'People', 'Cost per outcome', 'ROAS'])
+  assert.ok(html.includes('<b>' + usd(report.total.cost) + '</b>'), 'the spend of the report')
+  assert.ok(html.includes('<b>' + usd(report.total.value) + '</b>'), 'the value of the report')
+  // Each campaign has a line with its own spend, people and value, and the total is the report's.
+  const priced = report.rows.filter(row => row.source !== '(none)')
+  assert.ok(priced.length > 1, 'campaigns in the seeded firm')
+  for (const row of priced) assert.match(html, new RegExp('<span class="ranked-what" title="' + row.campaign.replace(/[|]/g, '\\|') + '">.*?</span>.*?<td class="num edge">' + usd(row.cost).replace('$', '\\$')), row.campaign)
+  assert.match(html, new RegExp('<tr class="sum"><td>Total</td>.*?<td class="num edge">' + usd(report.total.cost).replace('$', '\\$')))
+  // The comparison ranks by value first, and by another measure when the address asks.
+  const ranked = page => [...page.split('<ol class="ranked">')[1].split('</ol>')[0].matchAll(/<span class="ranked-what">([^<]+)<\/span>/g)].map(([, name]) => name.replaceAll('&amp;', '&'))
+  assert.deepEqual(ranked(html), [...priced].sort((x, y) => y.value - x.value).filter(row => row.value > 0).map(row => row.campaign))
+  assert.deepEqual(ranked(await get('/channels?rank=Visits')), [...priced].sort((x, y) => y.visits - x.visits).filter(row => row.visits > 0).map(row => row.campaign))
+  // A breakdown adds lines under a campaign and leaves its own numbers whole.
+  const by = report.dimensions.find(name => name.startsWith('outcome.'))
+  const split = await get('/channels?by=' + encodeURIComponent(by))
+  assert.match(split, /<tr class="part"><td><\/td><td class="who">/)
+  assert.ok(split.includes('<td class="num edge">' + usd(report.total.cost)), 'the total with a breakdown')
+  // What followed calls is asked for once a step is chosen.
+  assert.doesNotMatch(html, /within \d+ days of the call/)
+  assert.match(await get('/channels?step=' + report.steps[0] + '&days=14'), new RegExp(report.steps[0] + ' within 14 days of the call'))
+  // The file has one line a campaign and the total, and a cell a spreadsheet would run is given as text.
+  const file = await fetch(firm.graph + '/channels/csv', { headers: { cookie } })
+  assert.equal(file.headers.get('content-type'), 'text/csv; charset=utf-8')
+  assert.equal(file.headers.get('content-disposition'), `attachment; filename="channels-${report.from}-${report.to}.csv"`)
+  const lines = (await file.text()).trimEnd().split('\r\n')
+  assert.equal(lines.length, report.rows.length + 2)
+  assert.match(lines[0], /^Source,Campaign,Campaign ID,Spend,Clicks,Visits,.*People,Missed calls,Value,Cost per outcome,ROAS,Days without cost data$/)
+  assert.ok(lines.at(-1).startsWith('Total,,,' + report.total.cost + ',' + report.total.clicks + ',' + report.total.visits + ','), lines.at(-1))
+  const guest = await fetch(firm.graph + '/channels/csv', { redirect: 'manual' })
+  assert.ok([302, 303].includes(guest.status) && /signin/.test(guest.headers.get('location')), 'the file is for a signed-in reviewer')
+})

@@ -6,6 +6,7 @@ import { changeStage, loadStage } from '../stage.server'
 import Accounts from '../views/accounts'
 import { Report } from '../views/reports'
 import { Remaining } from './remaining'
+import { Channels } from '../views/channels'
 import { Answer, type ActionResult } from '../views/shared'
 
 export const links = () => [{rel: 'stylesheet', href: stageStyle}]
@@ -132,7 +133,7 @@ export default function StagePage() {
     </section>
     {(card || desk) && <aside id="stage-desk" className="on"><strong>{card?.title || desk?.name}</strong><Fields rows={card?.fields || desk?.fields || []}/>{desk?.done} {state.told.checked && <small>{state.told.checked} POST /match</small>} {card?.path}</aside>}
     <div id="stage-view" key={state.boot + state.next}>{currentView && viewError && <p role="alert">{viewError} <a href="/stage">Retry view</a></p>}{currentView && content &&
-      ('accounts' in content ? <Accounts data={content.accounts!}/> : 'report' in content ? <Report data={content.report!} openCard={scene?.open}/> : <Remaining model={content.other!}/>)}</div>
+      ('accounts' in content ? <Accounts data={content.accounts!}/> : 'report' in content ? <Report data={content.report!} openCard={scene?.open}/> : 'channels' in content ? <Channels model={content.channels!}/> : <Remaining model={content.other!}/>)}</div>
     {state.told.credit && <section className="stage-credit">Ad credit of contact:ines-vega <b>{Math.round(100 * state.told.credit.share)}%</b>{state.told.credit.campaign ? 'Credited to ' + state.told.credit.campaign : 'Not credited. It takes 90%.'}</section>}
     <div id="stage" role="group" aria-label="Demo scenes" className={hidden ? 'away' : undefined} data-at={state.next} data-ms={state.ms} data-ready={state.ready} data-running={busy}>
       <span className="where">{state.next} of {state.scenes.length}</span><b>{scene?.title ?? 'Scenes'}</b><span className="told" role="status">{status || state.error || (state.running && state.ready ? 'Running ' + (state.scenes[state.next]?.title || 'scene') + '…' : state.ready ? state.told.lines.join(' ') : state.progress)}</span>

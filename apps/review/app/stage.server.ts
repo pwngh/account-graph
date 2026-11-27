@@ -5,6 +5,7 @@ import { checkOrigin, current, requireReviewer, openSession, reviewGet } from '.
 import { loadAccounts, changeAccounts } from './account.server'
 import { loadReport } from './reports.server'
 import { remaining } from './remaining.server'
+import { loadChannels } from './channels.server'
 
 export function stage() {
   const demo = runtime().stage
@@ -31,6 +32,7 @@ export async function loadStage(request: Request) {
     try {
       if (view === 'accounts') content = {accounts: await loadAccounts(request, which)}
       else if (view === 'board' || view === 'journey' || view === 'calls' || view === 'health') content = {report: await loadReport(request, view, which)}
+      else if (view === 'channels') content = {channels: await loadChannels(request)}
       else content = {other: await remaining(request, view)}
     } catch (error) {
       if (error instanceof Response && error.status < 400) throw error

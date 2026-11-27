@@ -7,14 +7,15 @@ test('old bookmarks keep subjects, call anchors, date ranges and original channe
   assert.equal(convert('#/accounts/contact%3Aone%2Ftwo'), '/accounts/contact%3Aone%2Ftwo')
   assert.equal(convert('#/journey/contact%3Aone/a%2Fb'), '/journey/contact%3Aone#call-a%252Fb')
   assert.equal(convert('#/calls/2026-10-01/2026-10-31'), '/calls?from=2026-10-01&to=2026-10-31')
-  assert.equal(convert('#/channels/2026-10-01/2026-10-31/campaign/signed/30/weekly'), '/legacy#/channels/2026-10-01/2026-10-31/campaign/signed/30/weekly')
+  assert.equal(convert('#/channels/2026-10-01/2026-10-31/touch.language/signed/30/client'), '/channels?from=2026-10-01&to=2026-10-31&by=touch.language&step=signed&days=30&per=client')
+  assert.equal(convert('#/channels/2026-10-01/2026-10-31'), '/channels?from=2026-10-01&to=2026-10-31')
   assert.equal(convert('#/board'), '/board/90')
   assert.equal(convert('#!channels'), '/channels')
   assert.equal(convert('#contact:one/two'), '/accounts/contact%3Aone%2Ftwo')
   assert.equal(convert('#view'), undefined)
   assert.equal(oldBookmark('#call-a', '/journey/contact:one', '/legacy'), undefined)
-  // Without an address for the original screen, a filtered Channels bookmark opens Channels here.
-  assert.equal(oldBookmark('#/channels/2026-10-01/2026-10-31/campaign', '/review'), '/channels')
+  // A Channels bookmark keeps its days and its breakdown here, with or without an address for the original screen.
+  assert.equal(oldBookmark('#/channels/2026-10-01/2026-10-31/hour', '/review'), '/channels?from=2026-10-01&to=2026-10-31&by=hour')
 })
 
 test('live changes refresh the visible report, its details and journeys of related subjects', () => {
