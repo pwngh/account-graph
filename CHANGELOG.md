@@ -141,6 +141,8 @@
 
 ### Edge and operations
 
+- Breaking: `IDENTIFIER_SECRET` is required to start, and `identifierSecret` is required with `databaseUrl`. A memory graph given none makes its own.
+- A `profile` name is never noted `not used: IDENTIFIER_SECRET is not set`. `compose.yaml` carries a `change-me` placeholder for the secret.
 - `npm run bench -- load RATE SECONDS` sends one call to a request at a set rate and gives the median, p95 and p99 time to answer and the reasons for refusals.
 - `npm run bench -- import COUNT` records that many inbound calls through `record` in batches of 100 and gives the rate of each quarter of the run, on memory and, with `DATABASE_URL`, on PostgreSQL.
 - The memory store undoes a failed write from a journal of the entries it used, instead of a copy of the whole store made before each write. A history import keeps its rate as the history grows.

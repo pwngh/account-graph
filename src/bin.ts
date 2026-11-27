@@ -11,7 +11,7 @@
  *   account-graph sends [pause REASON | resume]   stop sends to ad platforms in every process, or let them go again
  *   account-graph sample-joins [--size N] [--seed TEXT] > joins.csv, then score-joins joins.csv once staff have checked it
  *
- *   DATABASE_URL=postgres://… RECEIPT_SECRETS=… GRAPH_TOKEN=… ORIGINS=https://example.org npm start
+ *   DATABASE_URL=postgres://… RECEIPT_SECRETS=… IDENTIFIER_SECRET=… GRAPH_TOKEN=… ORIGINS=https://example.org npm start
  *
  * docs/operations.md lists every variable.
  */
@@ -182,7 +182,7 @@ export function readEnvironment(env: Env) {
     pauseAfterFailures: number('PAUSE_AFTER_FAILURES', 0),
     forgetAds: env.FORGET_ADS === 'true',
     linkSecret: env.LINK_SECRET || undefined,
-    identifierSecret: env.IDENTIFIER_SECRET || undefined,
+    identifierSecret: need('IDENTIFIER_SECRET'),
     alertWebhook: env.ALERT_WEBHOOK || undefined,
     auditHours: number('AUDIT_HEAD_HOURS', 0),
     quiet: { touches: number('QUIET_TOUCHES_HOURS', 0), calls: number('QUIET_CALLS_HOURS', 0), results: number('QUIET_RESULTS_HOURS', 0), costs: number('QUIET_COSTS_HOURS', 0) },
@@ -312,14 +312,14 @@ export function readEnvironment(env: Env) {
     for (const problem of ladderProblems(config.stages, targets)) wrong.push(`STAGES: ${problem}`)
   }
     if (config.linkSecret !== undefined && config.linkSecret.length < 32) wrong.push('LINK_SECRET must be at least 32 characters')
-  if (config.identifierSecret !== undefined && config.identifierSecret.length < 32) wrong.push('IDENTIFIER_SECRET must be at least 32 characters')
+  if (config.identifierSecret && config.identifierSecret.length < 32) wrong.push('IDENTIFIER_SECRET must be at least 32 characters')
   if (config.token && !config.token.trim()) wrong.push('GRAPH_TOKEN requires a nonempty token')
   for (const problem of reviewerProblems(config.reviewers, config.token)) wrong.push(`REVIEW_TOKENS: ${problem}`)
   for (const problem of serviceTokenProblems(config.serviceTokens, config.reviewers, config.token)) wrong.push(`SERVICE_TOKENS: ${problem}`)
   for (const problem of edgeLeadProblems(config, secretSettings(env))) wrong.push(`LEADS: ${problem}`)
   // The secrets in compose.yaml are in the repository for anyone to read, so they are only for trying it out.
   const far = config.origins.find((origin) => !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[^/]+\.localhost)(:\d+)?$/.test(origin))
-  const secrets = { SERVICE_TOKENS: (config.serviceTokens ?? []).map(entry => entry?.token), GRAPH_TOKEN: [config.token], REVIEW_TOKENS: Object.values(config.reviewers ?? {}).flat(), LINK_SECRET: [config.linkSecret], RECEIPT_SECRETS: config.receiptSecrets }
+  const secrets = { SERVICE_TOKENS: (config.serviceTokens ?? []).map(entry => entry?.token), GRAPH_TOKEN: [config.token], REVIEW_TOKENS: Object.values(config.reviewers ?? {}).flat(), LINK_SECRET: [config.linkSecret], IDENTIFIER_SECRET: [config.identifierSecret], RECEIPT_SECRETS: config.receiptSecrets }
   if (far) for (const [name, held] of Object.entries(secrets)) if (held.some((each) => String(each).startsWith('change-me'))) wrong.push(`${name} must be changed before taking visits from ${far}`)
   if (config.auditHours > 0 && !config.alertWebhook) wrong.push('ALERT_WEBHOOK is required with AUDIT_HEAD_HOURS')
   if (wrong.length > 0) throw new Error(`Cannot start:\n  ${wrong.join('\n  ')}`)
@@ -357,7 +357,7 @@ export function configFrom(env: Env): { graph: LocalOptions; edge: EdgeOptions; 
     ...(config.leads && { leads: config.leads }),
     timeZone: config.timeZone,
     ...(config.policy !== undefined && { policy: { ...(config.policy as object), kinds: own(true), customKinds: own(false) } as NonNullable<LocalOptions['policy']> }),
-    ...(config.identifierSecret && { identifierSecret: config.identifierSecret }),
+    identifierSecret: config.identifierSecret,
     ...(config.linkSecret && { linkSecret: config.linkSecret }),
     ...(config.openHours && { openHours: config.openHours as NonNullable<LocalOptions['openHours']> }),
     ...(stages && { stages }),

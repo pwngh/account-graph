@@ -217,7 +217,7 @@ async function graphsFor(label: string) {
       await pool.query(`drop schema if exists ${schema} cascade`)
       await pool.end()
     }
-    stores.push(['postgres', () => accountGraph({ databaseUrl: process.env.DATABASE_URL!, schema, receiptSecrets: ['bench-receipts-'.padEnd(32, 'x')], workers: false }), drop])
+    stores.push(['postgres', () => accountGraph({ databaseUrl: process.env.DATABASE_URL!, schema, receiptSecrets: ['bench-receipts-'.padEnd(32, 'x')], identifierSecret: 'bench-names-'.padEnd(32, 'x'), workers: false }), drop])
   }
   return stores
 }

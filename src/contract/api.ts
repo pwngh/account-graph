@@ -530,12 +530,16 @@ export interface InPostgres {
   readonly workers: boolean
   /** Keys the receipts. The first signs and all are tried. At least 32 characters each. One that rows still name may not be dropped. */
   readonly receiptSecrets: readonly [string, ...string[]]
+  /** Keys the hashes of names and dates of birth. At least 32 characters. Keep it as long as the database, because another secret matches none of the hashes already kept. */
+  readonly identifierSecret: string
   readonly memory?: never
   readonly url?: never
 }
 export interface InMemory {
   readonly memory: true
   readonly workers?: boolean
+  /** Left out, a memory graph makes one for its own life. */
+  readonly identifierSecret?: string
   readonly databaseUrl?: never
   readonly url?: never
 }
@@ -544,7 +548,6 @@ export interface LocalSettings extends Common {
   readonly leads?: LeadSources
   /** Left out, the policy the database was built with. One that differs throws CONFIG.MISMATCH until `account-graph rebuild`. */
   readonly policy?: PolicyOptions
-  readonly identifierSecret?: string
   readonly linkSecret?: string
   readonly timeZone?: string
   readonly openHours?: OpenHours

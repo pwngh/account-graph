@@ -202,7 +202,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
 
     test('corrected results take back and give back a confirmed call that already reached a platform', async () => {
       const { graph, outbox, remote, clock } = await fresh()
-      const options = createService(graph, { outbox, now: () => clock.now, stages: { call: { value: 12, action: '111' } } }).calling()
+      const options = createService(graph, { outbox, identifierSecret: 'i'.repeat(32), now: () => clock.now, stages: { call: { value: 12, action: '111' } } }).calling()
       await recordCall(graph, { id: 'result', at: T0, from: '+12025550127', to: '+12025550129', answered: true }, options)
       assert.equal((await outbox.run()).sent, 1)
       await graph.sayParty({ call: 'result', key: 'desk', at: T0 + 1, party: { role: 'representative', subject: 'contact:a', by: 'desk' } })

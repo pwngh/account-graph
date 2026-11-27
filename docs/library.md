@@ -54,7 +54,8 @@ A server has the settings as [environment variables](operations.md#environment-v
 | `receiptSecrets` | required on PostgreSQL | `RECEIPT_SECRETS` | Keys the [receipts](operations.md#receipts). 32 characters or more each. The first signs and all are tried. |
 | `schema` | PostgreSQL | `GRAPH_SCHEMA` | The database schema. `account_graph` when left out. |
 | `policy` | a local graph | `POLICY` | What differs from the default [policy](#policy) |
-| `identifierSecret`, `linkSecret` | a local graph | `IDENTIFIER_SECRET`, `LINK_SECRET` | 32 characters or more each |
+| `identifierSecret` | required on PostgreSQL | `IDENTIFIER_SECRET` | Keys the hashes of [names](identify.md#names) and dates of birth. 32 characters or more. A memory graph given none makes its own. |
+| `linkSecret` | a local graph | `LINK_SECRET` | 32 characters or more |
 | `stages` | a local graph | `STAGES` | Your [steps](report.md#steps) |
 | `leads` | a local graph | `LEADS`, `LEADS_FILE` | Sources whose webhooks the edge accepts, keyed by the name in the URL. See [Mappings and example posts](leads.md). |
 | `openHours`, `timeZone` | a local graph | `OPEN_HOURS`, `REPORT_TIME_ZONE` | When you are open, and the zone |

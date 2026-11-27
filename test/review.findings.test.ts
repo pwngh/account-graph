@@ -30,7 +30,7 @@ const KINDS: Record<string, (more?: object) => Promise<{ graph: AccountGraph; cl
   ...(url && {
     postgres: async (more = {}) => {
       const schema = `ag_found_${process.pid}_${count++}`
-      const graph = accountGraph({ databaseUrl: url, schema, workers: false, receiptSecrets: [SECRET], now: () => NOW, ...more } as LocalOptions)
+      const graph = accountGraph({ databaseUrl: url, schema, workers: false, receiptSecrets: [SECRET], identifierSecret: SECRET, now: () => NOW, ...more } as LocalOptions)
       return { graph, close: async () => { await graph.close(); await pool!.query(`drop schema if exists ${schema} cascade`) } }
     },
   }),
@@ -429,7 +429,7 @@ if (url) {
     through.port = String((proxy.address() as AddressInfo).port)
     through.hostname = '127.0.0.1'
     // Room for a first write while other suites run, because what is tested is that a silent connection costs one call, not how fast.
-    const graph = accountGraph({ databaseUrl: through.href, schema, workers: false, receiptSecrets: [SECRET], timeoutMs: 2000 })
+    const graph = accountGraph({ databaseUrl: through.href, schema, workers: false, receiptSecrets: [SECRET], identifierSecret: 'i'.repeat(32), timeoutMs: 2000 })
     try {
       assert.ok((await one(graph, conversion())).ok)
       for (const pair of open) pair.dead = true

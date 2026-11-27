@@ -51,7 +51,8 @@ class Refusal extends Error {
 
 export function createHandler(graph: Graph, options: HandlerOptions) {
   const now = options.now ?? Date.now
-  const service = createService(graph, { ...options, now })
+  // The server always has an identifier secret. A handler made for a test that gives none gets a fixed one.
+  const service = createService(graph, { ...options, identifierSecret: options.identifierSecret ?? 'test-identifier-secret-of-32-chars!', now })
   const { convert, calling, textOptions, identify, factsIn, named } = service
   const pool = service.pool
   const core: Core = {

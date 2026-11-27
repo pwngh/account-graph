@@ -19,7 +19,7 @@ To use another port, run `GRAPH_PORT=8090 docker compose up --build` and `GRAPH_
 
 ## Install
 
-For a pilot, the owner configures a private database, sets `ORIGINS`, and generates independent secrets for `GRAPH_TOKEN`, `REVIEW_TOKENS`, `LINK_SECRET` and `RECEIPT_SECRETS`. The backend uses the same `GRAPH_TOKEN`. One way to start the server with an existing PostgreSQL database is to put these settings and `DATABASE_URL` in a mode-0600 file outside the checkout, under a service account. Set `GRAPH_ENV_FILE` to its path in that account's private launcher.
+For a pilot, the owner configures a private database, sets `ORIGINS`, and generates independent secrets for `GRAPH_TOKEN`, `REVIEW_TOKENS`, `LINK_SECRET`, `IDENTIFIER_SECRET` and `RECEIPT_SECRETS`. The backend uses the same `GRAPH_TOKEN`. One way to start the server with an existing PostgreSQL database is to put these settings and `DATABASE_URL` in a mode-0600 file outside the checkout, under a service account. Set `GRAPH_ENV_FILE` to its path in that account's private launcher.
 
 ```sh
 node --env-file="${GRAPH_ENV_FILE:?}" src/bin.ts

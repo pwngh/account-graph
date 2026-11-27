@@ -8,7 +8,7 @@ import { createAddressVerifier } from '../src/providers/smarty.ts'
 import { createLineTypeLookup, twilioText } from '../src/providers/twilio.ts'
 
 test('Smarty sends the selected license as one query value only when configured', async () => {
-  const env = { DATABASE_URL: 'postgres://127.0.0.1/test', GRAPH_TOKEN: 'test', RECEIPT_SECRETS: 'a'.repeat(32), SMARTY_AUTH_ID: 'test', SMARTY_AUTH_TOKEN: 'test' }
+  const env = { DATABASE_URL: 'postgres://127.0.0.1/test', GRAPH_TOKEN: 'test', IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'a'.repeat(32), SMARTY_AUTH_ID: 'test', SMARTY_AUTH_TOKEN: 'test' }
   for (const license of [undefined, 'test & other=1']) {
     const smarty = readEnvironment({ ...env, SMARTY_LICENSE: license }).smarty
     assert.ok(smarty)
@@ -67,7 +67,7 @@ test('an outbound MessageStatus callback is never an incoming text', () => {
 })
 
 test('MaxMind accepts its sandbox and refuses an unknown host or service before a request', async () => {
-  const env = { DATABASE_URL: 'postgres://127.0.0.1/test', GRAPH_TOKEN: 'test', RECEIPT_SECRETS: 'a'.repeat(32), MAXMIND_ACCOUNT_ID: '1', MAXMIND_LICENSE_KEY: 'test' }
+  const env = { DATABASE_URL: 'postgres://127.0.0.1/test', GRAPH_TOKEN: 'test', IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'a'.repeat(32), MAXMIND_ACCOUNT_ID: '1', MAXMIND_LICENSE_KEY: 'test' }
   const options = readEnvironment({ ...env, MAXMIND_HOST: 'sandbox.maxmind.com' }).maxmind!
   const fetcher: typeof fetch = async (input, init) => {
     assert.equal(String(input), 'https://sandbox.maxmind.com/geoip/v2.1/insights/192.0.2.1')

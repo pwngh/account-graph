@@ -783,7 +783,7 @@ test('what a platform says it brought is read only when it is asked for', async 
   assert.equal('conversions' in (await metaCosts(ads)('2026-03-01', '2026-03-01'))[0]!, false)
   assert.deepEqual(meta.calls.map((call) => new URL(call.url).searchParams.get('fields')!.endsWith(',account_currency,actions,action_values')), [true, false])
 
-  const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', GOOGLE_ADS_DEVELOPER_TOKEN: 'd', GOOGLE_ADS_CUSTOMER_ID: '1', GOOGLE_SERVICE_ACCOUNT_FILE: 'f', META_AD_ACCOUNT_ID: '2', META_ADS_TOKEN: 't' }
+  const env = { DATABASE_URL: 'x', IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', GOOGLE_ADS_DEVELOPER_TOKEN: 'd', GOOGLE_ADS_CUSTOMER_ID: '1', GOOGLE_SERVICE_ACCOUNT_FILE: 'f', META_AD_ACCOUNT_ID: '2', META_ADS_TOKEN: 't' }
   assert.deepEqual([configFrom(env).googleCosts!.conversions, configFrom(env).metaCosts!.conversions], [false, undefined])
   const asked = configFrom({ ...env, GOOGLE_ADS_CONVERSIONS: 'true', META_ADS_CONVERSIONS: 'lead' })
   assert.deepEqual([asked.googleCosts!.conversions, asked.metaCosts!.conversions], [true, 'lead'])
@@ -1643,9 +1643,8 @@ test('a name sent to /identify confirms, where a secret and a policy for it are 
   assert.deepEqual((await identify({ subject: 'contact:5', email: 'eva@example.org', name: { first: 'Eva', last: 'Reis' }, address: { street: 'nowhere' } })).notes.name, 'not used: a placeholder, or neither a confirmed address nor a date of birth')
   assert.equal((await identify({ subject: 'contact:6', email: 'x@example.org', name: { first: 'Unknown', last: 'Unknown' }, dob: '1990-02-03' })).notes.name, 'not used: a placeholder, or neither a confirmed address nor a date of birth')
   for (const bad of [{ name: 'Ana Lima' }, { name: { first: 'Ana' } }, { name: { first: 'Ana', last: 'Lima' }, dob: 19900203 }]) assert.equal((await identify({ subject: 'contact:7', email: 'y@example.org', ...bad })).status, 400, JSON.stringify(bad))
-  // Off without its secret, and where the policy has no such kind: the rest is still recorded.
+  // Off where the policy has no such kind: the rest is still recorded.
   const named = { subject: 'contact:1', email: 'z@example.org', name: { first: 'Ana', last: 'Lima' }, dob: '1990-02-03' }
-  assert.deepEqual((await (await serve(household)).identify(named)).notes, { name: 'not used: IDENTIFIER_SECRET is not set' })
   const plain = await (await serve(undefined, secret)).identify(named)
   assert.deepEqual([plain.kinds, plain.notes], [['email'], { name: 'not used: the policy has no "name" kind that only corroborates' }])
   const loud = await (await serve(policyFrom({ kinds: { name: { weight: 0.95, dilution: 0, cap: 5, halfLife: 'none' } } }), secret)).identify(named)

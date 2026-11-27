@@ -23,7 +23,8 @@ export interface ServiceOptions {
   calls?: CallOptions
   texts?: TextOptions
   pool?: { numbers: readonly string[]; minutes: number; grace: number; requireTapAfterReassignment?: boolean }
-  identifierSecret?: string
+  /** Keys the hashes of names and dates of birth. Always there, so they are always made. */
+  identifierSecret: string
   address?: AddressVerifier
   lineType?: LineTypeLookup
   now: () => number
@@ -119,7 +120,7 @@ export function createService(graph: Graph, options: ServiceOptions) {
 
   /** The keys of these numbers and emails under the name in a body, where the policy uses names. */
   async function named(body: any, contact: readonly Identifier[], kind: 'named' | 'ward' = 'named', sources?: Map<Identifier, Identifier>): Promise<Identifier[]> {
-    if (!options.identifierSecret || typeof body.name?.first !== 'string' || typeof body.name?.last !== 'string') return []
+    if (typeof body.name?.first !== 'string' || typeof body.name?.last !== 'string') return []
     if (!(await graph.policy()).rules.apart?.includes('given')) return []
     const result: Identifier[] = []
     for (const fact of new Set(contact.filter(id => /^(phone|voip|email):/.test(id)).map(id => id.replace(/^voip:/, 'phone:')))) {
@@ -214,8 +215,7 @@ export function createService(graph: Graph, options: ServiceOptions) {
       const { first, last } = body.name ?? {}
       if (typeof first !== 'string' || typeof last !== 'string' || first.length > 200 || last.length > 200) throw malformed('A name requires `first` and `last` as strings')
       if (body.dob !== undefined && typeof body.dob !== 'string') throw malformed('A date of birth is written YYYY-MM-DD')
-      if (!options.identifierSecret) notes.name = 'not used: IDENTIFIER_SECRET is not set'
-      else if (!(await graph.policy()).rules.kinds.name?.corroborates) notes.name = 'not used: the policy has no "name" kind that only corroborates'
+      if (!(await graph.policy()).rules.kinds.name?.corroborates) notes.name = 'not used: the policy has no "name" kind that only corroborates'
       else {
         // The zip code is the one the postal service confirmed, or there is none.
         const keys = nameKeys(options.identifierSecret, first, last, { zip5: zip, dob: body.dob })
@@ -225,14 +225,14 @@ export function createService(graph: Graph, options: ServiceOptions) {
     }
     if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw malformed('`at` must be an integer in epoch milliseconds')
     // Where records have to be confirmed, a full name and a date of birth are somebody.
-    if (options.identifierSecret && typeof body.dob === 'string' && typeof body.name?.first === 'string' && typeof body.name?.last === 'string' && (await graph.policy()).rules.records) identifiers.push(...personKeys(options.identifierSecret, body.name.first, body.name.last, body.dob))
+    if (typeof body.dob === 'string' && typeof body.name?.first === 'string' && typeof body.name?.last === 'string' && (await graph.policy()).rules.records) identifiers.push(...personKeys(options.identifierSecret, body.name.first, body.name.last, body.dob))
     // Kept only under a policy that keeps people apart by them. They say who somebody is not, and not who they are, so by themselves they find nobody.
-    const apart = options.identifierSecret && (typeof body.dob === 'string' || typeof body.name?.first === 'string') ? ((await graph.policy()).rules.apart ?? []) : []
-    const born = apart.length > 0 && typeof body.dob === 'string' ? birthKeys(options.identifierSecret!, body.dob) : []
+    const apart = typeof body.dob === 'string' || typeof body.name?.first === 'string' ? ((await graph.policy()).rules.apart ?? []) : []
+    const born = apart.length > 0 && typeof body.dob === 'string' ? birthKeys(options.identifierSecret, body.dob) : []
     const placeholder = apart.length > 0 && typeof body.name?.first === 'string' && typeof body.name.last === 'string' && !nameParts(body.name.first, body.name.last)
     const missing = placeholder && nameParts(body.name.first, body.name.last, true) ? '~missing' : '~placeholder'
     // A placeholder's date can contradict another date but cannot by itself confirm a second placeholder.
-    const facts = [...born.map((id) => placeholder && id.startsWith('birth:') ? id + missing : id), ...(apart.includes('given') && typeof body.name?.first === 'string' ? givenKeys(options.identifierSecret!, body.name.first, placeholder ? body.subject ?? '' : undefined) : []),
+    const facts = [...born.map((id) => placeholder && id.startsWith('birth:') ? id + missing : id), ...(apart.includes('given') && typeof body.name?.first === 'string' ? givenKeys(options.identifierSecret, body.name.first, placeholder ? body.subject ?? '' : undefined) : []),
       // Whether a name has several words is kept only where it can tell two records apart, and says no more than that.
       ...((await graph.policy()).rules.records && typeof body.name?.first === 'string' && body.name.first.trim().split(/\s+/).length > 1 ? (['compound:yes'] as Identifier[]) : [])]
     if (identifiers.length === 0 && !(saving && (facts.length > 0 || none)) && notes.phone !== PLACEHOLDER && notes.email === undefined) throw malformed('At least one identifying field is required')

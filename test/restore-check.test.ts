@@ -55,7 +55,7 @@ test('the backup runbook runs both recovery commands on the restored database fr
 test('restores every graph table and the latest audit decision from a PostgreSQL snapshot', { skip: !url ? 'set DATABASE_URL to run the restore rehearsal' : (spawnSync('pg_dump', ['--version']).error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' ? 'pg_dump is missing from PATH' : false }, async () => {
   const schema = 'ag_restore_' + randomBytes(10).toString('hex')
   const original = schema + '_source'
-  const env = { DATABASE_URL: url!, NEW_DATABASE_URL: url!, GRAPH_SCHEMA: schema, RECEIPT_SECRETS: secret, GRAPH_TOKEN: 'fixture', LINK_SECRET: secret, PG_BIN: process.env.PG_BIN }
+  const env = { DATABASE_URL: url!, NEW_DATABASE_URL: url!, GRAPH_SCHEMA: schema, IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: secret, GRAPH_TOKEN: 'fixture', LINK_SECRET: secret, PG_BIN: process.env.PG_BIN }
   const db = new pg.Client({ connectionString: url! })
   const lines: string[] = []
   const log = (line: string) => { lines.push(line) }
@@ -68,7 +68,7 @@ test('restores every graph table and the latest audit decision from a PostgreSQL
     await db.query(`comment on schema ${schema} is '${schema}'`)
     await db.query('commit')
     owned = true
-    const graph = accountGraph({ databaseUrl: url!, schema, receiptSecrets: [secret], linkSecret: secret, workers: false })
+    const graph = accountGraph({ databaseUrl: url!, schema, receiptSecrets: [secret], identifierSecret: 'i'.repeat(32), linkSecret: secret, workers: false })
     try {
       await history(graph)
     } finally {
@@ -124,7 +124,7 @@ test('a pg_restore newer than the target server is refused before anything is du
     }
     const schema = 'ag_restore_newer_' + randomBytes(4).toString('hex')
     const lines: string[] = []
-    await assert.rejects(restoreCheck({ DATABASE_URL: url!, NEW_DATABASE_URL: url!, GRAPH_SCHEMA: schema, RECEIPT_SECRETS: secret, GRAPH_TOKEN: 'fixture', LINK_SECRET: secret, PG_BIN: bin }, (line) => void lines.push(line)), /pg_restore 99 is newer than PostgreSQL \d+ on the target\. Use the version \d+ tools: set PG_BIN/)
+    await assert.rejects(restoreCheck({ DATABASE_URL: url!, NEW_DATABASE_URL: url!, GRAPH_SCHEMA: schema, IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: secret, GRAPH_TOKEN: 'fixture', LINK_SECRET: secret, PG_BIN: bin }, (line) => void lines.push(line)), /pg_restore 99 is newer than PostgreSQL \d+ on the target\. Use the version \d+ tools: set PG_BIN/)
     assert.ok(!lines.some((line) => line.startsWith('pg_dump')), lines.join('\n'))
   } finally {
     await rm(bin, { recursive: true, force: true })

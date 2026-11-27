@@ -99,7 +99,7 @@ test('the server reads ranges from a file, and says what is wrong with it', asyn
   const folder = mkdtempSync(join(tmpdir(), 'ranges-'))
   t.after(() => rmSync(folder, { recursive: true }))
   const file = join(folder, 'ranges.json')
-  const env = { DATABASE_URL: 'postgres://localhost/x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'a-service-token-of-some-length', ORIGINS: 'https://example.org', SERVER_RANGES_FILE: file }
+  const env = { DATABASE_URL: 'postgres://localhost/x', IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'a-service-token-of-some-length', ORIGINS: 'https://example.org', SERVER_RANGES_FILE: file }
   assert.throws(() => configFrom(env), /SERVER_RANGES_FILE: ".*ranges.json" cannot be read/)
   writeFileSync(file, '{}')
   assert.throws(() => configFrom(env), /SERVER_RANGES_FILE: No address range/)

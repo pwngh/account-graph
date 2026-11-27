@@ -3,18 +3,20 @@ import { accountGraph, isFault } from '../src/index.ts'
 import type { AccountGraph, GraphEvent, ReportRequest } from '../src/index.ts'
 export async function calls() {
   const graph: AccountGraph = accountGraph({ url: 'https://graph.example.org', token: 't' })
-  accountGraph({ memory: true }); accountGraph({ databaseUrl: 'x', workers: true, receiptSecrets: ['s'] })
+  accountGraph({ memory: true }); accountGraph({ databaseUrl: 'x', workers: true, receiptSecrets: ['s'], identifierSecret: 'i' })
   accountGraph({ memory: true, policy: { kinds: { phone: { weight: 0.8 } }, customKinds: { badge: { weight: 1, dilution: 0, cap: 2, halfLife: 'none' } } }, openHours: { mon: ['09:00-17:00'], holidays: ['us-tx', '2026-12-24'] } })
   // @ts-expect-error both places
-  accountGraph({ memory: true, databaseUrl: 'x', workers: true, receiptSecrets: ['s'] })
+  accountGraph({ memory: true, databaseUrl: 'x', workers: true, receiptSecrets: ['s'], identifierSecret: 'i' })
   // @ts-expect-error remote and local
   accountGraph({ url: 'x', token: 't', memory: true })
   // @ts-expect-error workers must be said
-  accountGraph({ databaseUrl: 'x', receiptSecrets: ['s'] })
+  accountGraph({ databaseUrl: 'x', receiptSecrets: ['s'], identifierSecret: 'i' })
   // @ts-expect-error receipt secrets must be given
-  accountGraph({ databaseUrl: 'x', workers: true })
+  accountGraph({ databaseUrl: 'x', workers: true, identifierSecret: 'i' })
+  // @ts-expect-error the secret that keys names must be given with a database
+  accountGraph({ databaseUrl: 'x', workers: true, receiptSecrets: ['s'] })
   // @ts-expect-error no secret at all
-  accountGraph({ databaseUrl: 'x', workers: true, receiptSecrets: [] })
+  accountGraph({ databaseUrl: 'x', workers: true, receiptSecrets: [], identifierSecret: 'i' })
   // @ts-expect-error misspelled kind
   accountGraph({ memory: true, policy: { kinds: { phnoe: { weight: 0.8 } } } })
   // @ts-expect-error misspelled field

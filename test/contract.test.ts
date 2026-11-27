@@ -735,13 +735,17 @@ test('options that cannot be are refused at once, and each said', async () => {
   assert.deepEqual([{}, { url: 'nope', token: 't' }, { url: 'ftp://x', token: 't' }, { url: 'https://x', token: '' }, { memory: true, url: 'https://x' }, { databaseUrl: 'x', memory: true }].map((each) => problems(each).length), [1, 1, 1, 1, 1, 1])
   const wrong = problems({ databaseUrl: 'postgres://x', receiptSecrets: ['short'], schema: 'A', identifierSecret: 'x', timeZone: 'Mars/One', policy: { same: 9, kinds: { phnoe: { weight: 1 } } }, openHours: { mon: ['nine'] }, targets: { answered: 90 }, stages: { a: { value: 'x' } }, phones: { exclude: ['x'], tapSeconds: 9999 }, webhook: { url: 'https://x' } })
   assert.equal(wrong.length >= 12, true, wrong.join('\n'))
+  // The secret that keys names is required with a database, and must be text.
+  const database = { databaseUrl: 'postgres://x', workers: false, receiptSecrets: [SECRET] }
+  for (const identifierSecret of [undefined, null, 12345, 'short']) assert.equal(problems({ ...database, identifierSecret }).some((line) => line.includes('identifierSecret')), true, String(identifierSecret))
+  assert.deepEqual(problems({ memory: true, identifierSecret: 7 }).length, 1)
   assert.throws(() => remoteOnly({ memory: true }), (error) => hasCode(error, FAULT_CODES.CONFIG.UNSUPPORTED))
   const remote = accountGraph({ url: 'https://g.example', token: 't' })
   assert.throws(() => createEdge(remote, { token: 't' }), (error) => hasCode(error, FAULT_CODES.CONFIG.UNSUPPORTED))
   await assert.rejects(runWorkers(remote), (error) => hasCode(error, FAULT_CODES.CONFIG.UNSUPPORTED))
   const unavailable = createServer().on('connection', socket => socket.destroy()).listen(0, '127.0.0.1')
   await new Promise(resolve => unavailable.once('listening', resolve))
-  const down = accountGraph({ databaseUrl: `postgres://nobody@127.0.0.1:${(unavailable.address() as AddressInfo).port}/x`, workers: false, receiptSecrets: [SECRET], timeoutMs: 2000 })
+  const down = accountGraph({ databaseUrl: `postgres://nobody@127.0.0.1:${(unavailable.address() as AddressInfo).port}/x`, workers: false, receiptSecrets: [SECRET], identifierSecret: 'i'.repeat(32), timeoutMs: 2000 })
   try {
     assert.deepEqual(await codeOf(down.lookup({ kind: 'find', text: 'x' })), { code: FAULT_CODES.GRAPH.UNAVAILABLE, retryable: true })
   } finally {

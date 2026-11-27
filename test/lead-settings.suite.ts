@@ -57,13 +57,13 @@ export function leadSettings(graph: AccountGraph) {
     fails(() => createEdge(holding, { ...options, leads: { intake: { ...source, secret: graphSecret } } }))
     void holding.close()
   }
-  fails(() => accountGraph({ databaseUrl: 'postgres://unused@127.0.0.1:1/unused', workers: false, receiptSecrets: [graphSecret], leads: { intake: { ...source, secret: graphSecret } } }))
+  fails(() => accountGraph({ databaseUrl: 'postgres://unused@127.0.0.1:1/unused', workers: false, receiptSecrets: [graphSecret], identifierSecret: 'i'.repeat(32), leads: { intake: { ...source, secret: graphSecret } } }))
   fails(() => createEdge(graph, { ...options, twilio: { authToken: graphSecret, calls: 'https://graph.example.org/calls/twilio' }, leads: { intake: { ...source, secret: graphSecret } } }))
   fails(() => createEdge(graph, { ...options, fingerprint: { secretKey: graphSecret }, leads: { intake: { ...source, secret: graphSecret } } }))
   fails(() => accountGraph({ memory: true, webhook: { url: 'https://hooks.example.org/graph', secret: graphSecret }, leads: { intake: { ...source, secret: graphSecret } } }))
   fails(() => accountGraph({ memory: true, checks: { lineType: { accountSid: 'AC1', authToken: graphSecret } }, leads: { intake: { ...source, secret: graphSecret } } }))
 
-  const env = { DATABASE_URL: 'unused', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: options.token }
+  const env = { DATABASE_URL: 'unused', IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: options.token }
   const dir = mkdtempSync(join(process.cwd(), '.lead-settings-'))
   try {
     const file = join(dir, 'sources.json')

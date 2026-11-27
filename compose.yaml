@@ -1,6 +1,6 @@
 # The server and its database, for trying it out:
 #   docker compose up --build
-# Change the two tokens, LINK_SECRET and RECEIPT_SECRETS before anything real touches it. GRAPH_PORT moves it off 8080.
+# Change the two tokens, LINK_SECRET, IDENTIFIER_SECRET and RECEIPT_SECRETS before anything real touches it. GRAPH_PORT moves it off 8080.
 services:
   postgres:
     image: postgres:16
@@ -46,7 +46,7 @@ services:
       POOL_MINUTES: ${POOL_MINUTES:-15}
       POOL_GRACE_MINUTES: ${POOL_GRACE_MINUTES:-120}
       POOL_REQUIRE_TAP_AFTER_REASSIGNMENT: ${POOL_REQUIRE_TAP_AFTER_REASSIGNMENT:-false}
-      IDENTIFIER_SECRET: ${IDENTIFIER_SECRET:-}
+      IDENTIFIER_SECRET: ${IDENTIFIER_SECRET:-change-me-identifier-secret-change-me}
       LINK_SECRET: ${LINK_SECRET:-change-me-link-secret-change-me-now}
       # Every other setting in docs/operations.md, passed through when you set it. Unset, each is off.
       REPORT_TIME_ZONE: ${REPORT_TIME_ZONE:-}
