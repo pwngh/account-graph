@@ -141,6 +141,7 @@
 
 ### Edge and operations
 
+- A new PostgreSQL database is made in one step, from `src/store/schema.ts`. Breaking: a database made by a version before 0.1.0 is refused with `CONFIG.MISMATCH`; use a new database or schema.
 - A `profile` reads its policy from memory instead of the database. One profile sends 19 statements to PostgreSQL where it sent 28.
 - Breaking: `IDENTIFIER_SECRET` is required to start, and `identifierSecret` is required with `databaseUrl`. A memory graph given none makes its own.
 - A `profile` name is never noted `not used: IDENTIFIER_SECRET is not set`. `compose.yaml` carries a `change-me` placeholder for the secret.
@@ -168,7 +169,6 @@
 - `POST /leads/<name>` answers a post with no usable fact with `NO_FACT_USED` without opening the graph, and answers errors as `{ error }` like the other routes outside `/v1`.
 - `forget` leaves a tombstone of each forgotten subject, and `POST /leads/<name>` answers `FORGOTTEN` to a lead under that subject, even with a new vendor ID. `account-graph prune` keeps it, and a `record` profile under that subject removes it.
 - `GET /health`, startup and the reviewer Health view give the rebuild command when stored groups need updating. Earlier name hashes need a rebuild and fresh profiles. See [upgrades](docs/operations.md#upgrades).
-- `PostgreSQL` resumes interrupted upgrades and uses indexed calls to identify the sources of older callback notices.
 - `/collect` checks a personal link’s recipient group for a speaker in one read.
 - `createEdge` serves the six calls, `POST /collect`, the Twilio webhooks, the reviewer screen and `/health`.
 - `POST /collect` takes every kind of browser request by its `kind`. `/event`, `/carry`, `/number` and `/text-code` still answer.
