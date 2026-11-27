@@ -122,6 +122,7 @@
 
 ### Conversions and consent
 
+- On PostgreSQL, a send an ad platform refuses for now waits its time before the next try. The retry time was a fraction of a millisecond, which the store refused, so the job came back each minute and could fail for good in about eight.
 - `call_update` stops new ad sends for a stated call. Adjustments to a conversion already sent use its original platform identifiers.
 - Conversions go to Google, Meta, Microsoft and TikTok, with leases, backoff and retries. `report` `deliveries` lists them by state.
 - `record` `consent` keeps every answer about advertising, and the newest stands. Global Privacy Control is an answer.

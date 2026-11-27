@@ -256,8 +256,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   const targets = new Map(options.targets.map((target) => [target.name, target]))
   if (targets.size === 0) throw malformed('An outbox requires at least one target')
 
-  /** Thirty seconds, doubling each try up to an hour, shortened by up to half so workers do not retry in step. */
-  const backoff = (attempts: number) => Math.min(3_600_000, 30_000 * 2 ** (attempts - 1)) * (0.5 + random() / 2)
+  /** Thirty seconds, doubling each try up to an hour, shortened by up to half so workers do not retry in step. In whole milliseconds, as a retry time is kept. */
+  const backoff = (attempts: number) => Math.round(Math.min(3_600_000, 30_000 * 2 ** (attempts - 1)) * (0.5 + random() / 2))
 
   /** Marks a job failed for good and remembers it for `onFailed`. */
   async function fail(job: Job, note: string, pass: Pass, failed: Job[]): Promise<void> {
