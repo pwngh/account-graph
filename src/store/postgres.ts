@@ -18,6 +18,10 @@ const CLICKED = `array[${CLICK_IDS.map((name) => `detail->>'${name}'`).join(', '
 /** The part of a `pg` client the store calls. */
 export interface Queryable {
   query(text: string, values?: unknown[]): Promise<{ rows: any[] }>
+  /** `pg` 8.15 and later: `E` while a statement in the transaction has failed. */
+  getTransactionStatus?(): string | null
+  /** `pg`: whether the server has said it is ready since the last statement, and so the status is current. */
+  readyForQuery?: boolean
 }
 
 /** The part of a `pg` Pool the store calls. */
@@ -168,7 +172,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       on conflict (subject, identifier) do update set (first_at, last_at, sightings, profile_at, profile_key, source_fact) =
         (excluded.first_at, excluded.last_at, excluded.sightings, excluded.profile_at, excluded.profile_key, excluded.source_fact)`, fieldsOf(edges))
   }
-  const bind = (db: Queryable, readOnly: boolean, factSchema: boolean, textSchema: boolean, snapshot = evidenceIn(db, readOnly)): Tx => ({
+  /** Numbers the savepoints of this store, so each nested write names its own. */
+  let savepoints = 0
+  // `kept` is the savepoint of the last nested write that succeeded. It is released with the next savepoint, in the same trip.
+  const bind = (db: Queryable, readOnly: boolean, factSchema: boolean, textSchema: boolean, snapshot = evidenceIn(db, readOnly), nesting: { kept?: string | undefined } = {}): Tx => ({
     async insertActivity(rows) {
       // PostgreSQL decodes these arrays against the destination column types. Generated ids keep their defaults.
       const insert = async (table: string, columns: string, values: readonly object[]) => {
@@ -190,14 +197,25 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
     outbox: outboxOn(db),
     async nested(work) {
-      await db.query('savepoint inside')
+      // Each savepoint has a name of its own, so one that succeeded can wait to be released until the next is made, a trip saved.
+      // Writes inside one transaction run one after another, never together, as one connection answers one statement at a time.
+      const name = `inside_${(savepoints += 1)}`
+      const kept = nesting.kept
+      nesting.kept = undefined
+      await db.query(kept ? `release savepoint ${kept}; savepoint ${name}` : `savepoint ${name}`)
       try {
         const result = await work()
-        await db.query('release savepoint inside')
+        // A statement that failed inside, and was caught there, leaves the transaction failed. Where the client cannot say so yet, releasing finds out.
+        const status = db.readyForQuery === true ? db.getTransactionStatus?.() : undefined
+        if (status === 'E') throw Object.assign(new Error('current transaction is aborted, commands ignored until end of transaction block'), { code: '25P02' })
+        if (status === undefined || status === null) await db.query(`release savepoint ${name}`)
+        // Released with the next savepoint, this one also releases those made inside it.
+        else nesting.kept = name
         return result
       } catch (error) {
         snapshot.noReserved = false
-        await db.query('rollback to savepoint inside; release savepoint inside').catch(() => undefined)
+        nesting.kept = undefined
+        await db.query(`rollback to savepoint ${name}; release savepoint ${name}`).catch(() => undefined)
         throw error
       }
     },
@@ -1511,8 +1529,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     const client = await pool.connect()
     let lost = false
     try {
-      await client.query(begin)
-      if (lock !== 'none' && lockTimeout > 0) await client.query(`set local lock_timeout = ${Math.ceil(lockTimeout)}`)
+      await client.query(lock !== 'none' && lockTimeout > 0 ? `${begin}; set local lock_timeout = ${Math.ceil(lockTimeout)}` : begin)
       // A writer on the preceding schema can still fold sightings while the migration is waiting for its DDL lock.
       const locked = lock === 'none' ? undefined : await client.query(`select pg_advisory_xact_lock${lock === 'shared' ? '_shared' : ''}(hashtext($1)),
         set_config('account_graph.fact_writer', case when fact_schema then 'on' else 'off' end, true), fact_schema, to_regclass($3) is not null as text_schema

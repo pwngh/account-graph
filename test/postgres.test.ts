@@ -163,6 +163,24 @@ if (!url) {
     await store.migrate()
     return { store, close: async () => void (await pool.query(`drop schema ${schema} cascade`)) }
   }
+  test('a statement that fails inside a nested write, and is caught there, fails that write, and the rest still commits', async () => {
+    const schema = `ag_test_${process.pid}_caught`
+    let client: { query(text: string): Promise<unknown> } | undefined
+    const store = createPostgresStore({ query: pool.query.bind(pool), connect: async () => (client = await pool.connect()) } as never, schema)
+    try {
+      await store.migrate()
+      await store.write(async (tx) => {
+        await assert.rejects(tx.nested(async () => {
+          await tx.setSetting('inner', 'written')
+          await client!.query('select 1 / 0').catch(() => undefined)
+        }), { code: '25P02' })
+        await tx.setSetting('outer', 'written')
+      })
+      assert.deepEqual([await store.read((tx) => tx.settingOf('inner')), await store.read((tx) => tx.settingOf('outer'))], [undefined, 'written'])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
   test('dispatch guards the first party decision before an ownership revision exists', async () => {
     const schema = `ag_test_${process.pid}_dispatch`
     const ready = createPostgresStore(pool, schema)
