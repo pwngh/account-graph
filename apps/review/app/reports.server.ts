@@ -189,3 +189,38 @@ export async function retryConversion(request: Request) {
   if (form.get('_enhanced') === '1') return { saved: put.length > 0 ? 'The conversion was queued.' : 'The conversion is no longer rejected.' }
   return redirect('/health', 303)
 }
+
+/**
+ * What a reviewer says of a missed call: that the caller was reached, or that the call was nobody's inquiry.
+ * It is recorded with the reviewer's own token and signed with their name, so the graph decides whether they may.
+ */
+export async function sayOfCall(request: Request) {
+  checkOrigin(request)
+  return withGraph(request, async (session, graph) => {
+    const form = await fieldsOf(request)
+    const field = (name: string) => String(form.get(name) ?? '').trim()
+    const [intent, call, key] = [field('intent'), field('call'), field('key')]
+    // The time is the form's own, from when the page was read, so the same form sent twice is one statement. A page left open for a day is read again first.
+    const at = Number(field('at'))
+    const now = graphTime()
+    if (!call || !key || key.length > 150 || (intent !== 'reached' && intent !== 'not_lead') || !Number.isSafeInteger(at) || at > now + 60_000 || at < now - 86_400_000) return data({ error: 'Reopen Calls and try again.' }, { status: 400 })
+    const entry = intent === 'reached'
+      ? { type: 'call_update' as const, key: key + '/reached', at, call, change: { kind: 'returned' as const, reachedAt: at, by: session.name } }
+      : { type: 'restatement' as const, key: key + '/not-lead', at, of: { type: 'call' as const, key: call }, change: { kind: 'not_lead' as const, why: field('why') === 'spam' ? 'spam' as const : 'other' as const, by: session.name } }
+    let result
+    try {
+      result = (await graph.record({ entries: [entry] }, { signal: request.signal })).results[0]!
+    } catch (error) {
+      // A graph server from before reviewers could say this refuses the whole call.
+      if ((error as { code?: string }).code === 'AUTH.FORBIDDEN') return data({ error: 'This graph server does not take this from a reviewer. Update it, or record it from your own system.' }, { status: 403 })
+      throw error
+    }
+    if (!result.ok) return data({ error: result.reason === 'UNKNOWN_REFERENCE' ? 'The graph no longer has this call. Reload Calls.' : 'The graph refused this (' + result.reason + ').' }, { status: 409 })
+    const said = intent === 'reached' ? 'Recorded: the caller was reached. Their missed calls no longer wait.' : 'Recorded: not a lead. The call is out of the counts.'
+    if (field('_enhanced') === '1') return { saved: said }
+    const url = new URL(request.url)
+    // Without a script the page is read again, at the same days and filter, with the next call open.
+    url.searchParams.delete('pick')
+    return redirect(url.pathname.replace(/\.data$/, '') + url.search, 303)
+  })
+}

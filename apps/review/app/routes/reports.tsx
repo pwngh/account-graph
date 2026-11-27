@@ -1,5 +1,5 @@
 import { useActionData, useLoaderData, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router'
-import { loadReport, retryConversion } from '../reports.server'
+import { loadReport, retryConversion, sayOfCall } from '../reports.server'
 import { Answer, type ActionResult } from '../views/shared'
 import { readSubject } from '../navigation'
 import { Report } from '../views/reports'
@@ -10,10 +10,12 @@ export function loader({ request, url, params }: LoaderFunctionArgs) {
   return loadReport(request, kind, kind === 'journey' ? readSubject(url) ?? params.subject : params.days)
 }
 
-// Health has the one form of these pages: Retry on a rejected conversion.
+// Two of these pages have forms: Retry on a rejected conversion on Health, and what a reviewer says of a missed call on Calls.
 export async function action({ request, url }: ActionFunctionArgs) {
-  if (url.pathname.split('/')[1].toLowerCase() !== 'health') throw new Response('This page has no form.', {status: 405})
-  return retryConversion(request)
+  const kind = url.pathname.split('/')[1].toLowerCase()
+  if (kind === 'health') return retryConversion(request)
+  if (kind === 'calls') return sayOfCall(request)
+  throw new Response('This page has no form.', {status: 405})
 }
 
 export default function ReportPage() {
