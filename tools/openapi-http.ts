@@ -16,7 +16,7 @@ export const requestIdParameter = { name: 'x-request-id', in: 'header', required
 export const requestIdHeaders = { 'x-request-id': { description: 'The request identifier when the caller supplied one in the accepted form.', schema: requestId } }
 export const securitySchemes = { bearerAuth: { type: 'http', scheme: 'bearer', description: 'Use the service token or a reviewer token with access to the call.' } }
 export const callAccess = {
-  record: 'A service token can record any entry. A reviewer can record only call party statements signed with the token owner’s name.',
+  record: 'A service token can record any entry. A reviewer can record only their own statements about a call or a lead, each signed with the token owner’s name: who a call was with, that a caller was reached or was not, and that a call or a text is or is not from a lead.',
   decide: 'A reviewer must sign by the token owner’s name. A service token can sign for any author.',
   forget: 'A reviewer must sign by the token owner’s name. A service token can sign for any author.',
   lookup: 'A service token can read every kind. A reviewer can read journey, find and party. An excluded party omits the subject for a reviewer.',

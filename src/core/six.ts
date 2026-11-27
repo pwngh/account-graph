@@ -275,7 +275,7 @@ export function createSix(engine: Engine, options: SixOptions) {
             const said = await graph.sayLead({ id, key: entry.key, at: entry.at, ...(change.kind === 'not_lead' && { kind: change.why }), ...(change.by !== undefined && { by: change.by }) })
             stands = said.stands
             await settleLead(graph, id, said.lead, service.calling())
-          }
+          } else stands = newest(await inside.tx.saidOf('lead', id))?.key === entry.key
         } else if (!again) {
           const given = 'currency' in change && change.currency ? { ...change, currency: change.currency.toUpperCase() } : change
           try {

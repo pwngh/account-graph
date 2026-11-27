@@ -149,7 +149,18 @@ A refund and a write-off are amounts, and not what is left. `of.type` is `conver
 | `not_returned` | optional `by` | Nobody did |
 | `party` | `role`, `by`, optional `seen`, and `subject` for every role except `unknown` | Who was on this call |
 
-`role` is `self`, `representative`, `excluded` or `unknown`. The subject names one of your records. `by` is who says so, and it is kept with the statement. A reviewer can sign only their own name, and must sign every statement they record. A later party statement can name a different record or undo identification with `unknown`. Results, returns and parties each have their own newest statement, ordered by time and then key. On a retry, `stands` says whether that statement still stands. A return statement on an outbound call always answers `false`. A statement may precede the call for a record that has never been deleted. For a returning record, first record its new profile and the call. Its start time must be after the most recent deletion. Earlier or missing calls receive `FORGOTTEN`.
+`role` is `self`, `representative`, `excluded` or `unknown`. The subject names one of your records. `by` is who says so, and it is kept with the statement. A reviewer can sign only their own name, and must sign every statement they record.
+
+What a reviewer's statement does is what the same statement from your own system does:
+
+| Statement | Effect |
+| --- | --- |
+| `returned` | Closes that caller's missed calls that began before `reachedAt`. It sends nothing to an ad platform. |
+| `not_returned` | Takes the report back, so those calls wait again unless something else closed them. |
+| `not_lead` | Takes the call or text out of counts and queues. A conversion not yet sent for it is not sent, and one already sent is withdrawn or adjusted where the platform allows. |
+| `lead` | Takes that back. The call or text counts again, and its conversion can be sent. |
+
+The newest statement stands, whoever made it. A reviewer cannot say whether a sale is a lead. A later party statement can name a different record or undo identification with `unknown`. Results, returns and parties each have their own newest statement, ordered by time and then key. On a retry, `stands` says whether that statement still stands. A return statement on an outbound call always answers `false`. A statement may precede the call for a record that has never been deleted. For a returning record, first record its new profile and the call. Its start time must be after the most recent deletion. Earlier or missing calls receive `FORGOTTEN`.
 
 <!-- schema RecordEntry -->
 ```json

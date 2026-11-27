@@ -21,7 +21,7 @@
       "post": {
         "operationId": "record",
         "summary": "Record up to 100 entries in order",
-        "description": "A service token can record any entry. A reviewer can record only call party statements signed with the token owner’s name.",
+        "description": "A service token can record any entry. A reviewer can record only their own statements about a call or a lead, each signed with the token owner’s name: who a call was with, that a caller was reached or was not, and that a call or a text is or is not from a lead.",
         "parameters": [
           {
             "name": "x-request-id",

@@ -654,8 +654,17 @@ test('a reviewer records that a caller was reached and that a call is not a lead
       [{ ...reached, key: 'e' }, missed('M3', '5558675303')],
       [{ type: 'call_update', key: 'f', at: AT, call: 'M1', change: { kind: 'result', result: { answered: true }, by: 'dana' } }],
     ]
-    for (const entries of refused) assert.deepEqual([(await record(entries)).status, (await record(entries)).body.fault.code], [403, 'AUTH.FORBIDDEN'], JSON.stringify(entries))
+    for (const entries of refused) {
+      const answer = await record(entries)
+      assert.deepEqual([answer.status, answer.body.fault.code], [403, 'AUTH.FORBIDDEN'], JSON.stringify(entries))
+    }
+    // Refused whole: neither the call of the mixed batch nor the return beside it was written, and no statement was added.
     assert.equal(await graph.lookup({ kind: 'record', type: 'call', key: 'M3', at: NOW }), null)
+    assert.deepEqual((await kept('return', 'M1')).length, 2)
+    assert.deepEqual((await kept('lead', 'call:M2')).length, 2)
+    // Sent again, a statement answers whether it still stands. The first of each was taken back by the second.
+    const replay = await record([reached, spam])
+    assert.deepEqual(replay.body.results.map((each: any) => [each.ok, each.value.duplicate, each.value.stands]), [[true, true, false], [true, true, false]])
     // The main service token signs with any name or none, as before.
     const service = await record([{ ...reached, key: 'g', at: AT + 180_000, change: { kind: 'returned', reachedAt: AT + 180_000 } }, { ...spam, key: 'h', at: AT + 180_000, change: { kind: 'not_lead', why: 'other', by: 'intake desk' } }], 'service')
     assert.deepEqual([service.status, service.body.results.map((each: any) => each.ok)], [200, [true, true]])
