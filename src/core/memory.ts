@@ -20,7 +20,7 @@ import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Ed
 /**
  * Keeps the graph in process memory, for tests, demos, and small graphs.
  * Writes run one at a time. A write that throws is undone only where it was
- * asked to be whole, from a journal of the entries it used.
+ * asked to be whole, or was nested in another, from a journal of the entries it used.
  */
 export function createMemoryStore() {
   const journal = createJournal()
@@ -80,16 +80,53 @@ export function createMemoryStore() {
   const once = new KeptMap<string, Subject | undefined>(journal)
   const deliveries = new KeptMap<string, Delivery & { lease: number }>(journal)
   const pruned = { seq: 0 }
-  /** The events as a whole write found them, copied before it first removes or replaces one. */
-  let eventsBefore: typeof events | undefined
-  const changingEvents = () => {
-    if (journal.open && !eventsBefore) eventsBefore = events.slice()
-  }
   let lastEvent = 0
   let epoch = randomUUID().slice(0, 8)
   let writes = 0
   const ops = createMemoryOps(kept)
   let built: string | undefined
+  /**
+   * For each open write that can be undone, innermost last, what the journal does not keep.
+   * Decisions are only added, so their count is enough. Events are copied only if the write removes or replaces one.
+   */
+  type Mark = { lastEvent: number; epoch: string; writes: number; built: string | undefined; pruned: number; events: number; decisions: number; copy?: typeof events }
+  const marks: Mark[] = []
+  const mark = (): Mark => ({ lastEvent, epoch, writes, built, pruned: pruned.seq, events: events.length, decisions: decisions.length })
+  const changingEvents = () => {
+    const open = marks.at(-1)
+    if (open && !open.copy) open.copy = events.slice()
+  }
+  const putBack = (before: Mark) => {
+    // The copy may hold events this write added before it first removed one. Those are last, so the count cuts them off.
+    if (before.copy) {
+      events.length = 0
+      for (const each of before.copy) events.push(each)
+    }
+    events.length = before.events
+    decisions.length = before.decisions
+    pruned.seq = before.pruned
+    ;({ lastEvent, epoch, writes, built } = before)
+  }
+  /** Runs `work` so that, where it throws, what it changed is put back, and the write it is in, if any, goes on. */
+  const undoable = async <T>(work: () => Promise<T>): Promise<T> => {
+    const before = mark()
+    begin(journal)
+    marks.push(before)
+    try {
+      const result = await work()
+      marks.pop()
+      end(journal)
+      // An inner copy is of events no write around it removed yet, so it serves that write too.
+      const around = marks.at(-1)
+      if (around && !around.copy && before.copy) around.copy = before.copy
+      return result
+    } catch (error) {
+      marks.pop()
+      undo(journal)
+      putBack(before)
+      throw error
+    }
+  }
 
   const withResult = ({ visitor, ...call }: Omit<KeptCall, 'result'>): KeptCall => structuredClone({ ...call, ...(call.party && { flags: withoutGuesses(call.flags) }), ...(!call.party && visitor && { visitor }), ...(results.has(call.id) && { result: results.get(call.id)! }) })
 
@@ -208,7 +245,7 @@ export function createMemoryStore() {
     addAlert: ops.addAlert,
     pendingAlert: ops.pendingAlert,
     outbox,
-    nested: (work) => work(),
+    nested: (work) => undoable(work),
     async addSightings(rows) {
       const added: AddedSightings = new Map()
       for (const sighting of rows) {
@@ -580,7 +617,7 @@ export function createMemoryStore() {
     },
 
     async *everyone() {
-      yield [...new Set([...labels.keys(), ...bySubject.keys()])].map((subject) => ({ subject, labels: labels.get(subject), held: Boolean(bySubject.get(subject)?.size || hidden.get(subject)?.size) }))
+      yield [...new Set([...labels.keys(), ...bySubject.keys()])].map((subject) => ({ subject, labels: copiedLabels(labels.get(subject)), held: Boolean(bySubject.get(subject)?.size || hidden.get(subject)?.size) }))
     },
 
     async states(identifiers) {
@@ -1506,36 +1543,12 @@ export function createMemoryStore() {
     tail = run.catch(() => undefined)
     return run
   }
-  const write = <T>(work: (tx: Tx) => Promise<T>, { whole = false } = {}) => queue(async (bound) => {
-    // The journal keeps the maps and sets. Decisions are only added, so their count is enough, and events are copied only if the write removes or replaces one.
-    const before = whole ? { lastEvent, epoch, writes, built, pruned: pruned.seq, events: events.length, decisions: decisions.length } : undefined
-    if (whole) {
-      begin(journal)
-      eventsBefore = undefined
+  const write = <T>(work: (tx: Tx) => Promise<T>, { whole = false } = {}) => queue((bound) => {
+    const run = () => {
+      writes += 1
+      return work(bound)
     }
-    writes += 1
-    try {
-      return await work(bound)
-    } catch (error) {
-      if (before) {
-        undo(journal)
-        // The copy may hold events this write added before it first removed one. Those are last, so the count cuts them off.
-        if (eventsBefore) {
-          events.length = 0
-          for (const each of eventsBefore) events.push(each)
-        }
-        events.length = before.events
-        decisions.length = before.decisions
-        pruned.seq = before.pruned
-        ;({ lastEvent, epoch, writes, built } = before)
-      }
-      throw error
-    } finally {
-      if (whole) {
-        end(journal)
-        eventsBefore = undefined
-      }
-    }
+    return whole ? undoable(run) : run()
   })
 
   // Asked for from outside a write, a job is changed in a turn of its own, so a write undone takes nothing of it along.
@@ -1548,6 +1561,8 @@ export function createMemoryStore() {
 const changed = (events: readonly GraphEvent[]): NumberedChange[] =>
   events.flatMap((each) => (each.type === 'cluster.changed' ? [{ seq: each.seq, at: each.at, subject: each.data.subject, from: each.data.from ?? undefined, to: each.data.to ?? undefined }] : []))
 
+/** A caller's own copy, so nothing it does to it reaches the store. */
+const copiedLabels = (labels: Labels | undefined) => labels && { ...labels }
 const copied = (decision: Decision): Decision => ({ ...decision, about: [...decision.about] })
 const bySystem = (decision: Decision) => decision.by?.startsWith('system:') ?? false
 const ofPair = (decision: Decision) => decision.action === 'join' || decision.action === 'unjoin' || decision.action === 'separate' || decision.action === 'rejoin'
