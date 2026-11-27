@@ -735,8 +735,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 const jobKey = (job: { transactionId: string; target: string }) => `${job.transactionId}\u0000${job.target}`
 
 /** An outbox store in process memory, for tests and demos. `recorded` says whether a job's outcome is on record. */
-export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true, partyRevision: () => string | undefined = () => undefined, refusals: (subjects: readonly Subject[]) => Map<Subject, number> = () => new Map()): OutboxStore & { remove(subject: Subject): Promise<Job[]>; jobs: Map<string, Job> } {
-  const jobs = new Map<string, Job>()
+export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true, partyRevision: () => string | undefined = () => undefined, refusals: (subjects: readonly Subject[]) => Map<Subject, number> = () => new Map(), made: <K, V>() => Map<K, V> = () => new Map()): OutboxStore & { remove(subject: Subject): Promise<Job[]>; jobs: Map<string, Job> } {
+  const jobs = made<string, Job>()
   const unchanged = (job: Job) => {
     const stored = jobs.get(jobKey(job))
     return stored !== undefined && stored.rev === job.rev
