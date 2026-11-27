@@ -45,6 +45,32 @@ export const brief = ms => ms < 3600000 ? Math.max(1, Math.round(ms / 60000)) + 
 export const dayWords = day => new Date(day + 'T00:00:00Z').toLocaleDateString('en-US', { dateStyle: 'medium', timeZone: 'UTC' })
 /** How a call ended, as a tone: reached, lost, or not known yet. */
 export const callTone = state => ({ answered: 'same', missed: 'apart', voicemail: 'related', waiting: 'related' })[state] ?? ''
+/** What the zone's clock reads at a moment, as if it were UTC. Hours and days of a chart are counted on it. */
+export function clockOf(at, timeZone = 'UTC') {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(at).map(part => [part.type, Number(part.value)]))
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second)
+}
+const HOUR = 3600000
+/**
+ * The lines of a chart of time between two moments: at most eight, on whole hours or days of the zone's clock.
+ * Each has its place as a share of the span, the words under it, and the day over it where a day begins or the chart does.
+ */
+export function ticksOf(low, high, timeZone = 'UTC') {
+  const span = Math.max(1, high - low)
+  const step = [HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, 24 * HOUR, 7 * 24 * HOUR, 30 * 24 * HOUR, 91 * 24 * HOUR, 365 * 24 * HOUR].find(each => span / each <= 8) ?? 365 * 24 * HOUR
+  const shift = clockOf(low, timeZone) - low
+  const words = (at, options) => new Date(at).toLocaleString('en-US', { timeZone, ...options })
+  const ticks = []
+  let day
+  for (let at = Math.ceil((low + shift) / step) * step - shift; at <= high; at += step) {
+    const on = words(at, { weekday: 'short', month: 'short', day: 'numeric' })
+    ticks.push({ at, part: (at - low) / span, text: step < 24 * HOUR ? words(at, { hour: 'numeric' }) : words(at, { month: 'short', day: 'numeric' }), over: step < 24 * HOUR && on !== day ? on : undefined })
+    day = on
+  }
+  return ticks
+}
+/** The time of day, for a row under the heading of its day. */
+export const hourOf = (at, timeZone = 'UTC') => new Date(at).toLocaleTimeString('en-US', { timeZone, hour: 'numeric', minute: '2-digit' })
 export const idText = value => value.length > 24 ? value.slice(0, 18) + '…' : value
 export const inWords = name => String(name).replaceAll('_', ' ')
 export const cameFrom = row => row?.source ? row.source + (row.campaign || row.campaignId ? ' · ' + (row.campaign ?? row.campaignId) : '') : undefined

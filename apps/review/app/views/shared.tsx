@@ -15,11 +15,15 @@ export function stamp(at: number, timeZone = 'UTC') {
   if (!formatter) formatters.set(timeZone, formatter = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }))
   return formatter.format(at)
 }
-/** A time. Given `now`, it says how long ago, as a list with little room does, and its title has the time itself. */
-export function Time({ at, now }: { at?: number, now?: number }) {
+/**
+ * A time. Given `now`, it says how long ago, as a list with little room does, and its title has the time itself.
+ * `short` leaves the zone to the title, for a page that names the zone once.
+ */
+export function Time({ at, now, short = false }: { at?: number, now?: number, short?: boolean }) {
   const zone = useContext(ZoneContext)
   if (at == null || !Number.isFinite(at)) return <span className="muted">No data</span>
   const exact = new Date(at).toISOString()
+  if (short) return <time dateTime={exact} title={stamp(at, zone) + ' · ' + exact}>{new Date(at).toLocaleString('en-US', { timeZone: zone, year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time>
   if (now === undefined) return <time dateTime={exact} title={exact}>{stamp(at, zone)}</time>
   return <time dateTime={exact} title={stamp(at, zone) + ' · ' + exact}>{lasted(Math.abs(now - at))}{now >= at ? ' ago' : ' from now'}</time>
 }
