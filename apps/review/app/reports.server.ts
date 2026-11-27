@@ -102,6 +102,8 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
     const day = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: summary.timeZone, calendar: 'gregory', numberingSystem: 'latn', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(at).map(({ type, value }) => [type, value]))
     report.today = day.year + '-' + day.month + '-' + day.day
     Object.assign(report, { summary, then, before, open, page, metrics: ['inbound','answered','missed','returned','awaiting'].map(key => add('calls.' + key, '', facts)) })
+    // One card for each row of Call results. The row for calls that are not leads is there only when there are some.
+    report.results = Object.fromEntries(['Answered', 'Missed', 'Voicemail', 'Waiting', 'Unknown', 'Returned', 'Called again', ...(summary.total.notLeads > 0 ? ['Not a lead'] : [])].map(name => [name, add('calls.result', name, { name, summary, then })]))
     report.calls = open.calls.map((call: Row) => add('call', call.id, { call, state: call.state, followUp: { state: 'open', attempts: call.attempts }, credit: call, limits, at: open.at }))
     report.measure = ['calls','answered','missed','voicemail','unknown','waiting','returned'].includes(query.get('measure') || '') ? query.get('measure') : 'missed'
     const state = query.get('result')
