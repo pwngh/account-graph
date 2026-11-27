@@ -463,6 +463,8 @@ export interface Graph {
    * with it. `due` means they were not, or that it is not known. Then call `rebuild`.
    */
   policy(): Promise<PolicyState>
+  /** The running policy as plain JSON. It is fixed for the life of the graph, so reading it asks the store nothing. */
+  readonly rules: PolicyState['rules']
   /** Compares stored clusters with a full recompute. Empty when they agree. */
   verify(): Promise<Change[]>
   /** `verify` and `policy` together, both as of one moment. */
@@ -567,6 +569,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   // A copy, so a caller that edits its own policy later changes nothing here. The hash always names what scores.
   policy = structuredClone(policy)
   const hash = policyHash(policy)
+  const rules = plainPolicy(policy)
   /**
    * Notes which policy the clusters are being written with: this one when
    * nothing was stored before, and more than one when another has written
@@ -1643,7 +1646,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
   async function policyState(tx: Tx): Promise<PolicyState> {
     const builtWith = await tx.builtWith()
-    return { hash, builtWith, due: builtWith !== hash && !(await tx.empty()), rules: plainPolicy(policy) }
+    return { hash, builtWith, due: builtWith !== hash && !(await tx.empty()), rules }
   }
 
   /** The subjects whose stored labels are not what a full recompute gives. */
@@ -3343,6 +3346,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     policy() {
       return store.read(policyState)
     },
+
+    rules,
 
     verify() {
       return store.read(differences)
