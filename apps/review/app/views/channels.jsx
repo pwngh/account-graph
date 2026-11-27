@@ -4,7 +4,7 @@ import { Compare, Meter, PageHead, PeriodForm, Tiles } from './shared'
 import { Change } from './call-panels'
 import { Sourced } from './marks'
 import { amount, dayWords, percent } from './report-words'
-import { HELP, Term } from './terms'
+import { HELP, Info, Term } from './terms'
 
 /** A dimension in words. Which side it is from matters as much as its name. */
 const dimensionName = by => by === 'hour' ? 'Hour' : by === 'weekday' ? 'Weekday' : by.startsWith('touch.') ? 'Visit: ' + by.slice(6).replaceAll('_', ' ') : 'Outcome: ' + by.slice(8).replaceAll('_', ' ')
@@ -42,7 +42,7 @@ function Followed({ report, followed, step, days, keep }) {
 
 /** What each campaign cost and brought in. */
 export function Channels({ model }) {
-  const { report, then, before, by, per, rank, step, days, followed } = model
+  const { report, then, before, by, per, rank, step, days, followed, sort, dir, find } = model
   const all = report.total
   // Shown as money where the report names one currency. Where it mixes them, a sign would say something false.
   let coin
@@ -50,7 +50,7 @@ export function Channels({ model }) {
     if (report.currencies.length === 1) coin = new Intl.NumberFormat('en-US', { style: 'currency', currency: report.currencies[0] })
   } catch {}
   const cash = n => coin ? coin.format(n) : amount(n)
-  const kept = { from: report.from, to: report.to, by, per, rank, step, days: step ? String(days) : '' }
+  const kept = { from: report.from, to: report.to, by, per, rank, step, days: step ? String(days) : '', sort, dir: sort ? dir : '', find }
   const address = now => '/channels?' + new URLSearchParams(Object.entries({ ...kept, ...now }).filter(([, value]) => value))
   const less = (...names) => Object.fromEntries(Object.entries(kept).filter(([name]) => !names.includes(name)))
   // Compared only where the days before hold something of the same kind, in the same one currency.
@@ -80,6 +80,29 @@ export function Channels({ model }) {
   const heads = <><th scope="col" className="num">Outcomes</th><th scope="col" className="num">Initial value</th><th scope="col" className="num">Current value</th>{losses.map(([key, text]) => <th scope="col" className="num" key={key}>{text}</th>)}<th scope="col" className="num">Reduced to zero</th><th scope="col" className="num">No initial value</th></>
   const whose = row => row.source === '(none)' ? 'Unattributed' : row.source + (row.campaign || row.campaignId ? ' · ' + (row.campaign || row.campaignId) : '')
   const submit = event => event.currentTarget.form?.requestSubmit()
+  // What a column is ordered by. A campaign with no cost on record has no spend to order by, and goes last.
+  const columns = {
+    source: row => row.source === '(none)' ? null : row.source, campaign: row => row.campaign || row.campaignId || null,
+    spend: row => row.source === '(none)' || unpriced(row) ? null : row.cost, clicks: row => row.source === '(none)' || unpriced(row) ? null : row.clicks, visits: row => row.visits,
+    ...Object.fromEntries(stages.map(stage => ['step:' + stage, row => row.stages[stage]?.count ?? 0])),
+    people: row => row.people, missed: row => row.missed, value: row => row.value, cost: row => row.costPerOutcome, roas: row => row.returnOnCost,
+  }
+  const textual = key => key === 'source' || key === 'campaign'
+  const way = columns[sort] ? dir || (textual(sort) ? 'asc' : 'desc') : ''
+  const wanted = find.toLowerCase()
+  const listed = report.rows.filter(row => !wanted || [row.source, row.campaign, row.campaignId].some(each => each && String(each).toLowerCase().includes(wanted)))
+  const ordered = !way ? listed : [...listed].sort((x, y) => {
+    const [a, b] = [columns[sort](x), columns[sort](y)]
+    if (a === null || b === null) return (a === null) - (b === null)
+    const by = typeof a === 'string' ? a.localeCompare(b) : a - b
+    return way === 'asc' ? by : -by
+  })
+  /** The heading of a column that orders the table: largest first, then smallest, then as the report came. Words go A to Z first. */
+  const Sorted = ({ by: key, className, title, children }) => {
+    const first = textual(key) ? 'asc' : 'desc'
+    const next = sort !== key ? { sort: key, dir: first } : way === first ? { sort: key, dir: first === 'asc' ? 'desc' : 'asc' } : { sort: '', dir: '' }
+    return <th scope="col" className={className} title={title} aria-sort={sort === key && way ? (way === 'asc' ? 'ascending' : 'descending') : 'none'}><Link className="sort" to={address(next) + '#campaigns'} preventScrollReset>{children}<i className="way" aria-hidden="true"/></Link></th>
+  }
   return <><section><PageHead view="channels" title="Channels"><PeriodForm action="/channels" from={report.from} to={report.to} today={model.today} keep={less('from', 'to')}/></PageHead>
     {report.rows.length > 0 && <Tiles items={[
       [['Spend', 'spend'], all.costDays > 0 ? cash(all.cost) : 'No data', all.missingDays > 0 && all.costDays > 0 && many(all.missingDays, 'day', 'days') + ' without data', '', alike && all.missingDays === 0 && then.total.missingDays === 0 && then.total.costDays > 0 && <Change now={all.cost} was={then.total.cost} before={before}/>],
@@ -100,12 +123,15 @@ export function Channels({ model }) {
       <label>Cost per <select name="per" defaultValue={per} onChange={submit}><option value="">All outcomes</option>{[...new Set([...report.steps, ...(per ? [per] : [])])].map(stage => <option key={stage} value={stage}>{stage}</option>)}</select></label><button>Show</button>
       {report.rows.length > 0 && <a className="button" href={'/channels/csv?' + new URLSearchParams(Object.entries({ from: report.from, to: report.to, by, per }).filter(([, value]) => value))} download>Save as CSV</a>}</Form></div>
     {report.currencies.length > 1 && <p className="apart">Multiple currencies: {report.currencies.join(', ')}</p>}
+    {(report.rows.length > 3 || find) && <Form className="filter-bar" method="get" action="/channels" preventScrollReset>{Object.entries(less('find')).map(([name, value]) => value && <input key={name} type="hidden" name={name} value={value}/>)}
+      <label className="sr-only" htmlFor="find-campaigns">Filter campaigns</label><input id="find-campaigns" type="search" name="find" defaultValue={find} placeholder="Filter campaigns" autoComplete="off"/><button>Filter</button>{find && <Link className="button" to={address({ find: '' }) + '#campaigns'} preventScrollReset>Clear</Link>}
+      {find && <span className="meta" role="status">{amount(listed.length)} of {many(report.rows.length, 'campaign', 'campaigns')}. The total is of all of them.</span>}</Form>}
     {report.rows.length > 0 ? <div className="wide" tabIndex="0" role="region" aria-label="Channels"><table className="campaign-report"><thead>
       <tr><th scope="colgroup" colSpan="2" className="group">Attribution</th><th scope="colgroup" colSpan="3" className="edge group">Traffic</th><th scope="colgroup" colSpan={stages.length + 1 + (all.missed > 0 ? 1 : 0)} className="edge group">Outcomes</th><th scope="colgroup" colSpan="3" className="edge group">Performance</th></tr>
-      <tr><th scope="col">Source</th><th scope="col">Campaign</th><th scope="col" className="num edge">Spend</th><th scope="col" className="num"><Term id="clicks"/></th><th scope="col" className="num"><Term id="visits"/></th>{stages.map((stage, i) => <th scope="col" key={stage} className={i === 0 ? 'num edge' : 'num'}>{stage}</th>)}<th scope="col" className={stages.length ? 'num' : 'num edge'}>People</th>{all.missed > 0 && <th scope="col" className="num" title="Missed calls" aria-label="Missed calls">Missed</th>}
-        <th scope="col" className="num edge">Value</th><th scope="col" className="num" title={per ? 'Cost per ' + per : 'Cost per outcome'}>Cost / {per || 'outcome'}</th><th scope="col" className="num">ROAS</th></tr></thead>
-      <tbody>{report.rows.map((row, i) => [<tr key={i}><td>{row.source === '(none)' ? <span className="muted">Unattributed</span> : <Sourced name={row.source}/>}</td><td className="who">{row.campaign || row.campaignId ? <span className="ranked-what" title={row.campaign || row.campaignId}>{row.campaign || row.campaignId}</span> : none}{note([row.campaign && row.campaignId, spurned(row)])}</td>{cells(row)}</tr>, ...split(row, i)])}
-        <tr className="sum"><td>Total</td><td className="who">{note([report.excluded > 0 && excludes + ' with low data', spurned(all)])}</td>{cells(all)}</tr>{split(all, 'total')}</tbody></table></div> : <p className="muted">No campaigns</p>}</section>
+      <tr><Sorted by="source">Source</Sorted><Sorted by="campaign">Campaign</Sorted><Sorted by="spend" className="num edge">Spend</Sorted><Sorted by="clicks" className="num">Clicks<Info id="clicks"/></Sorted><Sorted by="visits" className="num">Visits<Info id="visits"/></Sorted>{stages.map((stage, i) => <Sorted by={'step:' + stage} key={stage} className={i === 0 ? 'num edge' : 'num'}>{stage}</Sorted>)}<Sorted by="people" className={stages.length ? 'num' : 'num edge'}>People</Sorted>{all.missed > 0 && <Sorted by="missed" className="num" title="Missed calls">Missed</Sorted>}
+        <Sorted by="value" className="num edge">Value</Sorted><Sorted by="cost" className="num" title={per ? 'Cost per ' + per : 'Cost per outcome'}>Cost / {per || 'outcome'}</Sorted><Sorted by="roas" className="num">ROAS</Sorted></tr></thead>
+      <tbody>{ordered.map((row, i) => [<tr key={i}><td>{row.source === '(none)' ? <span className="muted">Unattributed</span> : <Sourced name={row.source}/>}</td><td className="who">{row.campaign || row.campaignId ? <span className="ranked-what" title={row.campaign || row.campaignId}>{row.campaign || row.campaignId}</span> : none}{note([row.campaign && row.campaignId, spurned(row)])}</td>{cells(row)}</tr>, ...split(row, i)])}
+        {ordered.length === 0 && <tr><td colSpan={8 + stages.length + (all.missed > 0 ? 1 : 0) + 1} className="muted">No campaign has "{find}" in its source, name or ID.</td></tr>}<tr className="sum"><td>Total</td><td className="who">{note([report.excluded > 0 && excludes + ' with low data', spurned(all)])}</td>{cells(all)}</tr>{split(all, 'total')}</tbody></table></div> : <p className="muted">No campaigns</p>}</section>
   {all.reported && <section><h2><Term id="reported"/></h2><div className="wide" tabIndex="0" role="region" aria-label="Platform-reported conversions"><table className="claims"><thead><tr><td/><td/><td/><th scope="colgroup" colSpan="2" className="edge group">{per || 'Conversions'}</th><th scope="colgroup" colSpan="2" className="edge group">Value</th></tr>
       <tr><th scope="col">Campaign</th><th scope="col" className="num">Days</th><th scope="col">Reported / attributed</th><th scope="col" className="num edge">Reported</th><th scope="col" className="num">Attributed</th><th scope="col" className="num edge">Reported</th><th scope="col" className="num">Attributed</th></tr></thead>
       <tbody>{said.map((row, i) => <tr key={i}><td className="who"><Sourced name={row.source}/> {row.campaign || row.campaignId || 'Unnamed'}</td>{claim(row.reported, <span className="claim"><Meter share={row.reported.conversions / most}/><Meter share={row.reported.credited / most}/></span>)}</tr>)}{said.length > 1 && <tr className="sum"><td className="who">Total</td>{claim(all.reported, '')}</tr>}</tbody></table></div></section>}

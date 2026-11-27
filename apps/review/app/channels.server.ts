@@ -22,6 +22,8 @@ function asked(request: Request) {
   return {
     window: (from ? { from, to } : {}) as Record<string, string>,
     by: text('by'), per: text('per'), rank: text('rank'), step: text('step'), days: Number.isInteger(days) && days >= 1 && days <= 365 ? days : 30,
+    // How the campaign table is ordered and narrowed. Neither changes what the graph is asked for.
+    sort: text('sort'), dir: text('dir') === 'asc' ? 'asc' as const : text('dir') === 'desc' ? 'desc' as const : '' as const, find: text('find'),
   }
 }
 
@@ -29,14 +31,14 @@ function asked(request: Request) {
 export function loadChannels(request: Request) {
   return withGraph(request, async session => {
     const get = (path: string, query: Record<string, string>) => reviewGet(request, session, path, query) as Promise<Row>
-    const { window, by, per, rank, step, days } = asked(request)
+    const { window, by, per, rank, step, days, sort, dir, find } = asked(request)
     const report = await get('report', { ...window, ...(by && { by }), ...(per && { per }) })
     const before = daysBefore(report as { from: string, to: string })
     const then = await get('report', { from: before.from, to: before.to, ...(per && { per }) })
     const followed = step ? await get('followed', { from: report.from, to: report.to, step, days: String(days) }) : undefined
     // The presets count back from today in the report's zone.
     const day = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: report.timeZone, calendar: 'gregory', numberingSystem: 'latn', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(graphTime()).map(({ type, value }) => [type, value]))
-    return { view: 'channels' as const, report, before, then: { total: then.total as Row, rows: then.rows.length as number, currencies: then.currencies as string[] }, by, per, rank, step, days, followed, today: day.year + '-' + day.month + '-' + day.day }
+    return { view: 'channels' as const, report, before, then: { total: then.total as Row, rows: then.rows.length as number, currencies: then.currencies as string[] }, by, per, rank, step, days, sort, dir, find, followed, today: day.year + '-' + day.month + '-' + day.day }
   })
 }
 
