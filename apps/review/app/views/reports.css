@@ -73,6 +73,11 @@
 .inbox-call > .tile, .inbox-call > .detail { align-self: center; }
 .board-meta { align-items: start; }
 
+/* A column heading that orders its table is a link, so it works before any script has loaded. */
+a.sort { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; cursor: pointer; }
+a.sort:hover { color: var(--ink); }
+.filter-bar input[type=search] { width: min(16rem, 100%); height: 30px; padding: 0 10px 0 28px; }
+
 /* The bar behind a ranked row. Its width is a share, so the server can draw it. */
 .ranked-bar { position: absolute; z-index: -1; inset: 0; pointer-events: none; }
 .ranked-bar rect { fill: color-mix(in srgb, var(--ink) 7%, transparent); transition: fill .15s; }

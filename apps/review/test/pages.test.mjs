@@ -238,3 +238,36 @@ test('a term has its definition beside it on every page, in the page from the st
   assert.match(await get('/channels'), /<b>ROAS<\/b><span class="info-text">[^<]+<\/span><code>value ÷ spend<\/code>/)
   assert.match(await get('/channels?by=hour'), /<b>Campaigns<\/b><span class="info-text">[^<]+ Splits outcomes within each campaign\./)
 })
+
+test('the campaign table is ordered by the column its heading names and narrowed by a word, and the total stays of all', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const get = async path => (await (await fetch(firm.graph + path, { headers: { cookie } })).text()).split('</main>')[0].replaceAll('<!-- -->', '')
+  const report = await (await fetch(firm.graph + '/review/api/report', { headers: { authorization: 'Bearer demo' } })).json()
+  const names = html => [...html.split('<table class="campaign-report">')[1].split('</table>')[0].matchAll(/<span class="ranked-what" title="([^"]+)">/g)].map(([, name]) => name.replaceAll('&amp;', '&'))
+  const by = (value, way) => [...report.rows].sort((x, y) => way * (value(x) - value(y))).map(row => row.campaign)
+  // As the report came, then by a number largest first, then smallest first, and the heading says which.
+  const plain = await get('/channels')
+  assert.deepEqual(names(plain), report.rows.map(row => row.campaign))
+  assert.match(plain, /<th scope="col" class="num" aria-sort="none"><a class="sort" href="\/channels\?from=[\d-]+&amp;to=[\d-]+&amp;sort=visits&amp;dir=desc#campaigns"[^>]*>Visits/)
+  const most = await get('/channels?sort=visits')
+  assert.deepEqual(names(most), by(row => row.visits, -1))
+  assert.match(most, /aria-sort="descending"><a class="sort" href="[^"]*sort=visits&amp;dir=asc#campaigns"[^>]*>Visits/)
+  const least = await get('/channels?sort=visits&dir=asc')
+  assert.deepEqual(names(least), by(row => row.visits, 1))
+  // The third press goes back to how the report came.
+  assert.match(least, /aria-sort="ascending"><a class="sort" href="\/channels\?from=[\d-]+&amp;to=[\d-]+#campaigns"[^>]*>Visits/)
+  assert.deepEqual(names(await get('/channels?sort=campaign')), report.rows.map(row => row.campaign).sort((x, y) => x.localeCompare(y)))
+  assert.deepEqual(names(await get('/channels?sort=nothing')), report.rows.map(row => row.campaign), 'a column the table does not have')
+  // A word narrows the lines to the campaigns that have it in their source, name or ID. The total is still the report's.
+  const word = report.rows[0].campaignId
+  const found = await get('/channels?find=' + word)
+  assert.deepEqual(names(found), [report.rows[0].campaign])
+  assert.ok(found.includes('1 of ' + report.rows.length + ' campaigns. The total is of all of them.'))
+  const usd = n => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
+  assert.match(found, new RegExp('<tr class="sum"><td>Total</td>.*?<td class="num edge">' + usd(report.total.cost).replace('$', '\\$')))
+  assert.match(await get('/channels?find=no-such-campaign'), /No campaign has &quot;no-such-campaign&quot; in its source, name or ID\./)
+  assert.deepEqual(names(await get('/channels?find=META&sort=value')), by(row => row.source === 'meta' ? row.value : -1, -1).filter(name => report.rows.find(row => row.campaign === name).source === 'meta'))
+})
