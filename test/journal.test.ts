@@ -100,6 +100,101 @@ test('a write that ends keeps what it changed', () => {
   assert.equal(settings.get('policy'), 'p')
 })
 
+test('a write begun inside another and undone puts back only what it changed, and the one around it can still be undone', () => {
+  const journal = createJournal()
+  const calls = new KeptMap<string, { at: number; flags: string[] }>(journal)
+  const ignored = new KeptSet<string>(journal)
+  calls.set('a', { at: 1, flags: [] })
+  calls.set('b', { at: 2, flags: [] })
+
+  begin(journal)
+  calls.get('a')!.flags.push('outer')
+  calls.set('c', { at: 3, flags: [] })
+  ignored.add('outer')
+  begin(journal)
+  calls.get('a')!.flags.push('inner')
+  calls.get('c')!.at = 9
+  calls.delete('b')
+  calls.set('d', { at: 4, flags: [] })
+  ignored.add('inner')
+  ignored.delete('outer')
+  undo(journal)
+
+  assert.deepEqual([...calls], [['a', { at: 1, flags: ['outer'] }], ['b', { at: 2, flags: [] }], ['c', { at: 3, flags: [] }]])
+  assert.deepEqual([...ignored], ['outer'])
+  // What the inner write put back, the outer one had kept from before, so it is not kept again as changed.
+  undo(journal)
+  assert.deepEqual([...calls], [['a', { at: 1, flags: [] }], ['b', { at: 2, flags: [] }]])
+  assert.deepEqual([...ignored], [])
+})
+
+test('a write that ended inside another is undone with it', () => {
+  const journal = createJournal()
+  const calls = new KeptMap<string, { at: number; flags: string[] }>(journal)
+  const ignored = new KeptSet<string>(journal)
+  calls.set('a', { at: 1, flags: [] })
+  calls.set('b', { at: 2, flags: [] })
+  ignored.add('kept')
+  const settings = new KeptMap<string, string>(journal)
+  settings.set('policy', 'p')
+
+  begin(journal)
+  calls.set('c', { at: 3, flags: [] })
+  begin(journal)
+  // Read whole and then added to, with nothing deleted: only the whole copy can take the new key out again.
+  assert.deepEqual([...settings.values()], ['p'])
+  settings.set('tap', '60')
+  // The outer write never used `a` or `b`, so what the inner one keeps of them is all there is to put them back from.
+  calls.get('b')!.flags.push('inner')
+  calls.delete('a')
+  for (const [, call] of calls) call.at += 10
+  calls.set('d', { at: 4, flags: [] })
+  ignored.delete('kept')
+  end(journal)
+  calls.get('b')!.at = 99
+  calls.set('e', { at: 5, flags: [] })
+  undo(journal)
+
+  assert.deepEqual([...calls], [['a', { at: 1, flags: [] }], ['b', { at: 2, flags: [] }]])
+  assert.deepEqual([...ignored], ['kept'])
+  assert.deepEqual([...settings], [['policy', 'p']])
+  // Nothing is still open.
+  calls.set('f', { at: 6, flags: [] })
+  undo(journal)
+  assert.equal(calls.has('f'), true)
+})
+
+test('a write inside another to the memory store, undone, takes its events and decisions and leaves the rest', async () => {
+  const store = createMemoryStore()
+  const event = (at: number) => ({ type: 'cluster.changed' as const, at, subject: `s${at}`, data: { subject: `s${at}`, from: null, to: `s${at}` } })
+  const ats = async () => (await store.read((tx) => tx.eventsAfter(0, 10))).map((each) => each.at)
+  await store.write((tx) => tx.emit([1, 2, 3].map(event)))
+  await store.write(async (tx) => {
+    await tx.emit([event(4)])
+    await assert.rejects(tx.nested(async () => {
+      await tx.emit([event(5)])
+      await tx.pruneEvents(3)
+      await tx.addDecision({ seq: 1, at: 5, action: 'ignore', about: ['email:x'], by: 'dana', reason: 'test', hash: 'h' } as never)
+      throw new Error('undone')
+    }), /undone/)
+    await tx.emit([event(6)])
+  })
+  assert.deepEqual(await ats(), [1, 2, 3, 4, 6])
+  // The event after the undone one takes the number it had.
+  assert.deepEqual((await store.read((tx) => tx.eventsAfter(0, 10))).map((each) => each.seq), [1, 2, 3, 4, 5])
+  assert.equal(await store.read((tx) => tx.lastDecision()), undefined)
+
+  // Events an inner write removed and kept removed come back when the write around it fails.
+  const head = await store.read((tx) => tx.eventHead())
+  await assert.rejects(store.write(async (tx) => {
+    await tx.emit([event(7)])
+    await tx.nested(async () => void (await tx.pruneEvents(4)))
+    throw new Error('undone')
+  }, { whole: true }), /undone/)
+  assert.deepEqual(await ats(), [1, 2, 3, 4, 6])
+  assert.deepEqual(await store.read((tx) => tx.eventHead()), head)
+})
+
 test('a write to the memory store takes as long with a long history as with a short one', async () => {
   const graph = accountGraph({ memory: true, workers: false })
   const T0 = Date.parse('2026-01-05T15:00:00Z')
