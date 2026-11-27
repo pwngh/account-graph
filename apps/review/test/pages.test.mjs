@@ -162,3 +162,54 @@ test('a cell of a CSV file that a spreadsheet would run is text, even behind spa
   assert.equal(csvCell(null), '')
   assert.equal(csvCell('google'), 'google')
 })
+
+test('a reviewer takes a missed caller off the waiting list from Calls: reached, or not a lead, under their own name', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const { at } = await (await fetch(firm.graph + '/review/api/board?days=90', { headers: { authorization: 'Bearer demo' } })).json()
+  const day = at => new Date(at).toISOString().slice(0, 10)
+  const missed = (key, from) => ({ type: 'call', key, at: at - 3 * 3600_000, direction: 'inbound', from, to: '+15550100102', duration: 20, result: { answered: false, waited: 20 } })
+  const written = await fetch(firm.graph + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ entries: [missed('waits-1', '+15550100061'), missed('waits-2', '+15550100062')] }) })
+  assert.ok((await written.json()).results.every(result => result.ok))
+  const calls = '/calls?from=' + day(at - 86400_000) + '&to=' + day(at)
+  const page = async (path = calls) => (await (await fetch(firm.graph + path, { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
+  const waiting = async () => (await (await fetch(firm.graph + '/review/api/calls?from=' + day(at - 86400_000) + '&to=' + day(at), { headers: { authorization: 'Bearer demo' } })).json()).calls.map(call => call.id)
+  assert.deepEqual((await waiting()).filter(id => id.startsWith('waits-')).sort(), ['waits-1', 'waits-2'])
+  // The open call has both forms, each with the call and a key of its own load.
+  const open = async () => {
+    const html = await page()
+    const forms = [...html.matchAll(/<input type="hidden" name="intent" value="(reached|not_lead)"\/><input type="hidden" name="call" value="([^"]+)"\/><input type="hidden" name="key" value="([0-9a-f-]{36})"\/><input type="hidden" name="at" value="(\d+)"\/>/g)].map(([, intent, call, key, at]) => ({ intent, call, key, at }))
+    assert.deepEqual(forms.map(form => form.intent), ['reached', 'not_lead'])
+    assert.equal(forms[0].call, forms[1].call)
+    return forms
+  }
+  const post = (fields, headers = { cookie, origin: firm.graph }) => fetch(firm.graph + calls, { method: 'POST', headers, body: new URLSearchParams(fields), redirect: 'manual' })
+  // Reached: the call leaves the list, and posting the same form again changes nothing more.
+  const [reached] = await open()
+  assert.ok(reached.call.startsWith('waits-'), reached.call)
+  for (let twice = 0; twice < 2; twice++) {
+    const answer = await post(reached)
+    assert.equal(answer.status, 303)
+    assert.equal(answer.headers.get('location'), calls)
+  }
+  const left = (await waiting()).filter(id => id.startsWith('waits-'))
+  assert.deepEqual(left, [reached.call === 'waits-1' ? 'waits-2' : 'waits-1'])
+  // Not a lead: the other leaves too, and Call results counts it as one.
+  const [, spam] = await open()
+  assert.equal(spam.call, left[0])
+  assert.equal((await post({ ...spam, why: 'spam' })).status, 303)
+  assert.deepEqual((await waiting()).filter(id => id.startsWith('waits-')), [])
+  assert.match(await page(), /<span class="chip ">Not a lead<\/span><\/th><td class="num">1</)
+  // A page with scripts is told what was recorded, and nothing is taken without a session, an origin or a call.
+  const [again] = await open().catch(() => [undefined])
+  if (again) assert.match(await (await post({ ...again, _enhanced: '1' })).text(), /Recorded: the caller was reached/)
+  assert.equal((await post({ ...reached, call: '' })).status, 400)
+  assert.equal((await post({ ...reached, intent: 'answered' })).status, 400)
+  assert.equal((await post({ ...reached, at: String(Number(reached.at) - 2 * 86400_000), key: reached.key + 'old' })).status, 400, 'a form from a page read two days ago')
+  assert.equal((await post({ ...reached, at: String(Number(reached.at) + 3600_000), key: reached.key + 'later' })).status, 400, 'a time that has not come')
+  const guest = await post(reached, { origin: firm.graph })
+  assert.ok([302, 303].includes(guest.status) && /signin/.test(guest.headers.get('location')))
+  assert.equal((await post(reached, { cookie, origin: 'https://elsewhere.example' })).status, 403)
+})
