@@ -10,7 +10,8 @@ export default [
   route('calls', 'routes/reports.tsx', {id: 'calls'}),
   route('details/:report/:which?', 'routes/detail.tsx'),
   route('card/:report/:which?', 'routes/card.ts'),
-  ...['decide', 'channels', 'health'].map(name => route(name, 'routes/remaining.tsx', {id: name})),
+  route('health', 'routes/reports.tsx', {id: 'health'}),
+  ...['decide', 'channels'].map(name => route(name, 'routes/remaining.tsx', {id: name})),
   route('guide/:section', 'routes/guide.tsx'),
   route('events', 'routes/events.ts'),
 ] satisfies RouteConfig

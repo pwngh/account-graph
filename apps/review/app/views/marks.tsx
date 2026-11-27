@@ -1,4 +1,5 @@
 // The marks of the screen: one for each view, and one for each kind of event.
+import { toneOf } from './report-words.js'
 
 export const VIEW_ICONS = {
   accounts: 'M8 8a2.6 2.6 0 1 0 0-5.2A2.6 2.6 0 0 0 8 8ZM2.8 13.4c.5-2.5 2.5-3.8 5.2-3.8s4.7 1.3 5.2 3.8',
@@ -25,6 +26,8 @@ export const GLYPHS = {
   consent: 'M8 2 13 4v3.8c0 3-2.1 5.2-5 6.2-2.9-1-5-3.2-5-6.2V4ZM5.6 8l1.8 1.8 3.2-3.5',
   decision: VIEW_ICONS.decide,
   result: 'M3 8.4 6.4 11.8 13 4.6',
+  job: 'M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.6h-2.6',
+  send: 'M2.5 13 13 8 2.5 3l2 5ZM4.5 8H8',
 }
 export type GlyphName = keyof typeof GLYPHS
 
@@ -46,4 +49,9 @@ export function Tile({ kind, tone = '' }: { kind: GlyphName, tone?: string }) {
 /** Which mark an event has. Nobody spoke to the caller of a missed call or a voicemail. */
 export function looksLike(entry: { kind: string, state?: string }): GlyphName {
   return entry.kind === 'call' && (entry.state === 'missed' || entry.state === 'voicemail') ? 'missed' : entry.kind as GlyphName
+}
+
+/** Where something came from: a letter in its color, which is drawn and not text, and its name. */
+export function Sourced({ name }: { name: string }) {
+  return <span className="sourced"><i className={'letter ' + toneOf(name)} aria-hidden="true" data-letter={name.slice(0, 1).toUpperCase()}/>{name}</span>
 }

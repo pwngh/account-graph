@@ -157,8 +157,10 @@ test('Health says when sends to ad platforms are stopped, why, since when, and h
   const origin = address(ui)
   const login = await fetch(origin + '/signin', { method: 'POST', headers: { origin }, body: new URLSearchParams({ token: 'review-fixture' }), redirect: 'manual' })
   const cookie = login.headers.get('set-cookie').split(';')[0]
-  const page = async () => (await fetch(origin + '/health', { headers: { cookie } })).text()
-  assert.match(await page(), /<p class="stopped" role="alert">Sends to ad platforms are paused\. checking a wrong tie\. Since <time dateTime="[^"]+"[^>]*>[^<]+<\/time>\. Run account-graph sends resume once the cause is fixed\.<\/p>/)
+  const page = async () => (await (await fetch(origin + '/health', { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
+  assert.match(await page(), /<ul class="needs"><li role="alert"><b>Sends to ad platforms are paused\.<\/b> checking a wrong tie\. Since <time dateTime="[^"]+"[^>]*>[12] min ago<\/time>\. Run account-graph sends resume once the cause is fixed\.<\/li>/)
+  assert.match(await page(), /<dt>Issues<\/dt><dd><span class="tile-line"><b>1<\/b>/)
   paused = null
-  assert.doesNotMatch(await page(), /class="stopped"/)
+  assert.doesNotMatch(await page(), /Sends to ad platforms are paused/)
+  assert.match(await page(), /<dt>Issues<\/dt><dd><span class="tile-line"><b>0<\/b>/)
 })

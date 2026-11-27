@@ -1,10 +1,12 @@
 import { subjectPath } from './navigation.ts'
-import { graphTime, inZone } from './runtime.server'
+import { graphTime, inZone, runtime } from './runtime.server'
 import { createHash, randomUUID } from 'node:crypto'
-import { reviewerZone, reviewGet, withGraph } from './auth.server'
+import { data, redirect } from 'react-router'
+import { checkOrigin, requireReviewer, reviewerZone, reviewGet, withGraph } from './auth.server'
+import { fieldsOf } from './forms.server'
 import { cardModels, daysBefore } from './cards.server.js'
 
-export type ReportKind = 'journey' | 'board' | 'calls'
+export type ReportKind = 'journey' | 'board' | 'calls' | 'health'
 type Read = (path: string, query?: Record<string, string>) => Promise<any>
 type Row = Record<string, any>
 const missing = () => new Response('These details have changed. Open the report again.', { status: 404 })
@@ -16,7 +18,7 @@ export function loadReport(request: Request, kind: ReportKind, which?: string, s
 
 export async function loadCard(request: Request, kind?: string, which?: string) {
   const item = new URL(request.url).searchParams.get('item')
-  if (!item || !/^[a-z.]+\.[\w-]{24}$/.test(item) || (kind !== 'calls' && kind !== 'journey' && kind !== 'board')) throw missing()
+  if (!item || !/^[a-z.]+\.[\w-]{24}$/.test(item) || (kind !== 'calls' && kind !== 'journey' && kind !== 'board' && kind !== 'health')) throw missing()
   const { cards, canonical } = await loadReport(request, kind, which, item)
   return { card: cards[item], canonical }
 }
@@ -126,6 +128,12 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
         })),
       }
     }
+  } else if (kind === 'health') {
+    // A server built as a library may not say how its own jobs run.
+    const running = get('ops').catch(error => error instanceof Response && error.status === 404 ? null : Promise.reject(error))
+    const [policy, disputes, audit, ops] = await Promise.all([get('policy'), get('disputes'), get('audit'), running])
+    const refused = ops?.outbox?.failed > 0 ? await get('conversions', { state: 'failed' }) : []
+    Object.assign(report, { policy, disputes, audit, ops, refused, at: ops?.at ?? at, feeds: (ops?.feeds ?? []).map((feed: Row) => add('health.feed', feed.name, { feed, at: ops.at, limits, alerts: ops.alerts })) })
   } else throw missing()
   if (selected !== undefined && specs.length === 0) throw missing()
   const cards: Record<string, Row> = {}
@@ -158,4 +166,18 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
   await Promise.all(Array.from({length: Math.min(6, specs.length)}, fill))
   if (selected && !cards[selected]) throw missing()
   return { ...report, cards, canonical, kind, which } as Row
+}
+
+/** Puts a rejected conversion back in line for the platform that refused it. */
+export async function retryConversion(request: Request) {
+  checkOrigin(request)
+  const session = await requireReviewer(request)
+  const form = await fieldsOf(request)
+  const [transactionId, target] = [String(form.get('transactionId') ?? ''), String(form.get('target') ?? '')]
+  if (form.get('intent') !== 'retry' || !transactionId || !target) return data({ error: 'Reopen Health and try again.' }, { status: 400 })
+  const response = await fetch(new URL('/review/api/retry', runtime().graphUrl), { method: 'POST', headers: { authorization: 'Bearer ' + session.token, 'content-type': 'application/json' }, body: JSON.stringify({ transactionId, target }), redirect: 'error', signal: AbortSignal.any([request.signal, AbortSignal.timeout(8000)]) })
+  if (!response.ok) return data({ error: 'The graph refused the retry. Reload to see the current state.' }, { status: response.status >= 500 ? 503 : 409 })
+  const put = await response.json() as unknown[]
+  if (form.get('_enhanced') === '1') return { saved: put.length > 0 ? 'The conversion was queued.' : 'The conversion is no longer rejected.' }
+  return redirect('/health', 303)
 }

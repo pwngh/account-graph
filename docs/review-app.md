@@ -41,7 +41,7 @@ npm --prefix apps/review start
 | `REVIEW_SESSION_SECRET` | Secret for signing session IDs, at least 32 characters. Outside development the app requires it at startup. In development an omitted secret is generated for the process. |
 | `REVIEW_ORIGIN` | Public origin used to check form submissions and set secure cookies. Defaults to the request origin. Set this explicitly behind a reverse proxy. |
 | `REVIEW_EVENTS_TOKEN` | Server-only graph service token for the `events` call. Without it, pages open no event stream and say that live updates are off. Opening or reloading a page still reads the graph. |
-| `REVIEW_LEGACY_URL` | Address reviewers use to open the original screen, such as `https://graph.example.org/review`. Health, Channels and Matches link to it. Without it, those pages name the original screen without a link. The graph's own address is never shown. |
+| `REVIEW_LEGACY_URL` | Address reviewers use to open the original screen, such as `https://graph.example.org/review`. Channels and Matches link to it. Without it, those pages name the original screen without a link. The graph's own address is never shown. |
 | `HOST`, `PORT` | Production listener address and port, default `127.0.0.1` and `3000`. |
 
 `npm start` runs `server.mjs`, a small Node HTTP server around the request handler from `@react-router/node`. It serves the built assets and checks the Origin of every form post.
@@ -66,7 +66,7 @@ The server writes every time on the page. On the first load with JavaScript, the
 | `/calls` | Missed calls, call outcomes, coverage and supporting detail. |
 | `/decide` | The queue of pending matches beside the open pair: the two records side by side, the evidence, what joining would do, and Join, Separate and Skip with the J, K and S keys. `/decide?pair=` opens one pair. It says when pairs among older sightings are not in the queue, and links to the original screen, whose Check older records reaches them. |
 | `/channels` | Campaign attribution table. The original screen has the full channel breakdown and date controls. |
-| `/health` | Feed status, and a stop on sends to ad platforms with its reason and time. The original screen has jobs, alerts, conversions, the audit chain and policy details. |
+| `/health` | What needs someone, first. Then each feed with a card, the jobs, what waits to be sent, rejected conversions with Retry, the matching rules, the audit hash and conflicting decisions. |
 
 The existing screen remains at `/review` on the graph server and at `/legacy` in the firm demo. It uses its own sign-in. The app links to it only at `REVIEW_LEGACY_URL`, or at `/legacy` in the demo. Opening an old `/review#/…` bookmark on the new app converts the fragment to a path when JavaScript runs. Call date ranges and links to a call on a journey keep their targets. Filtered Channels bookmarks open the original screen with their settings when `REVIEW_LEGACY_URL` is set, and Channels otherwise. With scripts off the browser sends only `/review`. Use the Accounts link and navigation.
 

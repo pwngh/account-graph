@@ -61,3 +61,29 @@ test('Matches has the queue beside the strongest pair, the two records side by s
   assert.match(last, new RegExp('<a class="button choice"[^>]* href="/decide\\?pair=' + queue[0][2].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"'))
   assert.match(last, /<a class="button choice"[^>]*aria-keyshortcuts="s"/)
 })
+
+test('Health has what runs and what needs someone: the tiles, a card for each feed, what waits to be sent, the matching rules and the audit hash', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const html = (await (await fetch(firm.graph + '/health', { headers: { cookie } })).text()).split('</main>')[0].replaceAll('<!-- -->', '')
+  const ops = await (await fetch(firm.graph + '/review/api/ops', { headers: { authorization: 'Bearer demo' } })).json()
+  assert.deepEqual([...html.matchAll(/<dt>([^<]+)<\/dt>/g)].map(([, name]) => name).slice(0, 6), ['Issues', 'Audit log', 'Policy', 'Queued', 'Sent', 'Alerts'])
+  // Each feed has its state and a card that says when its last record came and what watches it.
+  const feeds = [...html.matchAll(/<li><span class="tile"[^>]*>.*?<\/span><b>([^<]+)<\/b><span class="state"><span class="chip same">OK<\/span><button type="button" class="detail"[^>]*aria-label="([^"]+)"/g)]
+  assert.deepEqual(feeds.map(([, name, label]) => [name, label]), ops.feeds.map(feed => [{ touches: 'Visits', calls: 'Calls', results: 'Call results', costs: 'Campaign costs' }[feed.name], { touches: 'Visits', calls: 'Calls', results: 'Call results', costs: 'Campaign costs' }[feed.name] + ', OK']))
+  assert.match(html, /<dt>Last record<\/dt><dd>[^<]+<\/dd>.*?<dt>Set by<\/dt><dd>QUIET_TOUCHES_HOURS<\/dd>/)
+  // What waits to be sent is the graph's own count, part by part.
+  for (const [name, n] of [['Sent', ops.outbox.sent], ['Queued', ops.outbox.pending], ['Held', ops.outbox.held], ['Skipped', ops.outbox.skipped], ['Rejected', ops.outbox.failed]]) assert.ok(html.includes('<span>' + name + '</span> <b>' + n + '</b>'), name + ' ' + n)
+  assert.match(html, /<tr class="day"><th scope="rowgroup" colSpan="7">Meets join threshold<\/th><\/tr><tr><td>review<\/td><td class="num edge">1\.00<\/td>/)
+  assert.match(html, /<input readOnly="" size="66" aria-label="Verification hash" value="[0-9a-f]{64}"\/>|<input[^>]*aria-label="Verification hash"[^>]*value="[0-9a-f]{64}"/)
+  // Retry of a conversion that is not rejected changes nothing, and says so to a page with scripts.
+  const retry = fields => fetch(firm.graph + '/health', { method: 'POST', headers: { cookie, origin: firm.graph }, body: new URLSearchParams({ intent: 'retry', transactionId: 'no-such-conversion', target: 'google', ...fields }), redirect: 'manual' })
+  const plain = await retry({})
+  assert.equal(plain.status, 303)
+  assert.equal(plain.headers.get('location'), '/health')
+  assert.equal((await retry({ transactionId: '' })).status, 400)
+  const guest = await fetch(firm.graph + '/health', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ intent: 'retry', transactionId: 'x', target: 'google' }), redirect: 'manual' })
+  assert.ok([302, 303].includes(guest.status) && /signin/.test(guest.headers.get('location')), 'a retry without a session goes to sign-in')
+})

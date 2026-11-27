@@ -107,6 +107,5 @@ test('the app has a card for each one the original screen has, for as long as th
   const original = new Set((await Promise.all((await readdir(old)).filter(name => name.endsWith('.js')).map(name => readFile(new URL(name, old), 'utf8')))).flatMap(keys))
   const app = new Set(keys(await readFile(new URL('apps/review/app/cards.server.js', root), 'utf8')))
   assert.ok(app.size >= 16, 'the card models were found')
-  // Health has no feed card in the app yet. Take it off this list when it does.
-  assert.deepEqual([...original].filter(key => !app.has(key)).sort(), ['health.feed'])
+  assert.deepEqual([...original].filter(key => !app.has(key)).sort(), [])
 })
