@@ -6,6 +6,7 @@ One command upgrades the database, serves the six calls, browsers, Twilio and th
 DATABASE_URL=postgres://localhost/graph \
 GRAPH_TOKEN=a-long-random-string \
 RECEIPT_SECRETS=another-one-of-32-characters-or-more \
+IDENTIFIER_SECRET=a-third-one-of-32-characters-or-more \
 ORIGINS=https://example.org \
 npm start
 ```
@@ -28,14 +29,14 @@ The lines after `collect accepts` list the enabled features. Each provider turns
 `docker compose up --build` starts the server and PostgreSQL on port 8080.
 
 ```sh
-GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' RECEIPT_SECRETS=… ORIGINS=https://example.org docker compose up --build
+GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' RECEIPT_SECRETS=… IDENTIFIER_SECRET=… ORIGINS=https://example.org docker compose up --build
 ```
 
 Compose also reads a `.env` file in the same directory. Use `.env.example` for synthetic local settings. For a credentialed run, inject secrets privately into the selected process. Keep them out of the checkout, shell history and command arguments. Container administrators can inspect the environment. Set `GRAPH_PORT` to publish a different port.
 
 Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE`, `LEADS_FILE`, `SERVICE_TOKENS_FILE` and `SERVER_RANGES_FILE`. It sets `DATABASE_URL` itself. Compose passes the Google key file path but does not mount the file. Supply a separate read-only secret mount and use its path inside the container. A shell running the checker does not read Compose's .env.
 
-> **Use the compose file for evaluation.** It has a local volume, a fixed database password, the example site's features and placeholders for `LINK_SECRET` and `RECEIPT_SECRETS`. Replace these before production use. Values in `compose.yaml` that start with `change-me` are public, and the server refuses to start with one when `ORIGINS` contains a site outside your own machine.
+> **Use the compose file for evaluation.** It has a local volume, a fixed database password, the example site's features and placeholders for `LINK_SECRET`, `IDENTIFIER_SECRET` and `RECEIPT_SECRETS`. Replace these before production use. Values in `compose.yaml` that start with `change-me` are public, and the server refuses to start with one when `ORIGINS` contains a site outside your own machine.
 
 ## Commands
 
@@ -259,7 +260,7 @@ node tools/restore-check.ts
 ```
 
 1. Set `DATABASE_URL` to the source using a role with read access. Set `NEW_DATABASE_URL` to a new, empty database reserved for this run. Keep other connections that can create objects or write data off the target.
-2. Supply the source's `GRAPH_SCHEMA`, `RECEIPT_SECRETS` and matching graph settings, including policy, identifier and link secrets where configured. Keep provider workers off throughout the rehearsal.
+2. Supply the source's `GRAPH_SCHEMA`, `RECEIPT_SECRETS`, `IDENTIFIER_SECRET` and matching graph settings, including the policy and the link secret where configured. Keep provider workers off throughout the rehearsal.
 3. Run the command. It counts every graph table and reads the newest audit hash from the same snapshot that it dumps. It restores the archive into the target and runs the graph's own `verify` there.
 4. Check the exit status. Success requires matching table names, row counts and audit head, zero cluster changes, and a current policy. Save the timings alongside your recovery-time objective. Compare the audit head with your independent copy from the same point in history. Treat the temporary database as a copy of the original data.
 
@@ -378,7 +379,8 @@ Processes that share a database must agree on these. The database keeps the poli
 | Setting | A process that differs | To change it |
 | --- | --- | --- |
 | `POLICY`, `POLICY_FILE` | Is refused. One without any takes the database's. | Stop the servers, run `account-graph rebuild` with the new one, start them with it |
-| `IDENTIFIER_SECRET`, `LINK_SECRET` | Is refused. One without it is let in, and makes none of its keys. | The same. New keys match none of the old ones, which cannot be made again, and links already sent become ordinary links. |
+| `IDENTIFIER_SECRET` | Is refused | The same. New keys match none of the old ones, which cannot be made again. |
+| `LINK_SECRET` | Is refused. One without it is let in, and signs no links. | The same. Links already sent become ordinary links. |
 | `RECEIPT_SECRETS` | Is refused where it lacks a secret that a stored receipt was made with | Put the new one first and keep the old ones. See [receipts](#receipts). |
 
 A policy that lacks the kind of a stored identifier is refused too. Nothing else is compared, so give every process the same steps, numbers and opening hours.
@@ -596,6 +598,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `DATABASE_URL` | required | PostgreSQL address. |
 | `GRAPH_TOKEN` | required | Service token. |
 | `RECEIPT_SECRETS` | required | Keys the [receipts](#receipts). Separated by commas, at least 32 characters each. The first signs, and all are tried. |
+| `IDENTIFIER_SECRET` | required | Keys the hashes of [names](identify.md#names) and dates of birth. At least 32 characters. Changing it changes every key. |
 | `SERVICE_TOKENS`, `SERVICE_TOKENS_FILE` | none | Named service credentials and their allowed calls, supplied as a JSON list or a path to that list. |
 | `REVIEW_TOKENS` | none | Reviewers, as JSON: each name with its token or a list of tokens. Each token must be unique and differ from `GRAPH_TOKEN`. |
 | `ALLOW_PAGES`, `REFUSE_PAGES` | unset | Comma-separated literal page paths or subtrees ending in `/*`. A refusal takes precedence. |
@@ -609,7 +612,6 @@ A partially set group stops the server at startup, with a message naming the mis
 | `POLICY`, `POLICY_FILE` | the default policy | Overrides to the default policy, as JSON or a JSON file. Set at most one. |
 | `STAFF_NETWORKS` | none | Addresses and ranges whose visits are dropped, separated by commas: `192.0.2.10,198.51.100.0/24`. |
 | `LINK_SECRET` | none | Signs personal links, staff links, and the tokens that carry a visitor between your sites. At least 32 characters. |
-| `IDENTIFIER_SECRET` | none | Keys the hashes of [names](identify.md#names) and dates of birth. At least 32 characters. Changing it changes every key. |
 | `REPORT_TIME_ZONE` | `UTC` | Time zone of the reviewer screen's days, the Board's today, opening hours and alerts, such as `America/New_York`. Use the ad account's. A `report` call names its own zone in its `window`. |
 
 ### Outcomes and calls

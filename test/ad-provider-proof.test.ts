@@ -18,7 +18,7 @@ import { googleCosts, metaCosts } from '../src/providers/costs.ts'
 import { ingest, ingestRequest } from '../src/providers/conversions.ts'
 import { googleAds, meta } from '../src/providers/targets.ts'
 
-const base = { DATABASE_URL: 'postgres://127.0.0.1/unused', GRAPH_TOKEN: 'private', RECEIPT_SECRETS: 's'.repeat(32) }
+const base = { DATABASE_URL: 'postgres://127.0.0.1/unused', GRAPH_TOKEN: 'private', RECEIPT_SECRETS: 's'.repeat(32), IDENTIFIER_SECRET: 'i'.repeat(32) }
 const date = '2026-09-10'
 const at = Date.parse(date)
 const consent = { adUserData: true, adPersonalization: false }

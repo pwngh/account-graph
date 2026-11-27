@@ -36,7 +36,7 @@ To ask who somebody may be without recording it, use the `match` [lookup](http.m
 | `ip` | `ip:…`. An IPv6 address is kept as its /64. | - |
 | `phone` | `phone:` and a hash. With a line check, `voip:` for an internet calling app, and no identifier for a switchboard, premium line or pager. | Optional: Twilio, for the line check. |
 | `address` | `address:` and a hash of the postal service's delivery point, so two spellings of one address match. | Smarty. Otherwise addresses are ignored. |
-| `name`, `dob` | `name:` and a keyed hash. See [Names](#names). | `IDENTIFIER_SECRET`, and a policy with a `name` kind. |
+| `name`, `dob` | `name:` and a keyed hash. See [Names](#names). | A policy with a `name` kind. |
 | `identifiers` | Identifiers you already hold, as written: `hardware:…`, `payment:tok_…`, `passkey:…`. At most 100. | A kind in the policy, and not one [the graph writes itself](http.md#refusals). |
 
 Beside `facts`, `at` is when it happened, and `event` is what the person was doing, up to 200 characters. `speaker` holds the `device`, `phone` and `email` of the [person who speaks for](#speaking-for-somebody-else) the subject.
@@ -190,7 +190,7 @@ A name confirms that two people who share a phone are one. It creates no link by
   "facts": { "phone": "(555) 010-0007", "name": { "first": "José", "last": "Muñoz" }, "dob": "1990-02-03" } }
 ```
 
-To use names, set `IDENTIFIER_SECRET` and a policy with a `name` kind that only corroborates, such as [the preset for contacts entered by staff](matching.md#contacts-entered-by-staff).
+To use names, set a policy with a `name` kind that only corroborates, such as [the preset for contacts entered by staff](matching.md#contacts-entered-by-staff).
 
 | Step | Behavior |
 | --- | --- |

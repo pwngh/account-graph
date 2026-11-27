@@ -91,7 +91,7 @@ for (const store of ['memory', 'postgres']) {
     let clock = at + 60000
     let tick = 0
     const now = () => clock += tick
-    const graph = accountGraph(store === 'postgres' ? { databaseUrl: databaseUrl!, schema, workers: false, receiptSecrets: ['r'.repeat(40)], now } : { memory: true, now })
+    const graph = accountGraph(store === 'postgres' ? { databaseUrl: databaseUrl!, schema, workers: false, receiptSecrets: ['r'.repeat(40)], identifierSecret: 'i'.repeat(32), now } : { memory: true, now })
     const edge = createEdge(graph, { token, limit: false })
     t.after(async () => {
       try {

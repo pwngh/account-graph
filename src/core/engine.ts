@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import type { Change } from '../contract/types.ts'
 import { createGraph } from './graph.ts'
 import type { Graph } from './graph.ts'
@@ -10,8 +11,10 @@ import type { Service, ServiceOptions } from './service.ts'
 import type { Store, Tx } from './store.ts'
 import { unit } from './unit.ts'
 
-export interface EngineOptions extends Omit<ServiceOptions, 'outbox' | 'now'> {
+export interface EngineOptions extends Omit<ServiceOptions, 'outbox' | 'now' | 'identifierSecret'> {
   policy?: Policy
+  /** Keys the hashes of names and dates of birth. An engine given none makes one for its own life, which suits a store that is gone with the process. A database's server always gives its own. */
+  identifierSecret?: string
   /** The ad platforms, and how they are sent to. With no target nothing is sent. */
   delivery?: OutboxOptions
   now?: () => number
@@ -44,7 +47,8 @@ export interface Engine extends Parts {
 export function createEngine(store: Store, options: EngineOptions = {}): Engine {
   const now = options.now ?? Date.now
   const policy = options.policy ?? defaultPolicy
-  const { policy: _, delivery, now: __, ...service } = options
+  const { policy: _, delivery, now: __, identifierSecret = randomBytes(32).toString('hex'), ...rest } = options
+  const service = { ...rest, identifierSecret }
   const parts = (on: Store, onChange?: (changes: Change[]) => void, instead: Partial<Pick<ServiceOptions, 'address' | 'lineType'>> = {}): Parts => {
     const graph = createGraph(on, policy, { now, ...(onChange && { onChange }) })
     const outbox = delivery && delivery.targets.length > 0 ? createOutbox(graph, on.outbox, { now, ...delivery }) : undefined

@@ -193,7 +193,7 @@ Use `examples/intake.json` where mixing two people's records is worse than leavi
 { "apart": ["birth", "given"], "records": "confirmed", "credit": 0.75 }
 ```
 
-Set `IDENTIFIER_SECRET`, and send the `name` and `dob` you have with each `profile`. Without them nothing confirms that two records are one person, and each stays by itself until somebody joins them.
+Send the `name` and `dob` you have with each `profile`. Without them nothing confirms that two records are one person, and each stays by itself until somebody joins them.
 
 | Ask at intake | Send |
 | --- | --- |
@@ -221,7 +221,7 @@ contact:1 { email, born 1980-02-03 } ──┐
 contact:2 { email, born 1984-07-01 } ──┘
 ```
 
-With `IDENTIFIER_SECRET` set, the server then keeps a keyed `birth` of each `dob` in a [`profile`](identify.md), as a note that links nothing. Two subjects that would be in one group, both have a `birth`, and share no value of it are kept apart, whatever path joins them.
+The server then keeps a keyed `birth` of each `dob` in a [`profile`](identify.md), as a note that links nothing. Two subjects that would be in one group, both have a `birth`, and share no value of it are kept apart, whatever path joins them.
 
 With `given` it keeps keyed notes of the names a first name may stand for, from the table in `src/core/names.ts`: `Bob` stands for `Robert`, and `Lupe` for `Guadalupe`. Catherine and Katherine, Kaitlyn and Caitlin, and Gerald and Jerry each share a possible full name. Gerald and Jeremiah stay distinct even though both can be called Jerry. Send the name again to record a newly recognized form.
 

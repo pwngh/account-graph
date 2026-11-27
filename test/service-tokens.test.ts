@@ -29,7 +29,7 @@ test('invalid service credentials fail before the first request and errors omit 
 })
 
 test('the CLI reads named tokens from JSON or their file and catches a repeated reviewer name', () => {
-  const env = { DATABASE_URL: 'unused', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'root' }
+  const env = { DATABASE_URL: 'unused', IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'root' }
   const list = [{ name: 'intake', token: 'intake-secret', calls: { record: ['profile'] } }]
   const dir = mkdtempSync(join(tmpdir(), 'service-tokens-'))
   try {

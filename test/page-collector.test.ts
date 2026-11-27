@@ -24,7 +24,7 @@ test('page patterns cover only the named path or subtree, including when a route
   assert.equal(pageAddress('/public', { allowPages: [] }), undefined)
   assert.equal(pageAddress('/public', { refusePages: [] }), '/public')
   for (const setting of ['not a list', null, [''], [42], ['/x*y'], ['/x?private'], ['//x'], ['/a/..']]) assert.equal(validPageRules({ allowPages: setting } as never), false)
-  const base = { DATABASE_URL: 'unused', GRAPH_TOKEN: 'service', RECEIPT_SECRETS: 's'.repeat(32) }
+  const base = { DATABASE_URL: 'unused', GRAPH_TOKEN: 'service', RECEIPT_SECRETS: 's'.repeat(32), IDENTIFIER_SECRET: 'i'.repeat(32) }
   const { edge } = configFrom({ ...base, ALLOW_PAGES: '/welcome, /support/*', REFUSE_PAGES: '/files/*' })
   assert.deepEqual([edge.allowPages, edge.refusePages], [['/welcome', '/support/*'], ['/files/*']])
   assert.throws(() => configFrom({ ...base, ALLOW_PAGES: '.*' }), /ALLOW_PAGES/)

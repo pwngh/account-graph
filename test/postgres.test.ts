@@ -335,7 +335,7 @@ if (!url) {
       const second = { ...entry, key: 'signup-b', subject: 'record:b', createdAt: 9 }
       const kept = { ...entry, key: 'signup-c', subject: 'record:c', createdAt: 12 }
       const plain = { key: 'signup-d', type: 'profile' as const, subject: 'record:d', at: 20, facts: { email: 'later@example.org' } }
-      app = accountGraph({ databaseUrl: url!, schema, workers: false, receiptSecrets: ['a'.repeat(32)] })
+      app = accountGraph({ databaseUrl: url!, schema, workers: false, receiptSecrets: ['a'.repeat(32)], identifierSecret: 'i'.repeat(32) })
       assert.ok((await app.record({ entries: [entry, second, kept, plain] })).results.every(row => row.ok))
       assert.deepEqual(await store.migrate(), [])
       assert.deepEqual(await other.migrate(), [])
@@ -541,7 +541,7 @@ if (!url) {
       await pool.query(oldReport)
       await store.write(tx => tx.addSightings([{ subject: 'caller:other', identifier: 'phone:other', at: 101, recorded: 103, event: 'call' }]))
       assert.equal((await graph.keptCall('id'))?.subject, 'caller:other')
-      app = accountGraph({ databaseUrl: url!, schema, workers: false, receiptSecrets: ['a'.repeat(32)] })
+      app = accountGraph({ databaseUrl: url!, schema, workers: false, receiptSecrets: ['a'.repeat(32)], identifierSecret: 'i'.repeat(32) })
       await app.lookup({ kind: 'journey', subject: 'record:a' })
       assert.equal((await graph.keptCall('id'))?.subject, 'record:a')
       assert.deepEqual(await store.read(tx => tx.edgesOn(['phone:other'])), [])
@@ -607,7 +607,7 @@ if (!url) {
         await tx.setSetting('repairForgottenParties', 'done')
       })
       await createGraph(store, undefined, { now: () => 40 }).observe({ subject, identifiers: ['email:back@example.org'], at: 1 })
-      app = accountGraph({ databaseUrl: url!, schema, workers: false, receiptSecrets: ['a'.repeat(32)] })
+      app = accountGraph({ databaseUrl: url!, schema, workers: false, receiptSecrets: ['a'.repeat(32)], identifierSecret: 'i'.repeat(32) })
       assert.equal(await app.lookup({ kind: 'record', type: 'call', key: 'returned', at: 101 }), null)
       assert.deepEqual(await graph.partyHistory('returned'), [])
       assert.equal(await store.read(tx => tx.settingOf('repairForgottenParties')), 'done')
@@ -630,7 +630,7 @@ if (!url) {
         await tx.addSaid({ topic: 'party', about: 'old-call', key: 'old-key', at: 2, data: { role: 'self', subject: erased, by: 'desk' } })
         await tx.applyCallParty('old-call')
       })
-      app = accountGraph({ databaseUrl: url!, schema, workers: false, receiptSecrets: ['a'.repeat(32)] })
+      app = accountGraph({ databaseUrl: url!, schema, workers: false, receiptSecrets: ['a'.repeat(32)], identifierSecret: 'i'.repeat(32) })
       assert.equal(await app.lookup({ kind: 'record', type: 'call', key: 'old-call', at: 3 }), null)
       assert.deepEqual(await store.read(tx => tx.saidOf('party', 'old-call')), [])
       assert.equal(await store.read(tx => tx.settingOf('repairForgottenParties')), 'done')
@@ -1041,7 +1041,7 @@ if (!url) {
 
   test('a database from before the policy was recorded is due a rebuild, and a kind with no rule stops the server', async () => {
     const schema = `ag_test_${process.pid}_policy`
-    const env = { DATABASE_URL: url, RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKENS: '{"dana":"review"}', PORT: '0', HOST: '127.0.0.1' }
+    const env = { DATABASE_URL: url, IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKENS: '{"dana":"review"}', PORT: '0', HOST: '127.0.0.1' }
     try {
       const old = await madeBefore(schema, 6)
       await pool.query(`insert into ${schema}.subject values ('account:1', 'account:1', 'account:1');
@@ -1148,7 +1148,7 @@ if (!url) {
   test('the server starts from the environment alone and serves a visit end to end', async () => {
     const schema = `ag_test_${process.pid}_serve`
     const lines: string[] = []
-    const running = await serve({ DATABASE_URL: url, RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKENS: '{"dana":"review"}', ORIGINS: 'https://site.example', PORT: '0', HOST: '127.0.0.1' }, (line) => lines.push(line))
+    const running = await serve({ DATABASE_URL: url, IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKENS: '{"dana":"review"}', ORIGINS: 'https://site.example', PORT: '0', HOST: '127.0.0.1' }, (line) => lines.push(line))
     const base = `http://127.0.0.1:${running.port}`
     try {
       assert.equal(lines[0], `database upgraded: ${upgrades().map((upgrade) => upgrade.name).join(', ')}`)

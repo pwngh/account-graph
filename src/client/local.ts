@@ -50,8 +50,10 @@ export function localProblems(options: LocalOptions): string[] {
     if (typeof given.workers !== 'boolean') wrong.push('`workers` must be true or false')
     if (!Array.isArray(given.receiptSecrets) || given.receiptSecrets.length === 0 || given.receiptSecrets.some((each) => typeof each !== 'string' || each.length < 32)) wrong.push('`receiptSecrets` requires at least one secret of 32 characters or more')
     if (given.schema !== undefined && !/^[a-z_][a-z0-9_]*$/.test(String(given.schema))) wrong.push('`schema` must be a plain lowercase name')
+    // Names and dates of birth are always hashed, and the hashes are kept. A database without the secret could not make them.
+    if (typeof options.identifierSecret !== 'string') wrong.push('`identifierSecret` is required with a database: a secret of 32 characters or more, kept as long as the database')
   }
-  for (const name of ['identifierSecret', 'linkSecret'] as const) if (options[name] !== undefined && options[name].length < 32) wrong.push(`\`${name}\` must be at least 32 characters`)
+  for (const name of ['identifierSecret', 'linkSecret'] as const) if (options[name] !== undefined && (typeof options[name] !== 'string' || options[name].length < 32)) wrong.push(`\`${name}\` must be at least 32 characters`)
   if (options.timeoutMs !== undefined && !(Number.isInteger(options.timeoutMs) && options.timeoutMs >= 1 && options.timeoutMs <= 1_000_000_000)) wrong.push('`timeoutMs` must be an integer from 1 to 1,000,000,000')
   if (options.timeZone !== undefined) {
     try {
@@ -94,6 +96,8 @@ export function localProblems(options: LocalOptions): string[] {
 export function localGraph(options: LocalOptions, keeping: Keeping = {}): AccountGraph {
   const wrong = localProblems(options)
   if (wrong.length > 0) throw fault(FAULT_CODES.CONFIG.INVALID, wrong.join('\n'), { detail: { problems: wrong } })
+  // Read once, so the secret the database is checked against is the one the hashes are made with. A memory graph is gone with its process, so it may make its own.
+  const held = { identifierSecret: options.identifierSecret ?? randomBytes(32).toString('hex'), linkSecret: options.linkSecret }
   const log = keeping.log ?? (() => {})
   const gate = createGate()
   const timeout = options.timeoutMs ?? 30_000
@@ -128,11 +132,11 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
       // What only credits or flags is no reason to refuse a process, and whoever is given none takes what was said last.
       if (!stored || (given && (keeping.adopt || JSON.stringify(plainPolicy(given)) !== JSON.stringify(plainPolicy(stored))))) await tx.setSetting('policy', JSON.stringify(plainPolicy(policy)))
       for (const name of ['identifierSecret', 'linkSecret'] as const) {
-        const mark = secretMark(options[name])
+        const mark = secretMark(held[name])
         const before = await tx.settingOf(name)
-        // A process without it makes none of its keys, so only one with another is refused.
-        if (before !== undefined && options[name] !== undefined && before !== mark && !keeping.adopt) throw fault(FAULT_CODES.CONFIG.MISMATCH, `\`${name}\` differs from the one this database was set up with`)
-        if (options[name] !== undefined && before !== mark) await tx.setSetting(name, mark)
+        // A process without a link secret signs no links, so only one with another is refused. The identifier secret is always there.
+        if (before !== undefined && held[name] !== undefined && before !== mark && !keeping.adopt) throw fault(FAULT_CODES.CONFIG.MISMATCH, `\`${name}\` differs from the one this database was set up with`)
+        if (held[name] !== undefined && before !== mark) await tx.setSetting(name, mark)
       }
       return policy
     })
@@ -153,7 +157,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
       now,
       ...checksOf(options),
       ...(options.stages && { stages: options.stages }),
-      ...(options.identifierSecret && { identifierSecret: options.identifierSecret }),
+      identifierSecret: held.identifierSecret,
       ...(shown && { pool: { numbers: shown.numbers, minutes: shown.minutes, grace: shown.graceMinutes, requireTapAfterReassignment: shown.requireTapAfterReassignment === true } }),
       calls: {
         ...(numbers && { numbers }), ...(exclude && { exclude }), ...(minimumSeconds !== undefined && { minimumSeconds }), ...(country && { country }), ...(tapSeconds !== undefined && { clickWindow: tapSeconds * 1000 }),

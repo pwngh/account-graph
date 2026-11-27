@@ -102,6 +102,7 @@ jobs:
       ORIGINS: http://localhost:3000
       LINK_SECRET: ci-link-secret-ci-link-secret-ci
       RECEIPT_SECRETS: ci-receipt-secret-ci-receipt-secret
+      IDENTIFIER_SECRET: ci-identifier-secret-ci-identifier
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
