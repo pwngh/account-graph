@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 import { execFile, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { promisify } from 'node:util'
 import { createEdge } from '../src/edge/index.ts'
@@ -14,7 +17,7 @@ async function listen(server: Server) {
   return 'http://127.0.0.1:' + (server.address() as AddressInfo).port
 }
 
-test('.NET uses the six calls, refuses before sending, and recovers a committed write after a lost reply', { timeout: 300_000 }, async t => {
+test('.NET uses the six calls, refuses before sending, and recovers committed writes after a lost reply and a restart', { timeout: 300_000 }, async t => {
   const probe = spawnSync('dotnet', ['--version'])
   // CI installs .NET, so there the test runs or fails.
   if ((probe.error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' && !process.env.CI) return t.skip('dotnet is needed for the .NET client integration test')
@@ -32,7 +35,7 @@ test('.NET uses the six calls, refuses before sending, and recovers a committed 
   const base = await listen(server)
 
   // Lose the first answer only after the real graph has finished writing.
-  const replays: { body: string, duplicate: boolean }[] = []
+  const replays = new Map<string, { body: string, duplicate: boolean }[]>()
   const gateway = createServer(async (request, response) => {
     try {
       const chunks = []
@@ -41,9 +44,11 @@ test('.NET uses the six calls, refuses before sending, and recovers a committed 
       const upstream = await fetch(base + request.url, { method: 'POST', headers: { authorization: request.headers.authorization ?? '', 'content-type': 'application/json' }, body })
       const answer = await upstream.text()
       const first = JSON.parse(answer).results?.[0]
-      if (first?.ok && first.key === 'retry-visit') {
-        replays.push({ body, duplicate: first.value.duplicate })
-        if (replays.length === 1) return response.destroy()
+      if (first?.ok && ['retry-visit', 'queued-sale'].includes(first.key)) {
+        const attempts = replays.get(first.key) ?? []
+        attempts.push({ body, duplicate: first.value.duplicate })
+        replays.set(first.key, attempts)
+        if (attempts.length === 1) return response.destroy()
       }
       response.writeHead(upstream.status, { 'content-type': 'application/json' }).end(answer)
     } catch {
@@ -56,10 +61,15 @@ test('.NET uses the six calls, refuses before sending, and recovers a committed 
   })
   const lossy = await listen(gateway)
 
-  const { stdout } = await promisify(execFile)('dotnet', ['run', '--project', 'clients/dotnet/RealGraph', '--', base, lossy], {
+  const dir = await mkdtemp(join(tmpdir(), 'ag-dotnet-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const { stdout } = await promisify(execFile)('dotnet', ['run', '--project', 'clients/dotnet/RealGraph', '--', base, lossy, join(dir, 'outbox.sqlite')], {
     env: { PATH: process.env.PATH, HOME: process.env.HOME, DOTNET_CLI_TELEMETRY_OPTOUT: '1', DOTNET_NOLOGO: '1' }, timeout: 240_000,
   })
   assert.equal(stdout.trim().split('\n').at(-1), 'ok')
-  assert.deepEqual(replays.map(x => x.duplicate), [false, true])
-  assert.equal(replays[1]!.body, replays[0]!.body)
+  for (const key of ['retry-visit', 'queued-sale']) {
+    const attempts = replays.get(key)!
+    assert.deepEqual(attempts.map(x => x.duplicate), [false, true], key)
+    assert.equal(attempts[1]!.body, attempts[0]!.body, key)
+  }
 })

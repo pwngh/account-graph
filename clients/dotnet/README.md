@@ -56,6 +56,20 @@ await foreach (var page in graph.EventPagesAsync(new JsonObject { ["after"] = sa
 }
 ```
 
+## Outbox
+
+Reference `clients/dotnet/AccountGraph.Outbox` as well to keep entries in a SQLite file until the graph has them. It uses the `Microsoft.Data.Sqlite` package.
+
+```csharp
+using var queue = new Outbox("account-graph-outbox.sqlite");
+var sale = queue.Enqueue("order-7", saleEntry);
+queue.Enqueue("order-7", refundEntry);                      // sent after the sale, in order
+queue.Enqueue("invoice-12", paymentEntry, dependsOn: sale); // held until the sale is sent
+await queue.FlushAsync(graph);                              // run it on a timer from one or many processes
+```
+
+`Enqueue` checks the entry and keeps its key, time and fields, so a resend is the same request. `FlushAsync` claims each ready row for `leaseSeconds`, which should be longer than the client's `totalTimeout`, then sends it. A row the graph refuses is `refused`, a row it can never take is `failed`, and a row that depends on either is `blocked` until its prerequisite is sent. A call fault ends the pass with the row still pending.
+
 ## Rules the client keeps
 
 - Plain `http` is allowed only to this machine, checked again on the connected address before the token is sent.

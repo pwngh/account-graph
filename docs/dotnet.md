@@ -6,4 +6,6 @@ Use `AccountGraph.Client` to call a running graph from .NET 10. Reference the pr
 
 `Client.StableKey(source, rowId, revision)` gives the same key as the Python client's `stable_key`, so a row sent from either gets one key.
 
-`EventPagesAsync`, `ReportPagesAsync` and `JourneyPagesAsync` follow each cursor to the last page, and stop with `GRAPH.INTERNAL` if the server hands back a cursor already followed. The client has no outbox yet.
+`EventPagesAsync`, `ReportPagesAsync` and `JourneyPagesAsync` follow each cursor to the last page, and stop with `GRAPH.INTERNAL` if the server hands back a cursor already followed.
+
+`AccountGraph.Outbox`, a separate project in `clients/dotnet/AccountGraph.Outbox`, keeps entries in a SQLite file until the graph has them. It sends each record's entries in order, and several processes can share one file. A refused entry is set aside with its reason and holds back only the entries that depend on it. It has the same table and rules as the Python outbox, and needs the `Microsoft.Data.Sqlite` package. The client itself needs none.
