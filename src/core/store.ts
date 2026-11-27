@@ -239,9 +239,7 @@ export interface Tx {
   /** The physical line of a recorded call, for deleting either side of a staff confirmation. */
   callLine(id: string): Promise<Subject | undefined>
   /** Applies the standing assertion to this call. A call arriving after its assertion left no guesses to take back. */
-  applyCallParty(id: string, arriving?: boolean, overwritten?: boolean): Promise<Subject[]>
-  /** Calls whose reported owner disagrees with the standing staff statement after an older writer ran. */
-  overwrittenCalls(limit: number): Promise<string[]>
+  applyCallParty(id: string, arriving?: boolean): Promise<Subject[]>
   setCallResult(id: string, result: CallResult): Promise<void>
   removeCallResult(id: string): Promise<void>
   /** A call with its result, or undefined for an id no call was kept for. */
@@ -339,12 +337,9 @@ export interface Tx {
   lastDecision(): Promise<Decision | undefined>
   /** The newest decision after a sequence number that names any of the given subjects or identifiers. A prune names none. */
   newestNaming(names: readonly string[], after: number, among?: readonly Decision['action'][]): Promise<Decision | undefined>
-  /** Every unproved statement on up to this many calls, so a batch includes all candidates for the standing owner. */
-  unprovenParties(limit: number): Promise<{ subject: Subject; call: string; key: string; deletion: number; erasedAt: number; ready?: number; retryFrom?: number }[]>
   /** The latest deletion, if any. A returned record can be named only for a call that followed that deletion. */
   partyReturn(subject: Subject, call: string): Promise<number | 'forgotten' | undefined>
   confirmPartyReturn(call: string, key: string, deletion: number): Promise<void>
-  removePartyStatements(call: string, keys: string[]): Promise<void>
   /** Every decision, oldest first. */
   decisions(): Promise<Decision[]>
   /** One page of decisions, newest first: those before a sequence number, by people, by systems, or by one author. */

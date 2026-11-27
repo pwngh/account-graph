@@ -64,13 +64,6 @@ const STANDING = `at desc, coalesce(key, '') collate "C" desc, recorded_at desc,
 
 const READ_ONLY = 'begin isolation level repeatable read read only'
 
-// Older writers left staff statements alone when replacing the call row. Some also recorded a call after a pending statement.
-const overwrittenCalls = (schema: string) => `select c.id from ${schema}.call c where c.party is not null and (c.subject <>
-  case when c.party->>'role' in ('self', 'representative') then c.party->>'subject' else 'call:' || c.id end
-  or (c.direction = 'inbound' and c.subject = 'call:' || c.id and exists (select from ${schema}.sighting s where s.subject = c.subject
-    and s.at = c.at and s.event = 'call' and s.identifier = 'dialed:call-' || c.id)))
-  union all select c.id from (select distinct about from ${schema}.said where topic = 'party') s join ${schema}.call c on c.id = s.about where c.party is null`
-
 /**
  * Keeps the graph in PostgreSQL. Writes take one advisory lock, so they run
  * one at a time across every process; reads take a repeatable-read snapshot
@@ -966,23 +959,16 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return rows[0]?.line
     },
 
-    async overwrittenCalls(limit) {
-      return (await db.query(`${overwrittenCalls(schema)} limit $1`, [limit])).rows.map(row => row.id)
-    },
-
-    async applyCallParty(id, arriving = false, overwritten = false) {
-      const standing = await partyOf(this, id)
-      if (!standing && !overwritten) return []
+    async applyCallParty(id, arriving = false) {
+      const party = await partyOf(this, id)
+      if (!party) return []
       const call = await this.callOf(id)
-      const party = standing ?? call?.party
-      if (!call || !party) return []
+      if (!call) return []
       const owner = ownerOf(id, party)
       const { rows: [raw] } = await db.query(`select coalesce(line_subject, subject) as line, line_kind from ${t('call')} where id = $1`, [id])
       const line = raw.line
-      const first = overwritten || (!call.party && !arriving)
-      const reported = overwritten ? call.subject : line
-      if (overwritten) await db.query(`update ${t('call')} set visitor = null, tags = null, flags = $2 where id = $1`, [id, withoutGuesses(call.flags)])
-      const { changes, affected } = first ? await callTraces(this, call, reported, raw.line_kind ?? undefined) : { changes: [], affected: [] }
+      const first = !call.party && !arriving
+      const { changes, affected } = first ? await callTraces(this, call, line, raw.line_kind ?? undefined) : { changes: [], affected: [] }
       await this.reserveCall(changes.map(({ edge, recorded }) => ({ call: id, subject: edge.subject, identifier: edge.identifier, at: call.at, recorded })))
       for (const { edge, remove, next } of changes) {
         const { subject, identifier } = edge
@@ -997,7 +983,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         await db.query(`delete from ${t('identifier')} where id = any($1::text[]) and fanout <= 0 and not ignored`, [changes.map(({ edge }) => edge.identifier)])
         await db.query(`delete from ${t('subject')} s where id = any($1::text[]) and not exists (select from ${t('edge')} e where e.subject = s.id)`, [changes.map(({ edge }) => edge.subject)])
       }
-      if (first && (!call.visitor || overwritten) && call.direction === 'inbound') await this.dropTouch(reported, call.at, `tel:${call.to}`, id, true)
+      if (first && !call.visitor && call.direction === 'inbound') await this.dropTouch(line, call.at, `tel:${call.to}`, id, true)
       if (call.subject !== owner) await reopenWaits(this, [call])
       await db.query(`update ${t('call')} set line_subject = $2, line_kind = null, subject = $3, party = $4 where id = $1`, [id, line, owner, party])
       const transactionId = `call:${id}`
@@ -1445,20 +1431,6 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return rows.map(toDecision)
     },
 
-    async unprovenParties(limit) {
-      const { rows } = await db.query(`with erased as materialized (select distinct on (d.about->>0) d.about->>0 as subject, d.at, d.seq
-          from ${t('decision')} d where d.action = 'forget' order by d.about->>0, d.seq desc),
-        pending as not materialized (select s.about, s.key, erased.* from erased join ${t('said')} s on s.topic = 'party'
-          and s.data->>'subject' = erased.subject where s.returned_after is distinct from erased.seq),
-        calls as materialized (select distinct about from pending limit $1),
-        prunes as materialized (select at, (about->>0)::bigint as cutoff from ${t('decision')} where action = 'prune')
-        select p.*, c.recorded_at, (select min(at) from prunes where cutoff > p.at) as retry_from, (select min(w.recorded_at) from ${t('sighting')} w where w.subject = p.subject
-          and not starts_with(w.identifier, 'review:') and w.recorded_at > p.at) as fresh
-        from calls join pending p using (about) left join ${t('call')} c on c.id = p.about and c.at > p.at`, [limit])
-      return rows.map(row => ({ subject: row.subject, call: row.about, key: row.key, deletion: Number(row.seq), erasedAt: Number(row.at),
-        ...(row.fresh !== null && row.recorded_at !== null && { ready: Math.max(Number(row.fresh), Number(row.recorded_at)) }), ...(row.retry_from !== null && { retryFrom: Number(row.retry_from) }) }))
-    },
-
     async partyReturn(subject, call) {
       const { rows: [row] } = await db.query(`select erased.seq, exists (select from ${t('call')} c where c.id = $2 and c.at > erased.at)
         and (exists (select from ${t('edge')} e where e.subject = $1 and not starts_with(e.identifier, 'review:'))
@@ -1469,10 +1441,6 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
     async confirmPartyReturn(call, key, deletion) {
       await db.query(`update ${t('said')} set returned_after = $3 where topic = 'party' and about = $1 and key = $2`, [call, key, deletion])
-    },
-
-    async removePartyStatements(call, keys) {
-      await db.query(`delete from ${t('said')} where topic = 'party' and about = $1 and key = any($2::text[])`, [call, keys])
     },
 
     async decisionsNaming(subjects) {
