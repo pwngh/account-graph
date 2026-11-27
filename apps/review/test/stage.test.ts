@@ -92,11 +92,33 @@ function visibleText(html: string) {
   return html.replace(/<script\b[^>]*>[^]*?<\/script>/gi, '').replace(/<[^>]+>/g, '').replaceAll('&#x27;', "'").replaceAll('&amp;', '&').replaceAll('&quot;', '"')
 }
 
+/** The page without the cards its detail marks open. A card holds other divisions, so its end is found by counting them. */
+function withoutCards(html: string) {
+  let kept = ''
+  let at = 0
+  for (;;) {
+    const start = html.indexOf('<div class="card-pop', at)
+    if (start < 0) return kept + html.slice(at)
+    kept += html.slice(at, start)
+    const tag = /<(\/?)div\b/g
+    tag.lastIndex = start
+    let depth = 0
+    at = html.length
+    for (let found = tag.exec(html); found; found = tag.exec(html)) {
+      depth += found[1] ? -1 : 1
+      if (depth === 0) {
+        at = html.indexOf('>', found.index) + 1
+        break
+      }
+    }
+  }
+}
+
 async function reportText(client: ReturnType<typeof stageClient>, path: string) {
   const page = await client(path)
   assert.equal(page.status, 200, path)
   const html = (await page.text()).match(/<main\b[^>]*>([^]*?)<\/main>/)?.[1] ?? ''
-  return visibleText(html.replace(/<details\b[^>]*>[^]*?<\/details>/g, '').replace(/<\/?(?:h[1-6]|li|div|section|p|td|tr)\b[^>]*>/g, '\n')).replace(/\n+/g, '\n')
+  return visibleText(withoutCards(html).replace(/<details\b[^>]*>[^]*?<\/details>/g, '').replace(/<\/?(?:h[1-6]|li|div|section|p|td|tr)\b[^>]*>/g, '\n')).replace(/\n+/g, '\n')
 }
 
 test('the browser helper preserves DevTools protocol and page errors and matches each pending reply', async () => {
@@ -313,7 +335,7 @@ for (const practice of ['family', 'injury'] as const) test('the ' + practice + '
     if (scenes[i]!.title === 'Details entered') assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, /Contact saved.*No duplicate on file · a caller and a site visit, by phone POST \/match/)
     if (scenes[i]!.title === 'Separation') assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, /Conflict check.*Inés Vega, Tomás Vega.*Kept apart, on record/)
     if (scenes[i]!.title === 'Two at one call') assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, /Who was on this call.*Refused: dana answered first.*Tomás Vega, by dana/)
-    if (scenes[i]!.title === 'What is behind a number') assert.match((await run(`[...document.querySelectorAll('details[open]')].map(node => node.innerText).join(' ')`)) as string, /Answered[^]*Target 90%, set by you/)
+    if (scenes[i]!.title === 'What is behind a number') assert.match((await run(`[...document.querySelectorAll('.card-pop:popover-open')].map(node => node.innerText).join(' ')`)) as string, /Answered[^]*Target 90%, set by you/)
     const after = seen(await view(links[i]!))
     // A link that was made and not opened changes nothing in the account.
     if (['Form texted', 'Two at one call', 'What is behind a number'].includes(scenes[i]!.title)) assert.equal(after, before)

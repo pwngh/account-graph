@@ -512,7 +512,7 @@ test('a caller hash is shortened in its link as on the original screen, with the
     account.links = [...original.links, { ...original.links[0], subject: caller }]
     account.cluster = { ...original.cluster, members: [...original.cluster.members, caller] }
     const html = (await (await fetch(origin + path, { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
-    const link = new RegExp('<a class="subject" title="' + caller + '" href="/accounts/caller%3A3ea1d013bd8f00c1a7e4b2d9c6f5a8e7"[^>]*><bdi>caller:3ea1d013bd8…</bdi></a>')
+    const link = new RegExp('<a class="link subject" title="' + caller + '" href="/accounts/caller%3A3ea1d013bd8f00c1a7e4b2d9c6f5a8e7"[^>]*><bdi>caller:3ea1d013bd8…</bdi></a>')
     assert.match(html, link)
   } finally {
     Object.assign(account, original)
@@ -542,7 +542,7 @@ test('right-to-left names and IDs are isolated from the text around them', async
     assert.ok(html.includes('<bdi>' + hebrew + '</bdi></a>'), 'a linked ID')
     assert.ok(html.includes('<bdi>' + subject + '</bdi> · <bdi>' + hebrew + '</bdi>'), 'IDs in the audit log')
     assert.ok(html.includes('<bdi>\u05d3\u05e0\u05d4</bdi> · '), 'a decision author')
-    assert.ok(html.includes('<bdi>dana</bdi> <button>Sign out</button>'), 'the signed-in reviewer')
+    assert.ok(html.includes('<bdi id="name">dana</bdi><button id="leave">Sign out</button>'), 'the signed-in reviewer')
     assert.ok(html.includes('<bdi>' + subject + '</bdi></h2>'), 'the account heading')
   } finally {
     Object.assign(account, original)
