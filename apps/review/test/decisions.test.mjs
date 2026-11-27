@@ -162,10 +162,10 @@ test('Health says when sends to ad platforms are stopped, why, since when, and h
   const cookie = login.headers.get('set-cookie').split(';')[0]
   const page = async () => (await (await fetch(origin + '/health', { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
   assert.match(await page(), /<ul class="needs"><li role="alert"><b>Sends to ad platforms are paused\.<\/b> checking a wrong tie\. Since <time dateTime="[^"]+"[^>]*>[12] min ago<\/time>\. Run account-graph sends resume once the cause is fixed\.<\/li>/)
-  assert.match(await page(), /<dt>Issues<\/dt><dd><span class="tile-line"><b>1<\/b>/)
+  assert.match(await page(), /<dt><span class="term">Issues<button[^]*?<\/dt><dd><span class="tile-line"><b>1<\/b>/)
   paused = null
   assert.doesNotMatch(await page(), /Sends to ad platforms are paused/)
-  assert.match(await page(), /<dt>Issues<\/dt><dd><span class="tile-line"><b>0<\/b>/)
+  assert.match(await page(), /<dt><span class="term">Issues<button[^]*?<\/dt><dd><span class="tile-line"><b>0<\/b>/)
   // A retry the graph does not answer says so and keeps the session. One it refuses as signed out ends the session.
   const again = () => fetch(origin + '/health', { method: 'POST', headers: { cookie, origin }, body: new URLSearchParams({ intent: 'retry', transactionId: 'sale-1', target: 'google' }), redirect: 'manual' })
   retry = 'down'

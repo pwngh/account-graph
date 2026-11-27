@@ -16,6 +16,16 @@
 .chart .name .glyph { opacity: 1; }
 .timeline-entry .why .detail { margin-left: 6px; vertical-align: -4px; }
 .timeline-entry .why .reason { display: block; }
+/* A definition, opened from the mark beside its term. It is over everything, as the card of a detail is. */
+.info-pop { position: fixed; width: max-content; max-width: min(340px, calc(100vw - 16px)); margin: auto; padding: 12px 14px; border: 1px solid var(--edge); border-radius: 11px; background: var(--card); color: var(--ink); box-shadow: 0 14px 40px rgb(0 0 0 / .3); font-size: var(--body); font-weight: 400; letter-spacing: 0; line-height: 1.5; text-align: left; white-space: normal; }
+.info-pop:popover-open { display: block; }
+.info-pop::backdrop { background: none; }
+.info-pop b { display: block; margin-bottom: 3px; font-size: var(--body); line-height: 1.5; font-weight: 600; letter-spacing: 0; color: var(--ink); }
+.info-pop .info-text { display: block; color: var(--muted); }
+.info-pop code { display: block; margin-top: 9px; padding: 8px 10px; border-radius: 7px; background: var(--raise); color: var(--ink); font: .75rem/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; }
+@supports (position-area: block-end) {
+  .info-pop { inset: auto; margin: 8px 0; position-area: block-end span-inline-end; position-try-fallbacks: flip-inline, flip-block, flip-block flip-inline; }
+}
 /* The card a detail mark opens. It is over everything, beside its mark where the browser can place it there, and in the middle of the screen where it cannot. */
 .card-pop { position: fixed; width: min(370px, calc(100vw - 16px)); max-height: calc(100vh - 16px); margin: auto; padding: 13px 15px; overflow: auto; border: 1px solid var(--edge); border-radius: 11px; background: var(--card); color: var(--ink); box-shadow: 0 14px 40px rgb(0 0 0 / .3); font-size: var(--body); font-weight: 400; line-height: 1.45; text-align: left; white-space: normal; cursor: auto; }
 .card-pop.roomy { width: min(430px, calc(100vw - 16px)); }

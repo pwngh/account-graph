@@ -53,7 +53,7 @@ test('Matches has the queue beside the strongest pair, the two records side by s
   assert.match(html, new RegExp('<div class="versus-who">.*?<bdi>' + a + '</bdi>.*?<div class="versus-who">.*?<bdi>' + b + '</bdi>'))
   for (const name of ['Identifiers', 'Events', 'Active', 'Linked IDs', 'Separated from']) assert.ok(html.includes('<div class="versus-name" role="rowheader">' + name + '</div>'), name)
   assert.match(html, /<p class="pair-effect" role="status">(After joining: \d+ (person|people) \(.+ IDs?\)|Joining changes no groups\.)<\/p>/)
-  assert.match(html, /<div class="pair-why"><p class="inbox-age">Evidence<\/p><div class="reason"><b>\w+<\/b> \d+% · \d+ IDs · /)
+  assert.match(html, /<div class="pair-why"><p class="inbox-age"><span class="term">Evidence<button[^]*?<\/p><div class="reason"><b>\w+<\/b> \d+% · \d+ IDs · /)
   assert.match(html, /<summary aria-keyshortcuts="j">Join<kbd>J<\/kbd><\/summary>/)
   // The page holds the identifiers of the open pair, for Ignore, and of no other pair.
   const whole = await (await fetch(firm.graph + '/decide', { headers: { cookie } })).text()
@@ -78,7 +78,7 @@ test('Health has what runs and what needs someone: the tiles, a card for each fe
   const cookie = login.headers.get('set-cookie').split(';')[0]
   const html = (await (await fetch(firm.graph + '/health', { headers: { cookie } })).text()).split('</main>')[0].replaceAll('<!-- -->', '')
   const ops = await (await fetch(firm.graph + '/review/api/ops', { headers: { authorization: 'Bearer demo' } })).json()
-  assert.deepEqual([...html.matchAll(/<dt>([^<]+)<\/dt>/g)].map(([, name]) => name).slice(0, 6), ['Issues', 'Audit log', 'Policy', 'Queued', 'Sent', 'Alerts'])
+  assert.deepEqual([...html.matchAll(/<dt><span class="term">([^<]+)<button/g)].map(([, name]) => name).slice(0, 6), ['Issues', 'Audit log', 'Policy', 'Queued', 'Sent', 'Alerts'])
   // Each feed has its state and a card that says when its last record came and what watches it.
   const feeds = [...html.matchAll(/<li><span class="tile"[^>]*>.*?<\/span><b>([^<]+)<\/b><span class="state"><span class="chip same">OK<\/span><button type="button" class="detail"[^>]*aria-label="([^"]+)"/g)]
   assert.deepEqual(feeds.map(([, name, label]) => [name, label]), ops.feeds.map(feed => [{ touches: 'Visits', calls: 'Calls', results: 'Call results', costs: 'Campaign costs' }[feed.name], { touches: 'Visits', calls: 'Calls', results: 'Call results', costs: 'Campaign costs' }[feed.name] + ', OK']))
@@ -106,7 +106,7 @@ test('Channels has what each campaign cost and brought in, ranked and in a table
   const report = await (await fetch(firm.graph + '/review/api/report', { headers: { authorization: 'Bearer demo' } })).json()
   const usd = n => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
   const html = await get('/channels')
-  assert.deepEqual([...html.matchAll(/<dt>([^<]+)<\/dt>/g)].map(([, name]) => name).slice(0, 5), ['Spend', 'Value', 'People', 'Cost per outcome', 'ROAS'])
+  assert.deepEqual([...html.matchAll(/<dt><span class="term">([^<]+)<button/g)].map(([, name]) => name).slice(0, 5), ['Spend', 'Value', 'People', 'Cost per outcome', 'ROAS'])
   assert.ok(html.includes('<b>' + usd(report.total.cost) + '</b>'), 'the spend of the report')
   assert.ok(html.includes('<b>' + usd(report.total.value) + '</b>'), 'the value of the report')
   // Each campaign has a line with its own spend, people and value, and the total is the report's.
@@ -212,4 +212,29 @@ test('a reviewer takes a missed caller off the waiting list from Calls: reached,
   const guest = await post(reached, { origin: firm.graph })
   assert.ok([302, 303].includes(guest.status) && /signin/.test(guest.headers.get('location')))
   assert.equal((await post(reached, { cookie, origin: 'https://elsewhere.example' })).status, 403)
+})
+
+test('a term has its definition beside it on every page, in the page from the start', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const get = async path => (await (await fetch(firm.graph + path, { headers: { cookie } })).text()).split('</main>')[0].replaceAll('<!-- -->', '')
+  const board = await get('/board/90')
+  const person = /href="(\/journey\/[^"]+)"/.exec(board)[1]
+  const pages = { '/board/90': ['Board', 'Overdue'], '/calls': ['Inbound calls', 'Returned', 'Awaiting callback'], [person]: ['IDs'], [person.replace('/journey/', '/accounts/')]: ['Linked IDs', 'Largest groups', 'Audit log'], '/decide': ['Pending', 'IDs checked', 'Evidence'], '/channels': ['Spend', 'ROAS', 'Campaigns', 'Clicks'], '/health': ['Issues', 'Matching policy', 'Feeds', 'Matching rules'] }
+  for (const [path, names] of Object.entries(pages)) {
+    const html = path === '/board/90' ? board : await get(path)
+    // Each mark names what it is about, opens the box with the same id, and the box has the name and a sentence.
+    const marks = [...html.matchAll(/<button type="button" class="info" popoverTarget="([^"]+)" popoverTargetAction="show" aria-label="About ([^"]+)" aria-describedby="\1">/g)]
+    assert.ok(marks.length >= names.length, path + ' has ' + marks.length + ' marks')
+    for (const [, id, name] of marks) {
+      const box = new RegExp('<span class="info-pop" id="' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '" popover="auto" role="tooltip"><b>' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '</b><span class="info-text">[^<]{20,}</span>').exec(html)
+      assert.ok(box, path + ': the definition of ' + name)
+    }
+    for (const name of names) assert.ok(marks.some(([, , said]) => said === name), path + ' defines ' + name)
+  }
+  // A definition that has arithmetic shows it, and one that depends on the data says so.
+  assert.match(await get('/channels'), /<b>ROAS<\/b><span class="info-text">[^<]+<\/span><code>value ÷ spend<\/code>/)
+  assert.match(await get('/channels?by=hour'), /<b>Campaigns<\/b><span class="info-text">[^<]+ Splits outcomes within each campaign\./)
 })

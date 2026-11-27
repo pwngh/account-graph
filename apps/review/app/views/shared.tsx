@@ -3,6 +3,7 @@ import { Form, Link, useFetcher, useLocation } from 'react-router'
 import { subjectPath } from '../navigation'
 import { ICONS, PERSON, typeOf } from './cluster-layout.js'
 import { ViewMark, type ViewName } from './marks'
+import { Term } from './terms'
 import { idText, lasted } from './report-words.js'
 
 export const amount = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 })
@@ -43,9 +44,9 @@ export function Badge({ id }: { id: string }) {
   return <svg className={'badge ' + (['account', 'visitor', 'lead', 'caller', 'contact', 'person'].includes(kind) ? kind : '')} viewBox="-11 -11 22 22" aria-hidden="true"><circle r="10"/><path className={ICONS[kind] ? 'line' : ''} d={ICONS[kind] || PERSON} transform="scale(.82)"/></svg>
 }
 
-/** A table that scrolls sideways where it must. A heading given with a class, as `['Calls', 'num']`, has it. */
-export function Table({ title, headers, children }: { title: string, headers: (string | [string, string])[], children: ReactNode }) {
-  return <div className="wide" tabIndex={0} role="region" aria-label={title}><table><thead><tr>{headers.map(h => typeof h === 'string' ? <th key={h} scope="col">{h}</th> : <th key={h[0]} scope="col" className={h[1]}>{h[0]}</th>)}</tr></thead><tbody>{children}</tbody></table></div>
+/** A table that scrolls sideways where it must. A heading given as `['Score', 'num', 'score']` has that class and the definition at that place. */
+export function Table({ title, headers, children }: { title: string, headers: (string | [string, string, string?])[], children: ReactNode }) {
+  return <div className="wide" tabIndex={0} role="region" aria-label={title}><table><thead><tr>{headers.map(h => typeof h === 'string' ? <th key={h} scope="col">{h}</th> : <th key={h[0]} scope="col" className={h[1] || undefined}>{h[2] ? <Term id={h[2]}>{h[0]}</Term> : h[0]}</th>)}</tr></thead><tbody>{children}</tbody></table></div>
 }
 
 /**
@@ -117,8 +118,13 @@ export function Scroll({ label, children }: { label: string, children: ReactNode
 }
 
 /** The few numbers a view is about, large, each with what it is of. The fourth of an item is its tone, for one that needs someone. */
-export function Tiles({ items }: { items: ([string, ReactNode, ReactNode?, string?, ReactNode?] | false | undefined | null | 0 | '')[] }) {
-  return <dl className="tiles">{items.map(item => item && <div key={item[0]} className={item[3] || undefined}><dt>{item[0]}</dt><dd><span className="tile-line"><b>{item[1]}</b>{item[4]}</span>{item[2] && <span className="reason">{item[2]}</span>}</dd></div>)}</dl>
+export function Tiles({ items }: { items: ([string | [string, string, string?], ReactNode, ReactNode?, string?, ReactNode?] | false | undefined | null | 0 | '')[] }) {
+  return <dl className="tiles">{items.map(item => {
+    if (!item) return null
+    // A name given with the place of its definition, as `['Spend', 'spend']`, has the mark beside it.
+    const [name, term, more] = typeof item[0] === 'string' ? [item[0]] : item[0]
+    return <div key={name} className={item[3] || undefined}><dt>{term ? <Term id={term} more={more}>{name}</Term> : name}</dt><dd><span className="tile-line"><b>{item[1]}</b>{item[4]}</span>{item[2] && <span className="reason">{item[2]}</span>}</dd></div>
+  })}</dl>
 }
 
 export interface ActionResult {
