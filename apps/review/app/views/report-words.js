@@ -39,6 +39,12 @@ export const unreached = (state) => state === 'missed' || state === 'voicemail'
 export const amount = n => n.toLocaleString('en-US', { maximumFractionDigits: 2 })
 const money = amount
 export const percent = n => Math.round(100 * n) + '%'
+/** A length of time in its largest unit, for where there is little room. The title beside it has it whole. */
+export const brief = ms => ms < 3600000 ? Math.max(1, Math.round(ms / 60000)) + 'm' : ms < 172800000 ? Math.round(ms / 3600000) + 'h' : Math.floor(ms / 86400000) + 'd'
+/** A day of a report, in words. */
+export const dayWords = day => new Date(day + 'T00:00:00Z').toLocaleDateString('en-US', { dateStyle: 'medium', timeZone: 'UTC' })
+/** How a call ended, as a tone: reached, lost, or not known yet. */
+export const callTone = state => ({ answered: 'same', missed: 'apart', voicemail: 'related', waiting: 'related' })[state] ?? ''
 export const idText = value => value.length > 24 ? value.slice(0, 18) + '…' : value
 export const inWords = name => String(name).replaceAll('_', ' ')
 export const cameFrom = row => row?.source ? row.source + (row.campaign || row.campaignId ? ' · ' + (row.campaign ?? row.campaignId) : '') : undefined

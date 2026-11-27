@@ -5,13 +5,31 @@
 .report-chart circle { fill: var(--accent); stroke: currentColor; }
 .report-chart a:focus-visible circle { stroke-width: 4; }
 .report-chart .group-count { fill: var(--on-accent); font-size: 10px; }
-.report-detail { font-size: .875rem; }
-.report-detail summary { cursor: pointer; color: var(--accent); text-decoration: underline; width: fit-content; }
-.report-detail[open] { border: 1px solid var(--line); padding: .75rem; border-radius: .5rem; min-width: min(14rem,100%); }
-.report-detail dd, .report-detail p, .report-detail code { white-space: normal; overflow-wrap: anywhere; }
-.report-detail h4 { margin: .5rem 0; }
-.report-detail .detail-links { display: flex; flex-wrap: wrap; gap: .5rem; }
-.report-detail:target { outline: 2px solid var(--accent); }
+/* The card a detail mark opens. It is over everything, beside its mark where the browser can place it there, and in the middle of the screen where it cannot. */
+.card-pop { position: fixed; width: min(370px, calc(100vw - 16px)); max-height: calc(100vh - 16px); margin: auto; padding: 13px 15px; overflow: auto; border: 1px solid var(--edge); border-radius: 11px; background: var(--card); color: var(--ink); box-shadow: 0 14px 40px rgb(0 0 0 / .3); font-size: var(--body); font-weight: 400; line-height: 1.45; text-align: left; white-space: normal; cursor: auto; }
+.card-pop.roomy { width: min(430px, calc(100vw - 16px)); }
+.card-pop::backdrop { background: none; }
+.card-pop:popover-open { transition: opacity .12s, translate .12s var(--ease); }
+@starting-style { .card-pop:popover-open { opacity: 0; translate: 0 -4px; } }
+@supports (position-area: block-end) {
+  .card-pop { inset: auto; margin: 6px 0; position-area: block-end span-inline-end; position-try-fallbacks: flip-inline, flip-block, flip-block flip-inline; }
+}
+.card-pop :is(dd, p, code) { overflow-wrap: anywhere; }
+.detail:target { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 520px) {
+  .card-pop, .card-pop.roomy { inset: auto 0 0; width: 100%; max-width: none; max-height: 70vh; margin: 0; padding: 15px 16px calc(15px + env(safe-area-inset-bottom)); border-width: 1px 0 0; border-radius: 14px 14px 0 0; position-area: none; }
+}
+/* A row of the list of missed calls is a link to that call, and the whole row takes the click. */
+.inbox-call { position: relative; }
+.inbox-call.on { background: var(--raise); }
+.inbox-call.on .inbox-who { font-weight: 600; }
+.inbox-who { color: inherit; text-decoration: none; }
+.inbox-who::after { content: ''; position: absolute; inset: 0; border-radius: 8px; }
+.inbox-who:focus-visible { outline: none; }
+.inbox-who:focus-visible::after { outline: 2px solid currentColor; outline-offset: -2px; }
+.inbox-call > .inbox-from:not(:has(+ .chip)) { grid-column: 2 / 4; }
+.inbox-call > .detail { z-index: 1; grid-row: 1 / 3; grid-column: 4; }
+.inbox-list ol { margin: 0; padding: 0; list-style: none; }
 @media (forced-colors: active) {
   .report-chart circle, .graph .node .disc { fill: Canvas; stroke: CanvasText; }
   .report-chart .group-count { fill: CanvasText; }
@@ -21,6 +39,4 @@
 .coverage-bar .part0 { fill: var(--accent); }
 .coverage-bar .part1 { fill: var(--same); }
 .coverage-bar .part2 { fill: var(--related); }
-.inbox-side .segments a { padding: 4px 8px; }
-.inbox-side .segments a[aria-current=page] { text-decoration: underline; }
 .inbox-facts dd { overflow-wrap: anywhere; }

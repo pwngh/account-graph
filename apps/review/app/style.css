@@ -1,4 +1,9 @@
-#views a[aria-current=page] { font-weight: bold; text-decoration: underline }
+#summon { pointer-events: none; display: inline-flex; align-items: center }
+/* A choice of period or of result is a link here, so it works before any script has loaded. */
+.segments a, .presets a { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 7px; color: var(--muted); font-size: var(--small); font-weight: 500; text-decoration: none; white-space: nowrap }
+.segments a:hover, .presets a:hover { color: var(--ink) }
+.segments a[aria-current], .presets a[aria-current] { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgb(0 0 0 / .08) }
+@media (prefers-color-scheme: dark) { .segments a[aria-current], .presets a[aria-current] { background: #3a3a38; box-shadow: 0 1px 2px rgb(0 0 0 / .3) } }
 details > summary { cursor: pointer }
 details form { display: grid; gap: .6rem; margin-block: .75rem }
 summary:focus-visible, a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px }

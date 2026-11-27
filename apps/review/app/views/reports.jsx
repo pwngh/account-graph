@@ -1,8 +1,8 @@
 import './reports.css'
-import { createContext, Fragment, useContext, useEffect, useState } from 'react'
+import { createContext, Fragment, useContext, useEffect, useId, useRef, useState } from 'react'
 import { Form, Link, useFetcher } from 'react-router'
-import { Table, Tiles, Time, Subject, ZoneContext } from './shared'
-import { amount, cameFrom, dayOf, detailReply, lasted, percent, subjectHash, tieWords, WHAT } from './report-words'
+import { PageHead, Table, Tiles, Time, Subject, ZoneContext, stamp } from './shared'
+import { amount, brief, callTone, cameFrom, dayOf, dayWords, detailReply, lasted, percent, subjectHash, tieWords, WHAT } from './report-words'
 import { Bars, CallInbox, Change, Coverage } from './call-panels'
 import { told } from './story'
 
@@ -16,50 +16,99 @@ export function CardBody({ card }) {
 const presentedCard = createContext(undefined)
 const reportSnapshot = createContext('')
 
-function Detail({ card, title = 'Details', id, label }) {
+/**
+ * What is behind a number or a row: a mark beside it, and the card the mark opens.
+ * The card is in the page from the start, so it opens before any script has loaded.
+ */
+function Detail({ card, title, id, label }) {
   const fetcher = useFetcher()
   const openCard = useContext(presentedCard)
   const snapshot = useContext(reportSnapshot)
+  const key = useId()
+  const box = useRef(null)
+  const presented = Boolean(card) && openCard === card.type
+  useEffect(() => {
+    if (presented && !box.current?.matches(':popover-open')) box.current?.showPopover()
+  }, [presented])
   if (!card) return null
   const fresh = detailReply(card, snapshot, fetcher.data)
   const current = fresh?.card ?? card
-  return <details className="report-detail" data-card={card.type} open={openCard === card.type || undefined}><summary aria-label={label ?? 'Details of ' + card.title}>{title}</summary>
-    <h4 id={id} tabIndex={id ? -1 : undefined}>{current.title} {current.value}</h4><CardBody card={current}/>
-    {fresh?.error && <p role="alert">{fresh.error}</p>}<Link to={card.href} onClick={event => {
-      if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-      event.preventDefault()
-      void fetcher.load(card.href.replace('/details/', '/card/') + '&snapshot=' + encodeURIComponent(snapshot))
-    }}>{fetcher.state === 'idle' ? 'Read current details' : 'Reading…'}</Link></details>
+  const name = label ?? title ?? 'Details of ' + card.title
+  return <><button type="button" className="detail" id={id} popoverTarget={key} aria-label={name} title={name} data-card={card.type}/>
+    <div className={current.roomy ? 'card-pop roomy' : 'card-pop'} id={key} popover="auto" ref={box} role="dialog" aria-labelledby={key + 'title'}>
+      <div className="detail-head"><h4 id={key + 'title'}>{current.title}</h4>{current.value != null && <span className="detail-worth">{current.value}</span>}<button type="button" className="detail-shut" popoverTarget={key} popoverTargetAction="hide" aria-label="Close">×</button></div>
+      <CardBody card={current}/>{fresh?.error && <p className="detail-failed" role="alert">{fresh.error}</p>}
+      <p className="detail-links"><Link to={card.href} onClick={event => {
+        if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        void fetcher.load(card.href.replace('/details/', '/card/') + '&snapshot=' + encodeURIComponent(snapshot))
+      }}>{fetcher.state === 'idle' ? 'Read current details' : 'Reading…'}</Link></p></div></>
+}
+
+/**
+ * A row with a bar of its share behind it. The number says the share, and the bar only lets rows be compared.
+ * A script draws it, because the page's policy refuses a style written into the page.
+ */
+function Behind({ part, className, children }) {
+  const row = useRef(null)
+  useEffect(() => {
+    row.current?.style.setProperty('--part', Math.max(0, Math.min(1, part)) * 100 + '%')
+  }, [part])
+  return <tr ref={row} className={className ? 'behind ' + className : 'behind'}>{children}</tr>
 }
 
 function Range({ from, to, timeZone }) {
-  return <p className="meta">{from} – {to} · {timeZone}</p>
+  return <p className="meta">{dayWords(from)} – {dayWords(to)} · {timeZone}</p>
 }
 
-function Metric({ card, note, change, bars }) {
-  return card && <div><dt>{card.title}</dt><dd><span className="tile-line"><b>{card.value ?? '—'}</b>{change}</span>{note && <span className="reason">{note}</span>}<Detail card={card}/>{bars}</dd></div>
+function Metric({ card, note, change, bars, tone }) {
+  return card && <div className={tone || undefined}><dt>{card.title}</dt><dd><span className="tile-line"><b>{card.value ?? '—'}</b>{change}<Detail card={card}/></span>{note && <span className="reason">{note}</span>}{bars}</dd></div>
 }
 
 const ACTIVE = 'Today is the people active today, with a call or a step, in the time zone of the line under the numbers. Overdue counts only those people.'
+const REACHED = { answered: 'answered', missed: 'missed', voicemail: 'voicemail', waiting: 'waiting for result', unknown: 'unknown result' }
+/** How long ago, in its largest unit. The title has the time itself. */
+function Age({ at, now, late = false }) {
+  const zone = useContext(ZoneContext)
+  return <span className={late ? 'board-age apart' : 'board-age muted'}><time dateTime={new Date(at).toISOString()} title={stamp(at, zone) + (late ? ', overdue' : '')}>{brief(now - at)}</time>{late && <span className="sr-only">, overdue</span>}</span>
+}
+/** One person: age, where they came from, then the step and the last call. */
+function Person({ row, column, board, card }) {
+  const arrival = (cameFrom(row) || 'Unattributed') + (row.language ? ' · ' + row.language : '')
+  const call = row.call
+  return <li><div className="top"><Subject id={row.subject} journey/><Age at={row.at} now={board.at} late={row.late}/><Detail card={card}/></div>
+    <div className="board-meta reason"><span title={arrival}>{arrival}</span>{row.value > 0 && <b>{amount(row.value)} {row.currency}</b>}</div>
+    <div className="board-chips">{column.step === null && row.step && <span className="chip muted">{row.step}</span>}<span className={'chip ' + (call ? callTone(call.state) : 'muted')}>{call ? (call.direction === 'outbound' ? 'Outbound' : 'Inbound') + ' · ' + REACHED[call.state] : 'No calls'}</span></div></li>
+}
+/** A sender nobody has answered: how long ago they wrote, where they came from, and how many texts wait. */
+function Unanswered({ text, at, card }) {
+  const arrival = (cameFrom(text) || 'Unattributed') + (text.tags?.language ? ' · ' + text.tags.language : '')
+  return <li><div className="top"><Subject id={text.subject} journey/><Age at={text.at} now={at}/><Detail card={card}/></div>
+    <div className="board-meta reason"><span title={arrival}>{arrival}</span></div>
+    <div className="board-chips"><span className="chip related">{amount(text.unanswered)} unanswered</span></div></li>
+}
 function Board({ data }) {
   const { board, cards } = data
   const periods = [[1,'Today'],[7,'7 days'],[30,'30 days'],[90,'90 days'],[365,'1 year']]
-  const textLane = !!data.texts.length && <section aria-label="Unanswered texts"><h2>Unanswered texts</h2><p>{data.texts.length}{data.moreTexts && '+'} {data.texts.length === 1 ? 'person' : 'people'}</p><ol>{data.texts.map(({ text, card }) => <li key={text.id}><Subject id={text.subject} journey/> <Time at={text.at}/><p>{cameFrom(text) || 'Unattributed'}</p><span className="chip related">{amount(text.unanswered)} unanswered</span><Detail card={cards[card]}/></li>)}</ol></section>
-  return <><section><div className="page-head"><h2>Board</h2><div className="row"><span id="board-period-label" title={ACTIVE}>Period</span><nav aria-labelledby="board-period-label" aria-describedby="board-period">{periods.map(([days,name]) => <Link key={days} className="button" aria-current={days === board.days ? 'page' : undefined} to={'/board/' + days}>{name}</Link>)}</nav></div></div>
-    <dl className="tiles">{data.metrics.map((key,i) => <Metric key={key} card={cards[key]} note={i === 1 && board.columns.every(col => col.late === null) && 'No limits set'}/>)}</dl><Range from={board.from} to={board.day} timeZone={board.timeZone}/>
+  const late = board.columns.reduce((sum, column) => sum + (column.late ?? 0), 0)
+  const textLane = !!data.texts.length && <section aria-label="Unanswered texts"><h2>Unanswered texts</h2><p className="counts"><span>{amount(data.texts.length)}{data.moreTexts && '+'} {data.texts.length === 1 ? 'person' : 'people'}</span></p>
+    <div className="scroll" tabIndex="0" role="region" aria-label="Unanswered texts: people"><ol>{data.texts.map(({ text, card }) => <Unanswered key={text.id} text={text} at={board.at} card={cards[card]}/>)}</ol></div></section>
+  return <><section><PageHead view="board" title="Board"><div className="row"><span id="board-period-label" title={ACTIVE}>Period</span><nav className="segments" aria-labelledby="board-period-label" aria-describedby="board-period">{periods.map(([days,name]) => <Link key={days} aria-current={days === board.days ? 'page' : undefined} to={'/board/' + days}>{name}</Link>)}</nav></div></PageHead>
+    <dl className="tiles">{data.metrics.map((key,i) => <Metric key={key} card={cards[key]} tone={i === 1 && late > 0 && 'apart'} note={i === 1 && board.columns.every(col => col.late === null) && 'No limits set'}/>)}</dl><Range from={board.from} to={board.day} timeZone={board.timeZone}/>
     <p className={board.days === 1 ? 'meta' : 'sr-only'} id="board-period">{ACTIVE}</p>
-    {board.unplaced > 0 && <p>{amount(board.unplaced)} more at steps outside STAGES</p>}{board.columns.length === 1 && <p>Set STAGES to add a column for each step.</p>}</section>
+    {board.unplaced > 0 && <p className="meta">{amount(board.unplaced)} more at steps outside STAGES</p>}{board.columns.length === 1 && <p>Set STAGES to add a column for each step.</p>}</section>
     <div className="board wide" tabIndex="0" role="region" aria-label="Columns">{board.columns.map((column, i) => {
       const name = column.step === null ? 'Missed calls' : column.step.toLowerCase() === 'missed calls' ? column.step + ', a step' : column.step
-      return <Fragment key={i}><section aria-label={name} id={'column-' + i} className={column.people ? '' : 'idle'}><h2>{name}</h2><p className="counts">{[amount(column.people) + (column.people === 1 ? ' person' : ' people'), column.fresh > 0 && amount(column.fresh) + ' new', column.late > 0 && amount(column.late) + ' over ' + lasted(column.wait), column.done > 0 && amount(column.done) + (column.step === null ? ' reached' : ' advanced') + ' today'].filter(Boolean).join(' · ')}</p>
-      {column.rows.length > 0 && <div className="scroll" tabIndex="0" role="region" aria-label={name + ': people'}><ol>{column.rows.map((row, j) => <li key={row.subject}><div className="top"><Subject id={row.subject} journey/><span className={'board-age ' + (row.late ? 'apart' : 'muted')} title={new Date(row.at).toISOString()}>{lasted(board.at - row.at)}{row.late && ' overdue'}</span></div><div className="board-meta reason">{cameFrom(row) || 'Unattributed'}{row.language && ' · ' + row.language} {row.value > 0 && <b>{amount(row.value)} {row.currency}</b>}</div><div className="board-chips">{column.step === null && row.step && <span className="chip">{row.step}</span>} <span className="chip">{row.call ? (row.call.direction === 'outbound' ? 'Outbound' : 'Inbound') + ' · ' + ({waiting:'waiting for result',unknown:'unknown result'}[row.call.state] || row.call.state) : 'No calls'}</span></div><Detail card={cards[data.columns[i][j]]}/></li>)}</ol></div>}
-      {column.people > column.rows.length && <p>{amount(column.rows.length)} of {amount(column.people)}</p>}</section>{column.step === null && textLane}</Fragment>
+      const counts = [amount(column.people) + (column.people === 1 ? ' person' : ' people'), column.fresh > 0 && amount(column.fresh) + ' new', column.late > 0 && amount(column.late) + ' over ' + lasted(column.wait), column.done > 0 && amount(column.done) + (column.step === null ? ' reached' : ' advanced') + ' today']
+      return <Fragment key={i}><section aria-label={name} id={'column-' + i} className={column.people ? undefined : 'idle'}><h2>{name}</h2><p className="counts">{counts.map((count, n) => count && <span key={n} className={n === 2 ? 'apart' : undefined}>{count}</span>)}</p>
+      {column.rows.length > 0 && <div className="scroll" tabIndex="0" role="region" aria-label={name + ': people'}><ol>{column.rows.map((row, j) => <Person key={row.subject} row={row} column={column} board={board} card={cards[data.columns[i][j]]}/>)}</ol></div>}
+      {column.people > column.rows.length && <p className="muted board-foot">{amount(column.rows.length)} of {amount(column.people)}</p>}</section>{column.step === null && textLane}</Fragment>
     })}</div></>
 }
 
 const kinds = Object.keys(WHAT)
-function Story({ entry }) {
-  return <>{told(entry).map((part,i) => <Fragment key={i}>{part}</Fragment>)}</>
+function Story({ entry, icon }) {
+  return <>{told(entry, icon).map((part,i) => <Fragment key={i}>{part}</Fragment>)}</>
 }
 function Chart({ events, groups, cards }) {
   const zone = useContext(ZoneContext)
@@ -109,8 +158,8 @@ function Hours({ data }) {
   const cells = new Map(summary.cells.map(cell => [cell.weekday * 24 + cell.hour, cell]))
   const most = Math.max(1,...summary.cells.map(cell => cell[measure]))
   const hours = Array.from({length:24},(_,i) => i)
-  return <section id="calls-hours"><h2>Calls by hour</h2><Form method="get" action="/calls"><input type="hidden" name="from" value={summary.from}/><input type="hidden" name="to" value={summary.to}/><label>Result <select name="measure" defaultValue={measure}>{measures.map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label> <button>Show</button></Form>
-    <div className="wide" tabIndex="0" role="region" aria-label="Calls by hour"><table className="hours"><caption>{title} · {summary.from} – {summary.to} · {summary.timeZone}</caption><thead><tr><th>Weekday</th>{hours.map(h => <th key={h}>{String(h).padStart(2,'0')}</th>)}<th>All</th></tr></thead><tbody>{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day,i) => {
+  return <section id="calls-hours"><div className="section-head"><h2>Calls by hour</h2><Form className="row" method="get" action="/calls"><input type="hidden" name="from" value={summary.from}/><input type="hidden" name="to" value={summary.to}/><label>Result <select name="measure" defaultValue={measure}>{measures.map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label> <button>Show</button></Form></div>
+    <div className="wide" tabIndex="0" role="region" aria-label="Calls by hour"><table className="hours"><caption>{title} · {dayWords(summary.from)} – {dayWords(summary.to)} · {summary.timeZone}</caption><thead><tr><th>Weekday</th>{hours.map(h => <th key={h}>{String(h).padStart(2,'0')}</th>)}<th>All</th></tr></thead><tbody>{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day,i) => {
       const row = hours.map(h => cells.get((i + 1) * 24 + h))
       return <tr key={day}><th scope="row">{day}</th>{row.map((cell,h) => <td className={'num heat' + Math.ceil(4 * (cell?.[measure] || 0) / most)} key={h}>{cell?.[measure]}</td>)}<td>{amount(row.reduce((all, cell) => all + (cell?.[measure] || 0), 0))}</td></tr>
     })}</tbody></table></div></section>
@@ -118,23 +167,23 @@ function Hours({ data }) {
 function Presets({ today, from, to }) {
   const ago = n => new Date(Date.parse(today + 'T00:00:00Z') - n * 86400_000).toISOString().slice(0, 10)
   const spans = [['Today', today, today], ['Yesterday', ago(1), ago(1)], ['7 days', ago(6), today], ['30 days', ago(29), today], ['This month', today.slice(0, 8) + '01', today]]
-  return <span className="row presets">{spans.map(([label, start, end]) => <Link key={label} className="button" aria-current={start === from && end === to ? 'page' : undefined} to={'/calls?' + new URLSearchParams({ from: start, to: end })}>{label}</Link>)}</span>
+  return <nav className="presets" aria-label="Period">{spans.map(([label, start, end]) => <Link key={label} aria-current={start === from && end === to ? 'page' : undefined} to={'/calls?' + new URLSearchParams({ from: start, to: end })}>{label}</Link>)}</nav>
 }
 function Calls({ data }) {
   const { summary, open, cards, then } = data
   const { total, coverage } = summary
   const lost = total.missed + total.voicemail
   const hourly = key => Array.from({length: 24}, (_, h) => summary.cells.filter(c => c.hour === h).reduce((a,c) => a + c[key], 0))
-  const notes = [undefined, amount(total.answered) + ' of ' + amount(total.calls), total.calls > 0 && percent(lost / total.calls) + (summary.closed ? ' · ' + amount(summary.closed.missed + summary.closed.voicemail) + ' after hours' : ''), amount(total.returned) + ' of ' + amount(lost) + (summary.returnedWithin == null ? '' : ' · median ' + lasted(summary.returnedWithin)), data.oldest && <>Oldest <Time at={data.oldest}/></>]
+  const notes = [undefined, amount(total.answered) + ' of ' + amount(total.calls), total.calls > 0 && percent(lost / total.calls) + (summary.closed ? ' · ' + amount(summary.closed.missed + summary.closed.voicemail) + ' after hours' : ''), amount(total.returned) + ' of ' + amount(lost) + (summary.returnedWithin == null ? '' : ' · median ' + lasted(summary.returnedWithin)), data.oldest && <>Oldest <Time at={data.oldest} now={open.at}/></>]
   const changes = then.calls > 0 ? [<Change now={total.calls} was={then.calls} before={data.before}/>, <Change now={total.answered / total.calls} was={then.answered / then.calls} before={data.before} good="up" points/>, <Change now={lost} was={then.missed + then.voicemail} before={data.before} good="down"/>] : []
   const missed = hourly('missed')
   const bars = [<Bars values={hourly('calls')} title="Calls by starting hour"/>, undefined, <Bars values={hourly('voicemail').map((n,i) => n + missed[i])} title="Missed calls by starting hour"/>]
   const results = [['Answered',total.answered,total.calls,''],['Missed',total.missed,total.calls,''],['Voicemail',total.voicemail,total.calls,''],['Waiting',total.waiting,total.calls,'Result not received yet'],['Unknown',total.unknown,total.calls,'Result unavailable'],['Returned',total.returned,lost,[summary.returnedWithin != null && 'Median ' + lasted(summary.returnedWithin),total.reported > 0 && amount(total.reported) + ' reported by another system'].filter(Boolean).join(' · ')],['Called again',total.calledAgain,lost,'Caller got through later']]
   if (total.notLeads > 0) results.push(['Not a lead',total.notLeads,0,'Excluded from other counts'])
-  return <><section><div className="page-head"><h2>Calls</h2><Form className="row period" action="/calls" method="get"><label>From <input type="date" name="from" required defaultValue={summary.from}/></label><label>To <input type="date" name="to" required defaultValue={summary.to}/></label><button>Show</button><Presets today={data.today} from={summary.from} to={summary.to}/></Form></div><Range {...summary}/>
-  {total.calls > 0 && <dl className="tiles">{data.metrics.map((key,i) => (i !== 3 || lost > 0) && <Metric key={key} card={cards[key]} note={notes[i]} change={changes[i]} bars={bars[i]}/>)}</dl>}</section><section id="calls-missed"><h2>Missed calls</h2>
-  {open.calls.length ? <CallInbox data={data} Detail={Detail} Story={Story}/> : <p>{total.calls === 0 ? 'No inbound calls' : lost > 0 ? 'All missed callers have been reached.' : 'No missed calls'}</p>}
-  {total.hidden > 0 && <p>{amount(total.hidden)} more with a withheld number</p>}</section>{total.calls > 0 && <><div className="panel-grid call-grid"><section><h2>Call results</h2><Table title="Call results" headers={['Result','Calls','Share','Detail']}>{results.map(([name,n,all,note]) => <tr key={name}><th scope="row">{name}</th><td>{amount(n)}</td><td>{all ? percent(n / all) : '—'}</td><td>{note}<Detail card={cards[data.results[name]]} label={'Details of ' + name + ', ' + amount(n) + ', in Call results'}/></td></tr>)}</Table></section><section><h2>Call attribution</h2><Coverage coverage={coverage}/></section></div><Hours data={data}/></>}</>
+  return <><section><PageHead view="calls" title="Calls"><Form className="row period" action="/calls" method="get"><label>From <input type="date" name="from" required defaultValue={summary.from}/></label><label>To <input type="date" name="to" required defaultValue={summary.to}/></label><button className="primary">Show</button><Presets today={data.today} from={summary.from} to={summary.to}/></Form></PageHead><Range {...summary}/>
+  {total.calls > 0 && <dl className="tiles">{data.metrics.map((key,i) => (i !== 3 || lost > 0) && <Metric key={key} card={cards[key]} tone={i === 4 && (open.calls.length > 0 ? 'apart' : 'same')} note={notes[i]} change={changes[i]} bars={bars[i]}/>)}</dl>}</section><section id="calls-missed"><h2>Missed calls</h2>
+  {open.calls.length ? <CallInbox data={data} Detail={Detail} Story={Story}/> : <p className="muted">{total.calls === 0 ? 'No inbound calls' : lost > 0 ? 'All missed callers have been reached.' : 'No missed calls'}</p>}
+  {total.hidden > 0 && <p className="muted">{amount(total.hidden)} more with a withheld number</p>}</section>{total.calls > 0 && <><div className="panel-grid call-grid"><section><h2>Call results</h2><Table title="Call results" headers={['Result',['Calls','num'],['Share','num'],'Detail']}>{results.map(([name,n,all,note], i) => <Behind key={name} part={all > 0 ? n / all : 0} className={i === 5 ? 'second' : undefined}><th scope="row"><span className={'chip ' + callTone(name.toLowerCase())}>{name}</span></th><td className="num">{n > 0 ? amount(n) : <span className="muted">0</span>}<Detail card={cards[data.results[name]]} label={'Details of ' + name + ', ' + amount(n) + ', in Call results'}/></td><td className="num share">{all > 0 ? percent(n / all) : <span className="muted">—</span>}</td><td className="muted">{note}</td></Behind>)}</Table></section><section><h2>Call attribution</h2><Coverage coverage={coverage}/></section></div><Hours data={data}/></>}</>
 }
 
 /** @param {{ data: Record<string, any>, openCard?: string }} props */

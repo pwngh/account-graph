@@ -3,12 +3,13 @@ import { Form, Link, Links, Outlet, Scripts, ScrollRestoration, isRouteErrorResp
 import { current, reviewerZone } from './auth.server'
 import { runtime } from './runtime.server'
 import { ZoneContext } from './views/shared'
+import { ViewMark, type ViewName } from './views/marks'
 import { affectsPage, oldBookmark, subjectAddress, subjectPath } from './navigation'
 import original from '../../../src/edge/review/style.css?url'
 import additions from './style.css?url'
 export const links = () => [{rel: 'icon', type: 'image/svg+xml', href: '/favicon.ico'}, {rel: 'stylesheet', href: original}, {rel: 'stylesheet', href: additions}]
 export async function loader({request}: LoaderFunctionArgs) { return {name: (await current(request))?.name, legacy: runtime().legacy, live: Boolean(runtime().eventsToken), zone: await reviewerZone(request)} }
-const menu = [['accounts','Accounts'], ['journey','Journey'], ['board/90','Board'], ['decide','Matches'], ['calls','Calls'], ['channels','Channels'], ['health','Health']]
+const menu: [string, string, ViewName][] = [['accounts','Accounts','accounts'], ['journey','Journey','journey'], ['board/90','Board','board'], ['decide','Matches','decide'], ['calls','Calls','calls'], ['channels','Channels','channels'], ['health','Health','health']]
 
 function Live({path}: {path: string}) {
   const {revalidate} = useRevalidator()
@@ -69,12 +70,15 @@ export function Layout({children}: {children: React.ReactNode}) {
     document.cookie = 'review_zone=' + encodeURIComponent(local) + '; path=/; max-age=31536000; samesite=strict' + (window.location.protocol === 'https:' ? '; secure' : '')
     if (data.zone !== local) void revalidate()
   }, [data?.name, data?.zone, revalidate])
+  // The server cannot tell which keyboard this is, so the page says Ctrl K until the browser has said.
+  const [keys, setKeys] = useState('Ctrl K')
+  useEffect(() => { if (/Mac|iPhone|iPad/.test(navigator.platform)) setKeys('⌘ K') }, [])
   const subject = subjectAddress(location.pathname)?.subject
   return <html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><meta name="robots" content="noindex, nofollow"/><title>Account review</title><Links/></head><body>
     <a className="skip" href="#view">Skip to content</a><header><h1>Account review</h1>{data?.name && <>
-    <nav id="views" aria-label="Views">{menu.map(([path,title]) => <Link aria-current={location.pathname.split('/')[1] === path.split('/')[0] ? 'page' : undefined} key={path} to={path === 'journey' && subject ? subjectPath(subject, 'journey') : '/' + path}>{title}</Link>)}</nav>
-    <Form id="find" className="row" method="post" action="/search"><label>Search <input name="text" aria-keyshortcuts="Control+K Meta+K" placeholder="Search" autoComplete="off" required /></label><button>Open</button></Form>
-    <Form method="post" action="/signout" reloadDocument><bdi>{data.name}</bdi> <button>Sign out</button></Form></>}</header>
+    <nav id="views" aria-label="Views">{menu.map(([path,title,mark]) => <Link aria-current={location.pathname.split('/')[1] === path.split('/')[0] ? 'page' : undefined} key={path} to={path === 'journey' && subject ? subjectPath(subject, 'journey') : '/' + path}><ViewMark name={mark}/>{title}</Link>)}</nav>
+    <Form id="find" className="row" method="post" action="/search"><label>Search <input name="text" aria-keyshortcuts="Control+K Meta+K" placeholder="Search" autoComplete="off" enterKeyHint="search" required /></label><button className="primary">Open</button><span id="summon" aria-hidden="true"><kbd>{keys}</kbd></span></Form>
+    <Form id="who" className="row" method="post" action="/signout" reloadDocument><bdi id="name">{data.name}</bdi><button id="leave">Sign out</button></Form></>}</header>
     <div id="notice" role="status">{navigation.state === 'loading' ? 'Opening view…' : navigation.state === 'submitting' ? 'Saving…' : ''}</div>
     <main id="view" tabIndex={-1}><ZoneContext.Provider value={data?.zone ?? 'UTC'}>{children}</ZoneContext.Provider></main><footer>{data?.name && location.pathname !== '/stage' && (data.live ? <Live path={location.pathname}/> : <p className="meta">Live updates are off. Reload to see changes.</p>)}</footer><ScrollRestoration/><Scripts/></body></html>
 }

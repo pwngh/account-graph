@@ -3,8 +3,9 @@ import { ACTIONS, CLICKS, SENT, amount, idText, lasted, waiting, worthOf } from 
 
 const el = (type, attrs, ...children) => createElement(type, { className: attrs.class }, ...children)
 const display = { idText, chip: (text, tone = '') => el('span', { class: 'chip ' + tone }, text), callTone: state => ({ answered: 'same', missed: 'apart', voicemail: 'related', waiting: 'related' })[state] || '' }
-const sourced = name => el('span', {class:'sourced'}, name)
 const toneOf = name => 'tone' + [...name].reduce((sum, letter) => (sum * 31 + letter.codePointAt(0)) >>> 0, 7) % 6
+/** Where something came from: a letter in its color, which is drawn and not text, and its name. */
+const sourced = name => el('span', { class: 'sourced' }, createElement('i', { className: 'letter ' + toneOf(name), 'aria-hidden': 'true', 'data-letter': name.slice(0, 1).toUpperCase() }), name)
 const author = by => by?.startsWith('system:') ? 'system ' + by.slice(7) : by || 'Unknown'
 const notLead = kind => kind ? display.chip(kind === 'spam' ? 'Spam' : 'Not a lead') : ''
 /** What happened, in words, with the rest of it on lines below. `icon` opens what else is known of a call, and stands after its state. */

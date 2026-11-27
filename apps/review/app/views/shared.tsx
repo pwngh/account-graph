@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useId, useRef, useState, type Rea
 import { Link, useFetcher, useLocation } from 'react-router'
 import { subjectPath } from '../navigation'
 import { ICONS, PERSON, typeOf } from './cluster-layout.js'
-import { idText } from './report-words.js'
+import { ViewMark, type ViewName } from './marks'
+import { idText, lasted } from './report-words.js'
 
 export const amount = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 })
 export const percent = (n: number) => Math.round(n * 100) + '%'
@@ -14,16 +15,18 @@ export function stamp(at: number, timeZone = 'UTC') {
   if (!formatter) formatters.set(timeZone, formatter = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }))
   return formatter.format(at)
 }
-export function Time({ at }: { at?: number }) {
+/** A time. Given `now`, it says how long ago, as a list with little room does, and its title has the time itself. */
+export function Time({ at, now }: { at?: number, now?: number }) {
   const zone = useContext(ZoneContext)
-  if (at == null || !Number.isFinite(at)) return <>No data</>
+  if (at == null || !Number.isFinite(at)) return <span className="muted">No data</span>
   const exact = new Date(at).toISOString()
-  return <time dateTime={exact} title={exact}>{stamp(at, zone)}</time>
+  if (now === undefined) return <time dateTime={exact} title={exact}>{stamp(at, zone)}</time>
+  return <time dateTime={exact} title={stamp(at, zone) + ' · ' + exact}>{lasted(Math.abs(now - at))}{now >= at ? ' ago' : ' from now'}</time>
 }
 
 // As on the original screen, a long ID such as a caller's hash is shortened in a link and given in full in its title.
 export function Subject({ id, journey = false }: { id: string, journey?: boolean }) {
-  return <Link className="subject" title={id} to={subjectPath(id, journey ? 'journey' : 'accounts')}><bdi>{idText(id)}</bdi></Link>
+  return <Link className="link subject" title={id} to={subjectPath(id, journey ? 'journey' : 'accounts')}><bdi>{idText(id)}</bdi></Link>
 }
 
 // Another system's decisions are signed system:<name>. The original screen says system <name>.
@@ -36,8 +39,14 @@ export function Badge({ id }: { id: string }) {
   return <svg className={'badge ' + (['account', 'visitor', 'lead', 'caller', 'contact', 'person'].includes(kind) ? kind : '')} viewBox="-11 -11 22 22" aria-hidden="true"><circle r="10"/><path className={ICONS[kind] ? 'line' : ''} d={ICONS[kind] || PERSON} transform="scale(.82)"/></svg>
 }
 
-export function Table({ title, headers, children }: { title: string, headers: string[], children: ReactNode }) {
-  return <div className="wide" tabIndex={0} role="region" aria-label={title}><table><thead><tr>{headers.map(h => <th key={h} scope="col">{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>
+/** A table that scrolls sideways where it must. A heading given with a class, as `['Calls', 'num']`, has it. */
+export function Table({ title, headers, children }: { title: string, headers: (string | [string, string])[], children: ReactNode }) {
+  return <div className="wide" tabIndex={0} role="region" aria-label={title}><table><thead><tr>{headers.map(h => typeof h === 'string' ? <th key={h} scope="col">{h}</th> : <th key={h[0]} scope="col" className={h[1]}>{h[0]}</th>)}</tr></thead><tbody>{children}</tbody></table></div>
+}
+
+/** The heading of a view: its mark, its name, and the controls of the whole view. */
+export function PageHead({ view, title, children }: { view: ViewName, title: ReactNode, children?: ReactNode }) {
+  return <div className="page-head"><h2 className="page-title"><ViewMark name={view}/>{title}</h2>{children}</div>
 }
 
 export function Tiles({ items }: { items: ([string, ReactNode, ReactNode?] | false | undefined)[] }) {
