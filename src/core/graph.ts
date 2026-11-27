@@ -198,11 +198,8 @@ export interface Graph {
   sayLead(said: { id: string; key: string; at: number; kind?: NotLead['kind'] | undefined; by?: string | undefined }): Promise<{ stands: boolean; lead: boolean }>
   /** `keepCallResult`, by when it was said. The result that stands counts whole. */
   sayResult(said: { call: string; key: string; at: number; result: { answered: boolean; voicemail?: boolean; waited?: number } }): Promise<{ stands: boolean }>
-  /** An older process could put the physical line and its matching evidence back after a staff confirmation. */
-  repairCallReports(): Promise<void>
   /** Identifies one call independently of the line or the call result. */
   sayParty(said: { call: string, key: string, at: number, party: CallParty & { by: string }, seen?: string | null }): Promise<{ stands: boolean }>
-  refreshParty(id: string): Promise<Change[]>
   partyHistory(id: string): Promise<(PartyStatement & { key: string })[]>
   partyRevision(): Promise<string | undefined>
   /** `keepReturn`, by when it was said, which is not when they were reached. */
@@ -1197,8 +1194,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   // Identical public credit on the same path needs no replacement notice. The private proof keeps no ad click or campaign text.
   const arrivalKey = (touch: AttributedTouch) => `credit:${createHash('sha256').update(JSON.stringify([touch.subject, touch.at, touch.via, sourceOf(touch), touch.campaign, touch.campaignId])).digest('hex')}`
 
-  async function settleParty(tx: Tx, id: string, arriving = false, overwritten = false): Promise<Change[]> {
-    const affected = await tx.applyCallParty(id, arriving, overwritten)
+  async function settleParty(tx: Tx, id: string, arriving = false): Promise<Change[]> {
+    const affected = await tx.applyCallParty(id, arriving)
     const changes = await settle(tx, new Set(affected))
     await recheckCallbacks(tx, affected)
     return changes
@@ -2017,20 +2014,6 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       })
     },
 
-    async repairCallReports() {
-      if (await store.read(tx => tx.settingOf('repairCallReports')) !== 'due') return
-      let done = false
-      while (!done) await changing(async tx => {
-        const ids = await tx.overwrittenCalls(50)
-        const changes: Change[] = []
-        for (const id of ids) changes.push(...await settleParty(tx, id, false, true))
-        if (ids.length) await tx.setSetting('callParty', randomUUID())
-        done = ids.length < 50
-        if (done) await tx.setSetting('repairCallReports', 'done')
-        return changes
-      })
-    },
-
     async sayParty({ call, key, at, party, seen }) {
       keepable(key, call, party.by, ...(party.role === 'unknown' ? [] : [party.subject]))
       let stands = false
@@ -2049,13 +2032,6 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         return settleParty(tx, call)
       })
       return { stands }
-    },
-
-    refreshParty(id) {
-      return changing(async tx => {
-        await tx.setSetting('callParty', randomUUID())
-        return settleParty(tx, id)
-      })
     },
 
     partyHistory(id) {

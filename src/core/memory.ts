@@ -977,31 +977,14 @@ export function createMemoryStore() {
       return callLines.get(id) ?? calls.get(id)?.subject
     },
 
-    async overwrittenCalls(limit) {
-      const ids: string[] = []
-      for (const call of calls.values()) {
-        const replayed = call.party && call.direction === 'inbound' && call.subject === 'call:' + call.id &&
-          sightings.get(call.subject)?.some(row => row.at === call.at && row.event === 'call' && row.identifier === 'dialed:call-' + call.id)
-        if (call.party ? replayed || ownerOf(call.id, call.party) !== call.subject : said.has('party\u0000' + call.id)) ids.push(call.id)
-        if (ids.length === limit) break
-      }
-      return ids
-    },
-
-    async applyCallParty(id, arriving = false, overwritten = false) {
+    async applyCallParty(id, arriving = false) {
       const call = calls.get(id)
-      const party = await partyOf(this, id) ?? (overwritten ? call?.party : undefined)
+      const party = await partyOf(this, id)
       if (!call || !party) return []
       const owner = ownerOf(id, party)
       const line = callLines.get(id) ?? call.subject
-      const first = overwritten || (!call.party && !arriving)
-      const reported = overwritten ? call.subject : line
-      if (overwritten) {
-        delete call.visitor
-        delete call.tags
-        call.flags = withoutGuesses(call.flags)
-      }
-      const { changes, affected } = first ? await callTraces(this, call, reported, lineKinds.get(id)) : { changes: [], affected: [] }
+      const first = !call.party && !arriving
+      const { changes, affected } = first ? await callTraces(this, call, line, lineKinds.get(id)) : { changes: [], affected: [] }
       await this.reserveCall(changes.map(({ edge, recorded }) => ({ call: id, subject: edge.subject, identifier: edge.identifier, at: call.at, recorded })))
       for (const { edge, remove, next } of changes) {
         const { subject, identifier } = edge
@@ -1027,7 +1010,7 @@ export function createMemoryStore() {
           }
         }
       }
-      if (first && !call.visitor && call.direction === 'inbound') await this.dropTouch(reported, call.at, `tel:${call.to}`, id, true)
+      if (first && !call.visitor && call.direction === 'inbound') await this.dropTouch(line, call.at, `tel:${call.to}`, id, true)
       const before = call.subject
       if (owner !== before) await reopenWaits(this, [withResult(call)])
       const misses = new Set(await affectedMisses(this, withResult(call), owner))
@@ -1464,32 +1447,6 @@ export function createMemoryStore() {
       return decisions.filter(wanted).slice(-limit).reverse().map(copied)
     },
 
-    async unprovenParties(limit) {
-      const pending: Awaited<ReturnType<Tx['unprovenParties']>> = []
-      const prunes = decisions.filter(row => row.action === 'prune').map(row => ({ at: row.at, cutoff: Number(row.about[0]) }))
-      let callsChecked = 0
-      for (const list of said.values()) {
-        const size = pending.length
-        for (const row of list) {
-          if (row.topic !== 'party' || !('subject' in row.data)) continue
-          const subject = row.data.subject
-          const erased = erasedRecord(subject)
-          if (!erased || erased.seq === row.deletion) continue
-          const call = calls.get(row.about)
-          let fresh = Infinity
-          for (const sighting of sightings.get(subject) ?? []) {
-            const recorded = sighting.recorded ?? sighting.at
-            if (!sighting.identifier.startsWith('review:') && recorded > erased.at) fresh = Math.min(fresh, recorded)
-          }
-          const ready = call && call.at > erased.at && fresh !== Infinity ? Math.max(call.recorded, fresh) : undefined
-          const retryFrom = prunes.reduce((first, p) => p.cutoff > erased.at ? Math.min(first, p.at) : first, Infinity)
-          pending.push({ subject, call: row.about, key: row.key, deletion: erased.seq, erasedAt: erased.at, ...(ready !== undefined && { ready }), ...(retryFrom !== Infinity && { retryFrom }) })
-        }
-        if (pending.length > size && ++callsChecked === limit) break
-      }
-      return pending
-    },
-
     async partyReturn(subject, call) {
       return partyReturn(subject, call)
     },
@@ -1497,14 +1454,6 @@ export function createMemoryStore() {
     async confirmPartyReturn(call, key, deletion) {
       const row = said.get('party\u0000' + call)?.find(row => row.key === key)
       if (row) row.deletion = deletion
-    },
-
-    async removePartyStatements(call, keys) {
-      const id = 'party\u0000' + call
-      const gone = new Set(keys)
-      const left = (said.get(id) ?? []).filter(row => !gone.has(row.key))
-      if (left.length) said.set(id, left)
-      else said.delete(id)
     },
 
     async decisionsNaming(subjects) {

@@ -173,10 +173,6 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
     })
     tell = jobs => ops.failed(jobs, store).catch(error => log(String(error)))
     const six = createSix(engine, { receipts, returnHours: options.phones?.returnHours ?? 24, ...(options.linkSecret && { linkSecret: options.linkSecret }), ...(hours && { hours }), ...(options.timeZone && { timeZone: options.timeZone }) })
-    if (options.databaseUrl !== undefined) {
-      await engine.graph.repairCallReports()
-      await six.repairForgottenParties()
-    }
     workers = createWorkers(engine, ops, options, log)
     // From here on, and not from the first time it is posted to.
     if (options.webhook) await store.write(async (tx) => {
