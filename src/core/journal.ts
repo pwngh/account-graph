@@ -63,7 +63,9 @@ function putBack(undo: Undo) {
       for (const value of copy as unknown[]) object.push(value)
     } else {
       const fields = copy as Record<string, unknown>
-      for (const key of Object.keys(object)) if (!Object.hasOwn(fields, key)) delete (object as Record<string, unknown>)[key]
+      // A field put back goes last, so where one is gone they are all taken out and put back in the order they had.
+      const gone = Object.keys(fields).some((key) => !Object.hasOwn(object, key))
+      for (const key of Object.keys(object)) if (gone || !Object.hasOwn(fields, key)) delete (object as Record<string, unknown>)[key]
       Object.assign(object, fields)
     }
   }

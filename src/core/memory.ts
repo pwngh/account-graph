@@ -617,7 +617,7 @@ export function createMemoryStore() {
     },
 
     async *everyone() {
-      yield [...new Set([...labels.keys(), ...bySubject.keys()])].map((subject) => ({ subject, labels: labels.get(subject), held: Boolean(bySubject.get(subject)?.size || hidden.get(subject)?.size) }))
+      yield [...new Set([...labels.keys(), ...bySubject.keys()])].map((subject) => ({ subject, labels: copiedLabels(labels.get(subject)), held: Boolean(bySubject.get(subject)?.size || hidden.get(subject)?.size) }))
     },
 
     async states(identifiers) {
@@ -1561,6 +1561,8 @@ export function createMemoryStore() {
 const changed = (events: readonly GraphEvent[]): NumberedChange[] =>
   events.flatMap((each) => (each.type === 'cluster.changed' ? [{ seq: each.seq, at: each.at, subject: each.data.subject, from: each.data.from ?? undefined, to: each.data.to ?? undefined }] : []))
 
+/** A caller's own copy, so nothing it does to it reaches the store. */
+const copiedLabels = (labels: Labels | undefined) => labels && { ...labels }
 const copied = (decision: Decision): Decision => ({ ...decision, about: [...decision.about] })
 const bySystem = (decision: Decision) => decision.by?.startsWith('system:') ?? false
 const ofPair = (decision: Decision) => decision.action === 'join' || decision.action === 'unjoin' || decision.action === 'separate' || decision.action === 'rejoin'

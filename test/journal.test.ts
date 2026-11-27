@@ -20,6 +20,8 @@ test('an undone write puts back each entry it used, and an object two maps share
   const held = bySubject.get('s')!.get('i')!
   held.last = 9
   held.count += 1
+  // A field taken off and put back by the undo keeps its place among the others.
+  delete (edge as Partial<Edge>).last
   bySubject.get('s')!.set('j', { first: 2, last: 2, count: 1 })
   bySubject.set('t', new Map())
   byIdentifier.delete('i')
@@ -28,6 +30,7 @@ test('an undone write puts back each entry it used, and an object two maps share
   undo(journal)
 
   assert.deepEqual(edge, { first: 1, last: 1, count: 1 })
+  assert.deepEqual(Object.keys(edge), ['first', 'last', 'count'])
   assert.deepEqual([...bySubject.keys()], ['s'])
   assert.deepEqual([...bySubject.get('s')!.keys()], ['i'])
   assert.equal(bySubject.get('s')!.get('i'), byIdentifier.get('i')!.get('s'))

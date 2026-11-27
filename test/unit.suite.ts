@@ -181,7 +181,6 @@ export function unitSuite(name: string, open: () => Promise<Dumped>) {
     }
   })
 
-  // The memory store does not undo a write inside another yet.
   test(`${name}: a write that fails after writes inside it succeeded takes them with it`, async () => {
     const { store, close } = await open()
     try {
