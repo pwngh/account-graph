@@ -141,6 +141,7 @@
 - `npm run bench -- load RATE SECONDS` sends one call to a request at a set rate and gives the median, p95 and p99 time to answer and the reasons for refusals.
 - `npm run bench -- import COUNT` records that many inbound calls through `record` in batches of 100 and gives the rate of each quarter of the run, on memory and, with `DATABASE_URL`, on PostgreSQL.
 - The memory store undoes a failed write from a journal of the entries it used, instead of a copy of the whole store made before each write. A history import keeps its rate as the history grows.
+- A write inside another on PostgreSQL releases its savepoint in the same trip as the next one, and a transaction begins and sets its lock timeout in one trip. An imported call takes 60 trips instead of 67.
 - `npm run bench` gives the median of five full verifies. On the memory store, `verify` counts holders only of identifiers more than one record holds, and copies each edge once, about 19% faster.
 - `npm run bench` gives the median of five full verifies. The memory store's pair search skips identifiers with fewer than two holders before counting them and copies each edge once per identifier; a full `verify` is about 19% faster.
 - `REVIEW_PENDING_LIMIT` alerts once a day while more pairs than that wait in the recent review queue.

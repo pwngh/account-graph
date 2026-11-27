@@ -181,6 +181,26 @@ export function unitSuite(name: string, open: () => Promise<Dumped>) {
     }
   })
 
+  // The memory store does not undo a write inside another yet.
+  test(`${name}: a write that fails after writes inside it succeeded takes them with it`, { todo: name.startsWith('memory') && 'nested writes in memory are not undone' }, async () => {
+    const { store, close } = await open()
+    try {
+      const { unit, graph } = createEngine(store, {})
+      await unit(async (inside) => {
+        await inside.graph.observe({ subject: 'a', identifiers: ['email:x'], at: AT })
+        await inside.tx.nested(async () => {
+          await inside.graph.observe({ subject: 'd', identifiers: ['email:x'], at: AT })
+          await inside.graph.observe({ subject: 'e', identifiers: ['email:x'], at: AT })
+          throw new Error('cut off')
+        }).catch(() => undefined)
+        await inside.graph.observe({ subject: 'c', identifiers: ['email:x'], at: AT })
+      })
+      assert.deepEqual([(await graph.cluster('a'))!.members, await graph.cluster('d'), await graph.cluster('e')], [['a', 'c'], undefined, undefined])
+    } finally {
+      await close()
+    }
+  })
+
   test(`${name}: somebody forgotten while a call of theirs is recorded is gone, whichever comes first`, async () => {
     const { store, close } = await open()
     try {
