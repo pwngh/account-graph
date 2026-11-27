@@ -17,15 +17,14 @@ import { unitSuite } from './unit.suite.ts'
 import { readHistorySuite } from './read-history.suite.ts'
 
 // Keep the ordinary write budget observable on machines without PostgreSQL. The shared suite checks the resulting groups on a real store.
-test('ordinary observations and link reads keep their SQL statement counts across the fact upgrade', async () => {
-  for (const upgraded of [false, true]) for (const paired of [false, true]) for (const elsewhere of [false, true]) {
+test('ordinary observations and link reads keep their SQL statement counts', async () => {
+  for (const paired of [false, true]) for (const elsewhere of [false, true]) {
     const subjects = paired ? ['account:b', 'account:a'] : ['account:a']
     const identifier = 'email:desk@example.org'
     const edges = subjects.map(subject => ({ subject, identifier, first_at: 1, last_at: 1, sightings: 1 }))
     const queries: string[] = []
     const query = async (sql: string) => {
       queries.push(sql)
-      if (sql.includes('pg_advisory_xact_lock')) return { rows: [{ fact_schema: upgraded }] }
       if (sql.includes('from stub.built')) return { rows: [{ policy: policyHash(defaultPolicy), reserved: elsewhere }] }
       if (sql.startsWith('with upserted')) return { rows: [{ identifier, added: 1 }] }
       if (sql.includes('select id, fanout, ignored')) return { rows: [{ id: identifier, fanout: subjects.length, ignored: false }] }
@@ -40,7 +39,7 @@ test('ordinary observations and link reads keep their SQL statement counts acros
     assert.equal(queries.length, paired ? 15 : 10, `${queries.length} trips for ${subjects.length} subjects: ${queries.map(sql => sql.split('\n')[0]).join(', ')}`)
     const statements = () => queries.reduce((count, sql) => count + sql.split(';').filter(part => part.trim()).length, 0)
     assert.equal(statements(), paired ? 16 : 11)
-    assert.equal(queries.filter(sql => sql.includes('from stub.fact_withdrawal')).length, Number(upgraded))
+    assert.equal(queries.filter(sql => sql.includes('from stub.fact_withdrawal')).length, 1)
     assert.ok(!queries.some(sql => sql.includes('from stub.withdrawn_edge')))
     queries.length = 0
     await createGraph(store).links('account:a')
@@ -78,11 +77,10 @@ test('a read of a database that was never set up says so, and any other SQL erro
 test('checking an ordinary text opt-out reads the cluster, holdings and messages in the same six statements', async () => {
   const subject = 'contact:one'
   const line = 'caller:one'
-  for (const upgraded of [false, true]) {
+  {
     const queries: string[] = []
     const query = async (sql: string) => {
       queries.push(sql)
-      if (sql.includes('pg_advisory_xact_lock')) return { rows: [{ fact_schema: true, text_schema: upgraded }] }
       if (sql.includes('from stub.subject')) return { rows: [{ id: subject, component: subject, cluster: subject }] }
       if (sql.startsWith('select * from stub.edge')) return { rows: [{ subject, identifier: 'phone:one', first_at: 1, last_at: 1, sightings: 1 }] }
       if (sql.startsWith('with edges as')) return { rows: [{ subject, line, active: true, first_at: 1, last_at: 1, held: null, at: null }] }
@@ -95,7 +93,7 @@ test('checking an ordinary text opt-out reads the cluster, holdings and messages
     assert.deepEqual(await createGraph(store).texting(subject), { at: 2, optedOut: true })
     assert.equal(queries.length, 6)
     assert.equal(queries.reduce((n, sql) => n + sql.split(';').filter(s => s.trim()).length, 0), 6)
-    assert.equal(queries.some(sql => sql.includes('stub.text_stop')), upgraded)
+    assert.ok(queries.some(sql => sql.includes('stub.text_stop')))
   }
 })
 
@@ -203,9 +201,11 @@ if (!url) {
     const schema = `ag_test_${process.pid}_new`
     try {
       const store = createPostgresStore(pool, schema)
-      assert.deepEqual((await Promise.all([store.migrate(), createPostgresStore(pool, schema).migrate(), store.migrate()])).flat(), ['the schema'])
+      const name = upgrades(schema)[0]!.name
+      assert.match(name, /^the schema [0-9a-f]{8}$/)
+      assert.deepEqual((await Promise.all([store.migrate(), createPostgresStore(pool, schema).migrate(), store.migrate()])).flat(), [name])
       assert.deepEqual(await store.migrate(), [])
-      assert.deepEqual((await pool.query(`select id, name from ${schema}.upgrade`)).rows, [{ id: 1, name: 'the schema' }])
+      assert.deepEqual((await pool.query(`select id, name from ${schema}.upgrade`)).rows, [{ id: 1, name }])
       const graph = createGraph(store)
       await graph.observe({ subject: 'account:3', identifiers: ['email:x'], at: 333 })
       assert.equal((await graph.history('account:3'))[0]!.at, 333)
@@ -217,12 +217,15 @@ if (!url) {
   test('a database made by the steps of a version before 0.1.0 is refused, and nothing in it is changed', async () => {
     const schema = `ag_test_${process.pid}_old`
     try {
-      await pool.query(`create schema ${schema}; create table ${schema}.upgrade (id int primary key, name text not null, applied_at bigint not null);
-        insert into ${schema}.upgrade values (1, 'tables', 0), (2, 'when a sighting was recorded', 0)`)
-      const store = createPostgresStore(pool, schema)
-      await assert.rejects(store.migrate(), error => hasCode(error, FAULT_CODES.CONFIG.MISMATCH) && /made by a version before 0\.1\.0/.test(error.message) && error.message.includes('Use a new database or schema'))
-      assert.equal((await pool.query('select to_regclass($1) as name', [schema + '.sighting'])).rows[0].name, null)
-      assert.equal((await pool.query(`select count(*)::int as steps from ${schema}.upgrade`)).rows[0].steps, 2)
+      // Steps this version never had, and one step made from another text of the schema.
+      for (const steps of [`(1, 'tables', 0), (2, 'when a sighting was recorded', 0)`, `(1, 'the schema', 0)`, `(1, 'the schema 00000000', 0)`]) {
+        await pool.query(`drop schema if exists ${schema} cascade; create schema ${schema}; create table ${schema}.upgrade (id int primary key, name text not null, applied_at bigint not null);
+          insert into ${schema}.upgrade values ${steps}`)
+        const store = createPostgresStore(pool, schema)
+        await assert.rejects(store.migrate(), error => hasCode(error, FAULT_CODES.CONFIG.MISMATCH) && /made by a version before 0\.1\.0/.test(error.message) && error.message.includes('Use a new database or schema'), steps)
+        assert.equal((await pool.query('select to_regclass($1) as name', [schema + '.sighting'])).rows[0].name, null)
+        assert.equal((await pool.query(`select count(*)::int as steps from ${schema}.upgrade`)).rows[0].steps, steps.split('), (').length)
+      }
     } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }

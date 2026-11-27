@@ -12,7 +12,7 @@ npm start
 ```
 
 ```text
-database upgraded: the schema
+database upgraded: the schema 4c1f09ab
 listening on 0.0.0.0:8080
 collect accepts https://example.org
 reviewers none, server cookie off, fingerprint off, maxmind off, server ranges off, signed links off, staff networks off, opening hours off, webhook off, alerts off, address checks off, phone line checks off
@@ -366,7 +366,7 @@ Start the new version. At startup the server applies pending database changes in
 
 Each change has a number and runs once. When several servers start together, one applies the changes and the others wait. A direct PostgreSQL store read that fails for a missing table or column reports the first pending change. Call `store.migrate()` before retrying. What a caller must change is in the [changelog](../CHANGELOG.md#upgrading).
 
-A new database is made in one step. A database made by a version before 0.1.0 was built by steps this version no longer has. The server refuses it with `CONFIG.MISMATCH` and changes nothing in it. Use a new database or schema.
+A new database is made in one step. Until 0.1.0 the step is named by a mark of the schema's text. A database made by another version before 0.1.0 has other steps or another mark. The server refuses it with `CONFIG.MISMATCH` and changes nothing in it. Use a new database or schema.
 
 ## Settings that must match
 
