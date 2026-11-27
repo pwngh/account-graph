@@ -4681,6 +4681,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (let i = 0; i < 120; i++) await graph.observe({ subject: `account:${pick(30)}`, identifiers: [`phone:${pick(12)}`, `hardware:${pick(12)}`], at: T0 + i })
       const before = await graph.policy()
       assert.deepEqual([before.builtWith, before.due], [before.hash, false])
+      // The rules are the graph's own, read without the store, and the same ones the store's answer carries.
+      assert.deepEqual(graph.rules, before.rules)
       assert.deepEqual(await graph.verify(), [])
 
       // The same database under another policy. Scores follow it at once, and stored clusters do not.
@@ -4688,6 +4690,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const changed = createGraph(store, other)
       const state = await changed.policy()
       assert.deepEqual([state.builtWith, state.due], [before.hash, true])
+      assert.deepEqual([changed.rules.kinds.phone!.weight, graph.rules.kinds.phone!.weight], [0.6, defaultPolicy.kinds.phone!.weight])
       assert.notDeepEqual(await changed.verify(), [])
       // A write under it leaves clusters of both, and going back does not make that the first policy's work again.
       await changed.observe({ subject: 'account:1', identifiers: ['phone:1'], at: T0 })

@@ -141,6 +141,7 @@
 
 ### Edge and operations
 
+- A `profile` reads its policy from memory instead of the database. One profile sends 19 statements to PostgreSQL where it sent 28.
 - Breaking: `IDENTIFIER_SECRET` is required to start, and `identifierSecret` is required with `databaseUrl`. A memory graph given none makes its own.
 - A `profile` name is never noted `not used: IDENTIFIER_SECRET is not set`. `compose.yaml` carries a `change-me` placeholder for the secret.
 - `npm run bench -- load RATE SECONDS` sends one call to a request at a set rate and gives the median, p95 and p99 time to answer and the reasons for refusals.
