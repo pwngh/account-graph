@@ -5,8 +5,11 @@
  * journal copies every object that entry reaches, one level deep each. Undoing
  * puts each copy back into its own object, so an object two maps share stays
  * shared. A write pays for the entries it uses, not for the whole store.
+ *
+ * A write begun while another is open is kept on its own. Undone, it puts back
+ * only what it changed; ended, what it kept joins the write around it.
  */
-export type Journal = { open: Undo | undefined }
+export type Journal = { open: Undo | undefined; outer: Undo[] }
 
 type Undo = {
   /** Each object reached, and its contents when first reached. */
@@ -22,24 +25,32 @@ type Undo = {
 }
 
 export function createJournal(): Journal {
-  return { open: undefined }
+  return { open: undefined, outer: [] }
 }
 
-/** Starts keeping what a write changes. */
+/** Starts keeping what a write changes, inside the write already open if there is one. */
 export function begin(journal: Journal) {
+  if (journal.open) journal.outer.push(journal.open)
   journal.open = { objects: new Map(), entries: [], used: new Map(), whole: [], order: new Map() }
 }
 
-/** Stops keeping. What was kept is dropped. */
+/** Stops keeping the innermost write. What it kept joins the write around it, or is dropped if there is none. */
 export function end(journal: Journal) {
-  journal.open = undefined
+  const inner = journal.open
+  journal.open = journal.outer.pop()
+  if (inner && journal.open) join(journal.open, inner)
 }
 
-/** Puts back everything the open write changed, and stops keeping. */
+/** Puts back everything the innermost write changed, and stops keeping it. The write around it stays open. */
 export function undo(journal: Journal) {
   const undo = journal.open
+  // Nothing put back here is kept by the write around it, which saw it before.
   journal.open = undefined
-  if (!undo) return
+  if (undo) putBack(undo)
+  journal.open = journal.outer.pop()
+}
+
+function putBack(undo: Undo) {
   for (const [object, copy] of undo.objects) {
     if (object instanceof Map) {
       Map.prototype.clear.call(object)
@@ -70,6 +81,31 @@ export function undo(journal: Journal) {
     const held = keys.filter((key) => collection.has(key)).map((key) => [key, collection instanceof Map ? collection.get(key) : undefined] as const)
     collection.clear()
     for (const [key, value] of held) collection instanceof Map ? collection.set(key, value) : collection.add(key)
+  }
+}
+
+/**
+ * Adds to `outer` what an inner write kept that `outer` had not. What `outer`
+ * kept first is older, so it wins. What the inner write found of anything
+ * `outer` never used is how it was when `outer` began.
+ */
+function join(outer: Undo, inner: Undo) {
+  for (const [object, copy] of inner.objects) if (!outer.objects.has(object)) outer.objects.set(object, copy)
+  for (const entry of inner.entries) {
+    const [collection, key] = entry
+    let used = outer.used.get(collection)
+    if (used === true) continue
+    if (!used) outer.used.set(collection, (used = new Set()))
+    if (used.has(key)) continue
+    used.add(key)
+    outer.entries.push(entry)
+  }
+  for (const [collection, keys] of inner.order) if (!outer.order.has(collection) && outer.used.get(collection) !== true) outer.order.set(collection, keys)
+  for (const each of inner.whole) {
+    const [collection] = each
+    if (outer.used.get(collection) === true) continue
+    outer.used.set(collection, true)
+    outer.whole.push(each)
   }
 }
 
