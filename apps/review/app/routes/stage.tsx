@@ -77,7 +77,7 @@ export default function StagePage() {
   useEffect(() => {
     if (!currentView || !scene) return
     if (!scene.spot) return
-    const rows = [...document.querySelectorAll<HTMLElement>('#stage-view tr, #stage-view .timeline-entry, #stage-view li, #stage-view .inbox-call')]
+    const rows = [...document.querySelectorAll<HTMLElement>('#stage-view tr, #stage-view .timeline-entry, #stage-view li, #stage-view .inbox-call, #stage-view .queue-pair')]
     let index = -1
     for (const word of scene.spot) {
       index = rows.findIndex((row, i) => i > index && row.textContent?.includes(word))

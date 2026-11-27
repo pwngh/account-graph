@@ -53,9 +53,25 @@ export function PageHead({ view, title, children }: { view: ViewName, title: Rea
   return <div className="page-head"><h2 className="page-title"><ViewMark name={view}/>{title}</h2>{children}</div>
 }
 
+export interface Reason { identifier: string, evidence: number, fanout: number, gap: number, group?: string, counted?: false }
+const apartBy = (gap: number) => {
+  const days = Math.round(gap / 86400000)
+  return gap === 0 ? 'same time' : days < 1 ? '<1 day apart' : days + (days === 1 ? ' day apart' : ' days apart')
+}
+/** Why two IDs are linked: each shared identifier with its weight, how many IDs have it and how far apart they used it, and the way to ignore it. */
+export function Reasons({ reasons, context, subject }: { reasons: Reason[], context: WriteContext, subject: string }) {
+  // One of a group counts, and the others of the group follow it, said not to count. The group is named only where it left one out.
+  const mates = (reason: Reason) => reasons.filter(other => reason.group !== undefined && other.group === reason.group && other.counted === false)
+  const line = (r: Reason) => <div className={'reason' + (r.counted === false ? ' uncounted' : '')} key={r.identifier}><b>{r.identifier.split(':')[0]}</b> {percent(r.evidence)} · {r.fanout} IDs · {apartBy(r.gap)}{r.group === undefined ? '' : r.counted === false ? ' · not counted (' + r.group + ' group)' : mates(r).length > 0 ? ' · ' + r.group + ' group' : ''}<DecisionForm context={context} intent="mute" subject={subject} identifier={r.identifier} look="link"/></div>
+  return <>{reasons.filter(reason => reason.counted !== false).flatMap(reason => [line(reason), ...mates(reason).map(line)])}</>
+}
+
 /** A share drawn as a bar beside its number. The number says it, and the bar only lets rows be compared. */
+export function Meter({ share }: { share: number }) {
+  return <span className="meter" aria-hidden="true"><svg viewBox="0 0 100 8" preserveAspectRatio="none" focusable="false"><rect className="track" x="0" y="2" width="100" height="4"/><rect className="fill" x="0" y="2" width={Math.max(0, Math.min(1, share)) * 100} height="4"/></svg></span>
+}
 export function Compare({ share, children }: { share: number, children: ReactNode }) {
-  return <span className="compare"><span className="meter" aria-hidden="true"><svg viewBox="0 0 100 8" preserveAspectRatio="none" focusable="false"><rect className="track" x="0" y="2" width="100" height="4"/><rect className="fill" x="0" y="2" width={Math.max(0, Math.min(1, share)) * 100} height="4"/></svg></span><span>{children}</span></span>
+  return <span className="compare"><Meter share={share}/><span>{children}</span></span>
 }
 
 /** A list that scrolls inside its own height, so a long one does not push the rest of the page down. */
@@ -101,7 +117,7 @@ export function DecisionScope({ children }: { children: ReactNode }) {
 export interface WriteContext { key: string, at: number, seen: number }
 export type Intent = 'join' | 'separate' | 'rejoin' | 'mute' | 'restore' | 'forget'
 /** A decision, behind the control that opens its form. `look` is how the control is drawn: a button, or a quiet link inside a row. */
-export function DecisionForm({ context, intent, subject, other, identifier, targets, label, look = 'button' }: { context: WriteContext, intent: Intent, subject: string, other?: string, identifier?: string, targets?: string[], label?: string, look?: 'button' | 'link' }) {
+export function DecisionForm({ context, intent, subject, other, identifier, targets, label, look = 'button', keys }: { context: WriteContext, intent: Intent, subject: string, other?: string, identifier?: string, targets?: string[], label?: string, look?: 'button' | 'link' | 'primary', keys?: string }) {
   const id = useId()
   const { pathname, search } = useLocation()
   const scope = useContext(decisionKey)
@@ -125,7 +141,7 @@ export function DecisionForm({ context, intent, subject, other, identifier, targ
   return <details className={'decision-form ' + look + (intent === 'forget' ? ' danger' : '')} ref={details} onToggle={event => {
     // A live read may replace the audit head while the reviewer is writing a reason.
     setOpened(event.currentTarget.open ? context : null)
-  }}><summary>{label || button}</summary><fetcher.Form method="post" action={pathname + search} preventScrollReset onSubmit={event => {
+  }}><summary aria-keyshortcuts={keys}>{label || button}{keys && <kbd>{keys.toUpperCase()}</kbd>}</summary><fetcher.Form method="post" action={pathname + search} preventScrollReset onSubmit={event => {
     if (busy) event.preventDefault()
     else {
       submitted.current = true

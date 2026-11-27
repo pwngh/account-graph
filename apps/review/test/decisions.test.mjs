@@ -125,7 +125,7 @@ test('Matches says when pairs among older sightings are left out, and where to c
   const login = await fetch(origin + '/signin', { method: 'POST', headers: { origin }, body: new URLSearchParams({ token: 'review-fixture' }), redirect: 'manual' })
   const cookie = login.headers.get('set-cookie').split(';')[0]
   const page = async () => (await fetch(origin + '/decide', { headers: { cookie } })).text()
-  assert.match(await page(), /<p class="older">Pairs among sightings before <time dateTime="[^"]+"[^>]*>[^<]+<\/time> are not in this queue\. <a href="[^"]+#\/decide">Check older records on the original reviewer screen<\/a>\.<\/p>/)
+  assert.match(await page(), /<p class="meta older">Pairs among sightings before <time dateTime="[^"]+"[^>]*>[^<]+<\/time> are not in this queue\. <a href="[^"]+#\/decide">Check older records on the original reviewer screen<\/a>\.<\/p>/)
   // With nothing left out, nothing is said.
   older = false
   assert.doesNotMatch(await page(), /class="older"/)
