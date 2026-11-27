@@ -702,19 +702,19 @@ A history import of calls, with `npm run bench -- import 2000`, records inbound 
 | Store | Calls/s by quarter of 2,000 calls |
 | --- | --- |
 | Memory | 340, 123, 70, 53 |
-| PostgreSQL | 19, 23, 21, 23 |
+| PostgreSQL | 24, 30, 32, 32 |
 
-PostgreSQL keeps its rate, so 100,000 calls take about 80 minutes. The memory store slows as the history grows, so its first rate does not hold for a larger import.
+PostgreSQL keeps its rate, so 100,000 calls take about an hour. The memory store slows as the history grows, so its first rate does not hold for a larger import.
 
 Live load, with `npm run bench -- load RATE SECONDS`, sends one call to a request at a set rate, as a phone system does, without waiting for answers. On PostgreSQL, for 20 seconds at each rate:
 
 | Calls asked/s | Done/s | Median | p95 | Refused |
 | --- | --- | --- | --- | --- |
-| 5 | 4.3 | 199 ms | 3,061 ms | 0 |
-| 10 | 4.0 | 5,158 ms | 26,199 ms | 22 `TRANSPORT.INDETERMINATE` |
-| 20 | 8.0 | 6,991 ms | 26,968 ms | 244 `TRANSPORT.INDETERMINATE` |
+| 5 | 5.0 | 67 ms | 136 ms | 0 |
+| 10 | 10.0 | 53 ms | 75 ms | 0 |
+| 20 | 20.0 | 116 ms | 767 ms | 0 |
 
-A call written alone takes about 200 ms here, so this machine answers about five a second. Past that, requests wait on one another and time out. The memory store kept up at 40 a second, with a p95 of 42 ms.
+Each call looks again at the recent calls to its number, to doubt a tap another call could have come of. A recent call already doubted, with nothing on it to take back, is passed over in one read. The memory store kept up at 40 a second, with a p95 of 42 ms.
 
 Large graphs, five edges per account, with `DATABASE_URL=postgres://… npm run bench -- scale 1000000 5000000 10000000`. Cells show time and peak memory:
 
