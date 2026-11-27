@@ -161,12 +161,18 @@ class Reversal(TypedDict):
     restatement: str
 
 
-class NotLead(TypedDict):
+class _Signed(TypedDict, total=False):
+    """Who says so. A reviewer signs their own name, and a named service its own."""
+
+    by: str
+
+
+class NotLead(_Signed):
     kind: Literal["not_lead"]
     why: Literal["spam", "other"]
 
 
-class Lead(TypedDict):
+class Lead(_Signed):
     kind: Literal["lead"]
 
 
@@ -206,12 +212,12 @@ class ResultChange(TypedDict):
     result: CallResult
 
 
-class ReturnedChange(TypedDict):
+class ReturnedChange(_Signed):
     kind: Literal["returned"]
     reachedAt: At
 
 
-class NotReturnedChange(TypedDict):
+class NotReturnedChange(_Signed):
     kind: Literal["not_returned"]
 
 

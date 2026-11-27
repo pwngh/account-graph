@@ -76,6 +76,23 @@ test('forbidden keyed requests never dispatch a receipt lookup', async () => {
   }
 })
 
+test('a named service signs a return with its own name or none, never with another', async () => {
+  const owner = { role: 'limited', name: 'intake', calls: { record: ['call_update', 'restatement'] } } as const
+  const at = 1_790_000_000_000
+  const reached = (key: string, by?: string) => ({ type: 'call_update', at, key, call: 'ring', change: { kind: 'returned', reachedAt: at, ...(by && { by }) } })
+  const spam = (key: string, by?: string) => ({ type: 'restatement', at, key, of: { type: 'call', key: 'ring' }, change: { kind: 'not_lead', why: 'spam', ...(by && { by }) } })
+  // A statement about a sale is signed by the same rule as one about a call.
+  const sale = (key: string, by?: string) => ({ ...spam(key, by), of: { type: 'conversion', key: 'sale-1' } })
+  const entries = [reached('own', 'system:intake'), reached('none'), reached('other', 'dana'), spam('own-spam', 'system:intake'), spam('other-spam', 'system:billing'), sale('own-sale', 'system:intake'), sale('other-sale', 'dana')]
+  const sent: any[] = []
+  const answer = await limitedCall(owner, 'record', { entries }, async (input: any) => {
+    sent.push(...input.entries)
+    return { results: input.entries.map(({ type, key }: any) => ({ type, key, ok: true })) }
+  }) as any
+  assert.deepEqual(sent.map((entry) => entry.key), ['own', 'none', 'own-spam', 'own-sale'])
+  assert.deepEqual(answer.results.map((each: any) => [each.key, each.ok, each.reason]), [['own', true, undefined], ['none', true, undefined], ['other', false, 'FORBIDDEN'], ['own-spam', true, undefined], ['other-spam', false, 'FORBIDDEN'], ['own-sale', true, undefined], ['other-sale', false, 'FORBIDDEN']])
+})
+
 test('the bearer scheme is read in any case and with any spacing, as HTTP allows', () => {
   const owner = credentials('s'.repeat(32), { ann: 'r'.repeat(32) })
   for (const header of [`Bearer ${'s'.repeat(32)}`, `bearer ${'s'.repeat(32)}`, `BEARER ${'s'.repeat(32)}`, `Bearer  ${'s'.repeat(32)}`, `Bearer\t${'s'.repeat(32)}`]) assert.deepEqual(owner(header), { role: 'service' }, header)

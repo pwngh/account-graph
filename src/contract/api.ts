@@ -130,8 +130,9 @@ export interface RestatementEntry extends Keyed<'restatement'> {
     | { readonly kind: 'refund' | 'write_off'; readonly amount: number; readonly currency?: string }
     /** Takes back one earlier refund or write-off, by its key. */
     | { readonly kind: 'reverse'; readonly restatement: string }
-    | { readonly kind: 'not_lead'; readonly why: 'spam' | 'other' }
-    | { readonly kind: 'lead' }
+    /** `by` is who says so. A reviewer signs their own name, and a named service its own. */
+    | { readonly kind: 'not_lead'; readonly why: 'spam' | 'other'; readonly by?: string }
+    | { readonly kind: 'lead'; readonly by?: string }
 }
 
 /** May come before its conversion. Once there is one, the conversion is worth what was paid, and restatements of value are refused with PAID. */
@@ -168,8 +169,10 @@ export interface CallUpdateEntry extends Keyed<'call_update'> {
         readonly kind: 'returned'
         /** When the caller was reached. */
         readonly reachedAt: At
+        /** Who says so. A reviewer signs their own name, and a named service its own. */
+        readonly by?: string
       }
-    | { readonly kind: 'not_returned' }
+    | { readonly kind: 'not_returned'; readonly by?: string }
     | (CallParty & {
         readonly kind: 'party'
         readonly by: string

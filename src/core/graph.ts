@@ -195,7 +195,7 @@ export interface Graph {
    */
   revise(said: { key: string; at: number; transactionId: string; change: { kind: 'correct'; value: number; currency?: string } | { kind: Loss; amount: number; currency?: string } | { kind: 'reverse'; restatement: string } }): Promise<{ value: number; currency: string; stands: boolean }>
   /** `markNotLead`, by when it was said. */
-  sayLead(said: { id: string; key: string; at: number; kind?: NotLead['kind'] | undefined }): Promise<{ stands: boolean; lead: boolean }>
+  sayLead(said: { id: string; key: string; at: number; kind?: NotLead['kind'] | undefined; by?: string | undefined }): Promise<{ stands: boolean; lead: boolean }>
   /** `keepCallResult`, by when it was said. The result that stands counts whole. */
   sayResult(said: { call: string; key: string; at: number; result: { answered: boolean; voicemail?: boolean; waited?: number } }): Promise<{ stands: boolean }>
   /** An older process could put the physical line and its matching evidence back after a staff confirmation. */
@@ -206,7 +206,7 @@ export interface Graph {
   partyHistory(id: string): Promise<(PartyStatement & { key: string })[]>
   partyRevision(): Promise<string | undefined>
   /** `keepReturn`, by when it was said, which is not when they were reached. */
-  sayReturn(said: { call: string; key: string; at: number; reachedAt?: number | undefined }): Promise<{ stands: boolean }>
+  sayReturn(said: { call: string; key: string; at: number; reachedAt?: number | undefined; by?: string | undefined }): Promise<{ stands: boolean }>
   /** Every value a recorded outcome has had, oldest first. */
   values(transactionId: string): Promise<OutcomeValue[]>
   /** An outcome as it was recorded, or undefined when it was not. */
@@ -1984,14 +1984,14 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       })
     },
 
-    async sayLead({ id, key, at, kind }) {
-      keepable(key, id)
+    async sayLead({ id, key, at, kind, by }) {
+      keepable(key, id, ...(by === undefined ? [] : [by]))
       return store.write(async (tx) => {
         const before = await tx.saidOf('lead', id)
         const [marked] = (await tx.notLeads([id])).values()
         // What was said before anything was kept of who said it when.
         if (before.length === 0 && marked) await tx.addSaid({ topic: 'lead', about: id, key: '', at: marked.at, data: { kind: marked.kind } })
-        await tx.addSaid({ topic: 'lead', about: id, key, at, data: { kind: kind ?? null } })
+        await tx.addSaid({ topic: 'lead', about: id, key, at, data: { kind: kind ?? null, ...(by !== undefined && { by }) } })
         const stands = newest(await tx.saidOf('lead', id))!
         await tx.setNotLead(id, stands.data.kind ? { kind: stands.data.kind, at: stands.at } : undefined)
         return { stands: stands.key === key, lead: stands.data.kind === null }
@@ -2063,12 +2063,12 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       return store.read((tx) => tx.settingOf('callParty'))
     },
 
-    async sayReturn({ call, key, at, reachedAt }) {
-      keepable(key, call)
+    async sayReturn({ call, key, at, reachedAt, by }) {
+      keepable(key, call, ...(by === undefined ? [] : [by]))
       return store.write(async (tx) => {
         const { returned, ...before } = (await tx.callResultOf(call)) ?? { recorded: now() }
         if ((await tx.saidOf('return', call)).length === 0 && returned !== undefined) await tx.addSaid({ topic: 'return', about: call, key: '', at: returned, data: { reachedAt: returned } })
-        await tx.addSaid({ topic: 'return', about: call, key, at, data: { reachedAt: reachedAt ?? null } })
+        await tx.addSaid({ topic: 'return', about: call, key, at, data: { reachedAt: reachedAt ?? null, ...(by !== undefined && { by }) } })
         const stands = newest(await tx.saidOf('return', call))!
         const reached = stands.data.reachedAt
         if (reached === null && !('answered' in before) && !('voicemail' in before) && !('waited' in before)) await tx.removeCallResult(call)

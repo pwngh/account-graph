@@ -618,6 +618,64 @@ test('a call from two reporters, one of them the provider, is one call', async (
   }
 })
 
+test('a reviewer records that a caller was reached and that a call is not a lead, under their own name and nobody else\'s', async () => {
+  const { graph, local, base, close } = await http()
+  const record = async (entries: unknown[], token = 'reviewer') => {
+    const response = await fetch(`${base}/v1/record`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ entries }) })
+    return { status: response.status, body: (await response.json()) as any }
+  }
+  try {
+    // Two callers nobody answered, and a sale.
+    const missed = (key: string, from: string) => ({ type: 'call', key, at: AT, direction: 'inbound', from, to: '5551230001', result: { answered: false } })
+    assert.ok((await graph.record({ entries: [missed('M1', '5558675301'), missed('M2', '5558675302'), { type: 'conversion', key: 'sale-1', at: AT, subject: 'contact:one', stage: 'sale' }] as any })).results.every((each) => each.ok))
+    const reached = { type: 'call_update', key: 'reached-M1', at: AT + 60_000, call: 'M1', change: { kind: 'returned', reachedAt: AT + 60_000, by: 'dana' } }
+    const spam = { type: 'restatement', key: 'spam-M2', at: AT + 60_000, of: { type: 'call', key: 'M2' }, change: { kind: 'not_lead', why: 'spam', by: 'dana' } }
+    // Signed with their own name, both are taken, and the caller no longer waits.
+    const said = await record([reached, spam])
+    assert.equal(said.status, 200)
+    assert.deepEqual(said.body.results.map((each: any) => each.ok), [true, true])
+    assert.deepEqual([said.body.results[0].value.followUp.state, said.body.results[0].value.followUp.reported], ['returned', true])
+    const { engine } = await internalsOf(local)!()
+    const spurned = async () => (await engine.graph.notLeads(['call:M2'])).get('call:M2')?.kind
+    assert.equal(await spurned(), 'spam')
+    // Who said it is kept with the statement.
+    const kept = async (topic: string, about: string) => ((await engine.store.read((tx: any) => tx.saidOf(topic, about))) as any[]).map((each) => each.data)
+    assert.deepEqual(await kept('return', 'M1'), [{ reachedAt: AT + 60_000, by: 'dana' }])
+    assert.deepEqual(await kept('lead', 'call:M2'), [{ kind: 'spam', by: 'dana' }])
+    // They may take each back, under their own name.
+    const back = await record([{ type: 'call_update', key: 'unreached-M1', at: AT + 120_000, call: 'M1', change: { kind: 'not_returned', by: 'dana' } }, { type: 'restatement', key: 'lead-M2', at: AT + 120_000, of: { type: 'call', key: 'M2' }, change: { kind: 'lead', by: 'dana' } }])
+    assert.deepEqual([back.status, back.body.results[0].value.followUp.state, await spurned()], [200, 'open', undefined])
+    // Another name, no name, a statement about a sale, and a batch with anything else in it are all refused whole.
+    const refused = [
+      [{ ...reached, key: 'a', change: { ...reached.change, by: 'lee' } }],
+      [{ ...reached, key: 'b', change: { kind: 'returned', reachedAt: AT + 60_000 } }],
+      [{ ...spam, key: 'c', change: { kind: 'not_lead', why: 'spam' } }],
+      [{ ...spam, key: 'd', of: { type: 'conversion', key: 'sale-1' } }],
+      [{ ...reached, key: 'e' }, missed('M3', '5558675303')],
+      [{ type: 'call_update', key: 'f', at: AT, call: 'M1', change: { kind: 'result', result: { answered: true }, by: 'dana' } }],
+    ]
+    for (const entries of refused) {
+      const answer = await record(entries)
+      assert.deepEqual([answer.status, answer.body.fault.code], [403, 'AUTH.FORBIDDEN'], JSON.stringify(entries))
+    }
+    // Refused whole: neither the call of the mixed batch nor the return beside it was written, and no statement was added.
+    assert.equal(await graph.lookup({ kind: 'record', type: 'call', key: 'M3', at: NOW }), null)
+    assert.deepEqual((await kept('return', 'M1')).length, 2)
+    assert.deepEqual((await kept('lead', 'call:M2')).length, 2)
+    // Sent again, a statement answers whether it still stands. The first of each was taken back by the second.
+    const replay = await record([reached, spam])
+    assert.deepEqual(replay.body.results.map((each: any) => [each.ok, each.value.duplicate, each.value.stands]), [[true, true, false], [true, true, false]])
+    // The main service token signs with any name or none, as before.
+    const service = await record([{ ...reached, key: 'g', at: AT + 180_000, change: { kind: 'returned', reachedAt: AT + 180_000 } }, { ...spam, key: 'h', at: AT + 180_000, change: { kind: 'not_lead', why: 'other', by: 'intake desk' } }], 'service')
+    assert.deepEqual([service.status, service.body.results.map((each: any) => each.ok)], [200, [true, true]])
+    // A blank name is no name.
+    const blank = await record([{ ...reached, key: 'i', change: { ...reached.change, by: ' ' } }], 'service')
+    assert.deepEqual([blank.status, blank.body.fault.code], [400, 'INPUT.MALFORMED'])
+  } finally {
+    await close()
+  }
+})
+
 test('what each token opens of the six calls', async () => {
   const { base, close } = await http()
   const ask = async (name: string, body: unknown, token = 'reviewer', method = 'POST') => {

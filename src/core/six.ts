@@ -272,10 +272,10 @@ export function createSix(engine: Engine, options: SixOptions) {
         let stands = true
         if (change.kind === 'not_lead' || change.kind === 'lead') {
           if (!again) {
-            const said = await graph.sayLead({ id, key: entry.key, at: entry.at, ...(change.kind === 'not_lead' && { kind: change.why }) })
+            const said = await graph.sayLead({ id, key: entry.key, at: entry.at, ...(change.kind === 'not_lead' && { kind: change.why }), ...(change.by !== undefined && { by: change.by }) })
             stands = said.stands
             await settleLead(graph, id, said.lead, service.calling())
-          }
+          } else stands = newest(await inside.tx.saidOf('lead', id))?.key === entry.key
         } else if (!again) {
           const given = 'currency' in change && change.currency ? { ...change, currency: change.currency.toUpperCase() } : change
           try {
@@ -318,7 +318,7 @@ export function createSix(engine: Engine, options: SixOptions) {
         } else if (change.kind === 'result') {
           stands = (await graph.sayResult({ call: entry.call, key: entry.key, at: entry.at, result: change.result })).stands
           await settleCall(graph, entry.call, service.calling())
-        } else stands = (await graph.sayReturn({ call: entry.call, key: entry.key, at: entry.at, ...(change.kind === 'returned' && { reachedAt: change.reachedAt }) })).stands
+        } else stands = (await graph.sayReturn({ call: entry.call, key: entry.key, at: entry.at, ...(change.kind === 'returned' && { reachedAt: change.reachedAt }), ...(change.by !== undefined && { by: change.by }) })).stands
         const kept = await graph.keptCall(entry.call)
         // A return on an outbound call is kept even when the call arrives later, but can never close a callback.
         if (topic === 'return' && kept?.direction === 'outbound') stands = false
