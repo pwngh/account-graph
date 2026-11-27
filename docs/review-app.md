@@ -64,7 +64,7 @@ The server writes every time on the page. On the first load with JavaScript, the
 | `/journey/:subject` | Timeline and chart for the person. |
 | `/board/:days` | Missed calls and people by their furthest step. |
 | `/calls` | Missed calls, call outcomes, coverage and supporting detail. |
-| `/decide` | Pending matches with Join and Separate forms. It says when pairs among older sightings are not in the queue, and links to the original screen, whose Check older records reaches them. The original screen also has keyboard controls. |
+| `/decide` | The queue of pending matches beside the open pair: the two records side by side, the evidence, what joining would do, and Join, Separate and Skip with the J, K and S keys. `/decide?pair=` opens one pair. It says when pairs among older sightings are not in the queue, and links to the original screen, whose Check older records reaches them. |
 | `/channels` | Campaign attribution table. The original screen has the full channel breakdown and date controls. |
 | `/health` | Feed status, and a stop on sends to ad platforms with its reason and time. The original screen has jobs, alerts, conversions, the audit chain and policy details. |
 
