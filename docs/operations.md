@@ -693,6 +693,8 @@ Measured on an Apple M1 Max with Node 22 and synthetic data. PostgreSQL 16 ran i
 
 PostgreSQL writes are serialized by an advisory lock. The write queue combines the visits that browsers report at one time into one transaction.
 
+On the same memory graph, a full `verify` takes about 115 ms, the median of five runs. One run can take twice that while garbage is collected.
+
 Before regrouping, the stores check whether a stated call supplied an edge to these subjects or one of their identifiers. Other groups use their current edges alone. PostgreSQL makes the check in the same round trip as the edge read.
 
 The figures are of observations written by the engine. An entry of `record` is a transaction of its own and also writes a receipt, which these figures leave out.

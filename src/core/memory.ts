@@ -156,6 +156,22 @@ export function createMemoryStore() {
     for (const subject of subjects) for (const id of ids) once.delete(`unreturned:${subject}:${id}`)
   }
 
+  /** How many records hold an identifier, with those that withheld call evidence still counts for it. */
+  function fanoutOf(identifier: Identifier) {
+    const active = byIdentifier.get(identifier)
+    let fanout = active?.size ?? 0
+    const rows = withheld.size ? reservedByIdentifier.get(identifier) : undefined
+    if (rows) {
+      const former = new Set<Subject>()
+      for (const key of rows) {
+        const subject = withheld.get(key)!.subject
+        if (!active?.has(subject)) former.add(subject)
+      }
+      fanout += former.size
+    }
+    return fanout
+  }
+
   function valuesFor<T>(map: Map<Subject, Map<Identifier, T>>, subject: Subject) {
     const before = map.get(subject)
     if (before) return before
@@ -540,21 +556,23 @@ export function createMemoryStore() {
 
     async *sharing(caps) {
       const pairs = new Map<string, { a: Edge; b: Edge; fanout: number }[]>()
-      const states = await this.states([...byIdentifier.keys()])
+      // An identifier one record holds joins nothing, so its fanout is not counted.
       for (const [identifier, holders] of byIdentifier) {
-        const fanout = states.get(identifier)!.fanout
-        const kind = identifier.slice(0, identifier.indexOf(':'))
         if (ignored.has(identifier) || holders.size < 2) continue
+        const kind = identifier.slice(0, identifier.indexOf(':'))
         if (!Object.hasOwn(caps, kind)) throw malformed(`Identifier "${identifier}" has a kind that is missing from the policy`)
+        const fanout = fanoutOf(identifier)
         if (fanout > caps[kind]!) continue
-        const edges = [...holders.values()]
-        for (const [i, x] of edges.entries()) {
-          for (const y of edges.slice(i + 1)) {
+        const edges = [...holders.values()].map(copy)
+        for (let i = 0; i < edges.length; i++) {
+          const x = edges[i]!
+          for (let j = i + 1; j < edges.length; j++) {
+            const y = edges[j]!
             const [a, b] = x.subject < y.subject ? [x, y] : [y, x]
             const key = `${a.subject}\u0000${b.subject}`
             const shared = pairs.get(key)
-            if (shared) shared.push({ a: copy(a), b: copy(b), fanout })
-            else pairs.set(key, [{ a: copy(a), b: copy(b), fanout }])
+            if (shared) shared.push({ a, b, fanout })
+            else pairs.set(key, [{ a, b, fanout }])
           }
         }
       }
@@ -568,17 +586,7 @@ export function createMemoryStore() {
     async states(identifiers) {
       const out = new Map<Identifier, IdentifierState>()
       for (const identifier of identifiers) {
-        const active = byIdentifier.get(identifier)
-        let fanout = active?.size ?? 0
-        const rows = withheld.size ? reservedByIdentifier.get(identifier) : undefined
-        if (rows) {
-          const former = new Set<Subject>()
-          for (const key of rows) {
-            const subject = withheld.get(key)!.subject
-            if (!active?.has(subject)) former.add(subject)
-          }
-          fanout += former.size
-        }
+        const fanout = fanoutOf(identifier)
         if (fanout > 0 || ignored.has(identifier)) out.set(identifier, { fanout, ignored: ignored.has(identifier) })
       }
       return out

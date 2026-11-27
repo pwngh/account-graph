@@ -73,13 +73,19 @@ async function run(name: string, graph: Graph, writes: number) {
   for (let i = 0; i < reads; i++) await graph.links(`account:${pick(ACCOUNTS)}`)
   const linksMs = (performance.now() - start) / reads
 
-  start = performance.now()
-  const unsound = (await graph.verify()).length
-  const verifyMs = performance.now() - start
+  // The median of five, so one pause to collect garbage does not decide it.
+  const checks: number[] = []
+  let unsound = 0
+  for (let i = 0; i < 5; i++) {
+    start = performance.now()
+    unsound = (await graph.verify()).length
+    checks.push(performance.now() - start)
+  }
+  const verifyMs = checks.sort((x, y) => x - y)[2]!
 
   console.log(
     `${name}: ${Math.round(single)} observations/s one at a time, ${Math.round(batched)}/s in batches of 100, ${Math.round(queued)}/s through the write queue, ` +
-      `links() ${linksMs.toFixed(2)} ms, full verify ${Math.round(verifyMs)} ms (${unsound} unsound)`,
+      `links() ${linksMs.toFixed(2)} ms, full verify ${Math.round(verifyMs)} ms, median of 5 (${unsound} unsound)`,
   )
 }
 
