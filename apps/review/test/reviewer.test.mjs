@@ -57,7 +57,9 @@ async function handler(req, res) {
     case '/review/api/policy': return send(200, { hash: 'sample-policy', due: false, warning: null, changed: [], rules: { same: 0.9, related: 0.5, bridge: 0.97, review: 50, kinds: { email: { weight: 0.99, cap: 10, dilution: 0, halfLife: 'none' } } } })
     case '/review/api/disputes': return send(200, [])
     case '/review/api/texts': return send(200, { from: url.searchParams.get('from'), to: url.searchParams.get('to'), timeZone: 'America/New_York', at: observed, texts: [], next: null })
-    case '/review/api/report': return send(200, { rows: [] })
+    case '/review/api/report': return send(200, { from: '2026-09-01', to: '2026-09-30', timeZone: 'America/New_York', days: 30, rows: [], excluded: 0, months: [], dimensions: [], currencies: [], steps: [], incomplete: null,
+      total: { cost: 0, clicks: 0, visits: 0, missed: 0, notLeads: 0, outcomes: 0, value: 0, costDays: 0, missingDays: 0, insufficientData: false, costPerOutcome: null, returnOnCost: null, people: 0, stages: {}, valueChange: { outcomes: 0, first: 0, now: 0, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 } } })
+    case '/review/api/undecided': return send(200, { pairs: [], total: 0, seen: 0, window: { kind: 'recent', older: true, oldest: observed } })
     case '/v1/lookup': return send(200, { by: 'subject', subjects: specialSubjects })
     case '/v1/decide': {
       if (beforeDecision) await beforeDecision
@@ -287,19 +289,21 @@ test('the original screen is linked only at REVIEW_LEGACY_URL, never at the grap
     try {
       const url = address(standalone)
       const headers = { cookie: cookieFrom(await fetch(url + '/signin', post({ token: reviewer }, undefined, url))) }
-      return (await Promise.all(['/health', '/channels'].map(async view => (await fetch(url + view, { headers })).text()))).join('')
+      return (await Promise.all(['/health', '/channels', '/decide'].map(async view => (await fetch(url + view, { headers })).text()))).join('').replaceAll('<!-- -->', '')
     } finally {
       await close(standalone)
     }
   }
   const unset = await pages({})
   assert.ok(!unset.includes(process.env.REVIEW_GRAPH_URL), 'the graph address is not in the page')
-  assert.doesNotMatch(unset, /href="[^"]*#\/(health|channels)"/)
-  assert.match(unset, /The original reviewer screen has the full Channels view\./)
-  // Health is whole in the app, so it names no other screen.
-  assert.match(unset, /<h2 class="page-title"><svg[^>]*>.*?<\/svg>Health<\/h2>/)
+  assert.doesNotMatch(unset, /href="[^"]*#\/(health|channels|decide)"/)
+  // Health and Channels are whole in the app. Only Matches names the original screen, for the records its queue leaves out.
+  assert.match(unset, /Check older records on the original reviewer screen\./)
+  assert.doesNotMatch(unset, /Open the full|has the full/)
+  for (const title of ['Health', 'Channels', 'Matches']) assert.match(unset, new RegExp('<h2 class="page-title"><svg[^>]*>.*?</svg>' + title + '</h2>'))
   const set = await pages({ legacyUrl: 'https://graph.example.org/review' })
-  assert.ok(set.includes('href="https://graph.example.org/review#/channels"'))
+  assert.ok(set.includes('<a href="https://graph.example.org/review#/decide">Check older records on the original reviewer screen</a>'))
+  assert.doesNotMatch(set, /#\/(health|channels)"/)
   assert.ok(!set.includes(process.env.REVIEW_GRAPH_URL))
   await assert.rejects(reviewServer({ port: 0, host: '127.0.0.1', legacyUrl: 'javascript:alert(1)' }).then(async server => { await close(server); return server }), /REVIEW_LEGACY_URL/)
 })

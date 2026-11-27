@@ -49,8 +49,9 @@ function story(practice: Practice) {
     [/Opened from the number\. Nothing was recorded\./, () => 'nothing new'],
     [/no calls for 12 hours/, (text) => (text.includes('Calls feed is stale') ? 'quiet' : '')],
   ]
+  /** The line of a campaign in the Campaigns table, where a visit or a call is counted. The ranked list above it has one measure only. */
   function row(text: string, name: string, length = 120) {
-    const at = text.indexOf(name)
+    const at = text.indexOf(name, Math.max(0, text.indexOf('Attribution')))
     return at < 0 ? '' : text.slice(at, at + length)
   }
   return { names, said, expected }

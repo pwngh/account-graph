@@ -2,7 +2,7 @@ import { subjectPath } from './navigation.ts'
 import { graphTime, inZone, runtime } from './runtime.server'
 import { createHash, randomUUID } from 'node:crypto'
 import { data, redirect } from 'react-router'
-import { checkOrigin, requireReviewer, reviewerZone, reviewGet, withGraph } from './auth.server'
+import { checkOrigin, requireReviewer, reviewerZone, reviewGet, signedOut, withGraph } from './auth.server'
 import { fieldsOf } from './forms.server'
 import { cardModels, daysBefore } from './cards.server.js'
 
@@ -175,7 +175,15 @@ export async function retryConversion(request: Request) {
   const form = await fieldsOf(request)
   const [transactionId, target] = [String(form.get('transactionId') ?? ''), String(form.get('target') ?? '')]
   if (form.get('intent') !== 'retry' || !transactionId || !target) return data({ error: 'Reopen Health and try again.' }, { status: 400 })
-  const response = await fetch(new URL('/review/api/retry', runtime().graphUrl), { method: 'POST', headers: { authorization: 'Bearer ' + session.token, 'content-type': 'application/json' }, body: JSON.stringify({ transactionId, target }), redirect: 'error', signal: AbortSignal.any([request.signal, AbortSignal.timeout(8000)]) })
+  let response
+  try {
+    response = await fetch(new URL('/review/api/retry', runtime().graphUrl), { method: 'POST', headers: { authorization: 'Bearer ' + session.token, 'content-type': 'application/json' }, body: JSON.stringify({ transactionId, target }), redirect: 'error', signal: AbortSignal.any([request.signal, AbortSignal.timeout(8000)]) })
+  } catch {
+    // The graph may have queued it before the connection was lost, so the page is the only thing to trust.
+    return data({ error: 'The graph did not answer. Reload Health to see whether the conversion was queued.' }, { status: 503 })
+  }
+  // A token the graph no longer takes ends the session, as it does on every other page.
+  if (response.status === 401) throw await signedOut(request, session)
   if (!response.ok) return data({ error: 'The graph refused the retry. Reload to see the current state.' }, { status: response.status >= 500 ? 503 : 409 })
   const put = await response.json() as unknown[]
   if (form.get('_enhanced') === '1') return { saved: put.length > 0 ? 'The conversion was queued.' : 'The conversion is no longer rejected.' }

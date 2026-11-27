@@ -1,7 +1,7 @@
 import './reports.css'
 import { createContext, Fragment, useContext, useEffect, useId, useRef, useState } from 'react'
 import { Form, Link, useFetcher } from 'react-router'
-import { PageHead, Parts, Table, Tiles, Time, Subject, ZoneContext, stamp } from './shared'
+import { PageHead, Parts, PeriodForm, Table, Tiles, Time, Subject, ZoneContext, stamp } from './shared'
 import { amount, brief, callTone, cameFrom, dayOf, dayWords, detailReply, hourOf, lasted, percent, subjectHash, ticksOf, tieWords, WHAT } from './report-words'
 import { GLYPHS, Glyph, looksLike } from './marks'
 import { Bars, CallInbox, Change } from './call-panels'
@@ -184,11 +184,6 @@ function Hours({ data }) {
       return <tr key={day}><th scope="row">{day}</th>{row.map((cell,h) => <td className={'num heat' + Math.ceil(4 * (cell?.[measure] || 0) / most)} key={h}>{cell?.[measure]}</td>)}<td>{amount(row.reduce((all, cell) => all + (cell?.[measure] || 0), 0))}</td></tr>
     })}</tbody></table></div></section>
 }
-function Presets({ today, from, to }) {
-  const ago = n => new Date(Date.parse(today + 'T00:00:00Z') - n * 86400_000).toISOString().slice(0, 10)
-  const spans = [['Today', today, today], ['Yesterday', ago(1), ago(1)], ['7 days', ago(6), today], ['30 days', ago(29), today], ['This month', today.slice(0, 8) + '01', today]]
-  return <nav className="presets" aria-label="Period">{spans.map(([label, start, end]) => <Link key={label} aria-current={start === from && end === to ? 'page' : undefined} to={'/calls?' + new URLSearchParams({ from: start, to: end })}>{label}</Link>)}</nav>
-}
 function Calls({ data }) {
   const { summary, open, cards, then } = data
   const { total, coverage } = summary
@@ -200,7 +195,7 @@ function Calls({ data }) {
   const bars = [<Bars values={hourly('calls')} title="Calls by starting hour"/>, undefined, <Bars values={hourly('voicemail').map((n,i) => n + missed[i])} title="Missed calls by starting hour"/>]
   const results = [['Answered',total.answered,total.calls,''],['Missed',total.missed,total.calls,''],['Voicemail',total.voicemail,total.calls,''],['Waiting',total.waiting,total.calls,'Result not received yet'],['Unknown',total.unknown,total.calls,'Result unavailable'],['Returned',total.returned,lost,[summary.returnedWithin != null && 'Median ' + lasted(summary.returnedWithin),total.reported > 0 && amount(total.reported) + ' reported by another system'].filter(Boolean).join(' · ')],['Called again',total.calledAgain,lost,'Caller got through later']]
   if (total.notLeads > 0) results.push(['Not a lead',total.notLeads,0,'Excluded from other counts'])
-  return <><section><PageHead view="calls" title="Calls"><Form className="row period" action="/calls" method="get"><label>From <input type="date" name="from" required defaultValue={summary.from}/></label><label>To <input type="date" name="to" required defaultValue={summary.to}/></label><button className="primary">Show</button><Presets today={data.today} from={summary.from} to={summary.to}/></Form></PageHead><Range {...summary}/>
+  return <><section><PageHead view="calls" title="Calls"><PeriodForm action="/calls" from={summary.from} to={summary.to} today={data.today}/></PageHead><Range {...summary}/>
   {total.calls > 0 && <dl className="tiles">{data.metrics.map((key,i) => (i !== 3 || lost > 0) && <Metric key={key} card={cards[key]} tone={i === 4 && (open.calls.length > 0 ? 'apart' : 'same')} note={notes[i]} change={changes[i]} bars={bars[i]}/>)}</dl>}</section><section id="calls-missed"><h2>Missed calls</h2>
   {open.calls.length ? <CallInbox data={data} Detail={Detail} Story={Story}/> : <p className="muted">{total.calls === 0 ? 'No inbound calls' : lost > 0 ? 'All missed callers have been reached.' : 'No missed calls'}</p>}
   {total.hidden > 0 && <p className="muted">{amount(total.hidden)} more with a withheld number</p>}</section>{total.calls > 0 && <><div className="panel-grid call-grid"><section><h2>Call results</h2><Table title="Call results" headers={['Result',['Calls','num'],['Share','num'],'Detail']}>{results.map(([name,n,all,note], i) => <Behind key={name} part={all > 0 ? n / all : 0} className={i === 5 ? 'second' : undefined}><th scope="row"><span className={'chip ' + callTone(name.toLowerCase())}>{name}</span></th><td className="num">{n > 0 ? amount(n) : <span className="muted">0</span>}<Detail card={cards[data.results[name]]} label={'Details of ' + name + ', ' + amount(n) + ', in Call results'}/></td><td className="num share">{all > 0 ? percent(n / all) : <span className="muted">—</span>}</td><td className="muted">{note}</td></Behind>)}</Table></section><section><h2>Call attribution</h2><Parts label="Call attribution" list={[['Visitor', coverage.visitor], ['Phone number', coverage.channel], ['Unmatched', coverage.neither]]}/>{coverage.noResult > 0 && <p className="meta">{amount(coverage.noResult)} without a result</p>}</section></div><Hours data={data}/></>}</>

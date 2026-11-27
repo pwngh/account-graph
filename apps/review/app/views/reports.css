@@ -46,6 +46,13 @@
   .chart .plot .mark .heap, .graph .node .disc { fill: Canvas; stroke: CanvasText; }
   .chart .plot .group-count { fill: CanvasText; }
 }
+/* The bar behind a ranked row. Its width is a share, so the server can draw it. */
+.ranked-bar { position: absolute; z-index: -1; inset: 0; pointer-events: none; }
+.ranked-bar rect { fill: color-mix(in srgb, var(--ink) 7%, transparent); transition: fill .15s; }
+.ranked li:has(.tone0) { --tone: var(--t0); } .ranked li:has(.tone1) { --tone: var(--t1); } .ranked li:has(.tone2) { --tone: var(--t2); } .ranked li:has(.tone3) { --tone: var(--t3); } .ranked li:has(.tone4) { --tone: var(--t4); } .ranked li:has(.tone5) { --tone: var(--t5); }
+.ranked li:has(.letter) .ranked-bar rect { fill: color-mix(in srgb, var(--tone) 13%, transparent); }
+.ranked li:hover .ranked-bar rect { fill: color-mix(in srgb, var(--accent) 18%, transparent); }
+.campaign-report td .reason { display: block; }
 /* Parts of a whole as one bar. The places are shares of its width, so the server can draw it. */
 .parts-bar { display: block; clip-path: inset(0 round 7px); background: var(--raise); }
 .parts-bar rect { stroke: var(--card); stroke-width: 2; }

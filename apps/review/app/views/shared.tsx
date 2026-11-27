@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Link, useFetcher, useLocation } from 'react-router'
+import { Form, Link, useFetcher, useLocation } from 'react-router'
 import { subjectPath } from '../navigation'
 import { ICONS, PERSON, typeOf } from './cluster-layout.js'
 import { ViewMark, type ViewName } from './marks'
@@ -46,6 +46,17 @@ export function Badge({ id }: { id: string }) {
 /** A table that scrolls sideways where it must. A heading given with a class, as `['Calls', 'num']`, has it. */
 export function Table({ title, headers, children }: { title: string, headers: (string | [string, string])[], children: ReactNode }) {
   return <div className="wide" tabIndex={0} role="region" aria-label={title}><table><thead><tr>{headers.map(h => typeof h === 'string' ? <th key={h} scope="col">{h}</th> : <th key={h[0]} scope="col" className={h[1]}>{h[0]}</th>)}</tr></thead><tbody>{children}</tbody></table></div>
+}
+
+/**
+ * The days a report covers: the usual spans counted back from today, and two dates.
+ * `keep` is what else the address holds, carried into the new one.
+ */
+export function PeriodForm({ action, from, to, today, keep = {} }: { action: string, from: string, to: string, today: string, keep?: Record<string, string> }) {
+  const ago = (n: number) => new Date(Date.parse(today + 'T00:00:00Z') - n * 86400_000).toISOString().slice(0, 10)
+  const spans = [['Today', today, today], ['Yesterday', ago(1), ago(1)], ['7 days', ago(6), today], ['30 days', ago(29), today], ['This month', today.slice(0, 8) + '01', today]]
+  return <Form className="row period" action={action} method="get">{Object.entries(keep).map(([name, value]) => value && <input key={name} type="hidden" name={name} value={value}/>)}<label>From <input type="date" name="from" required defaultValue={from}/></label><label>To <input type="date" name="to" required defaultValue={to}/></label><button className="primary">Show</button>
+    <nav className="presets" aria-label="Period">{spans.map(([label, start, end]) => <Link key={label} aria-current={start === from && end === to ? 'page' : undefined} to={action + '?' + new URLSearchParams({ from: start, to: end, ...Object.fromEntries(Object.entries(keep).filter(([, value]) => value)) })}>{label}</Link>)}</nav></Form>
 }
 
 /** The heading of a view: its mark, its name, and the controls of the whole view. */
@@ -106,8 +117,8 @@ export function Scroll({ label, children }: { label: string, children: ReactNode
 }
 
 /** The few numbers a view is about, large, each with what it is of. The fourth of an item is its tone, for one that needs someone. */
-export function Tiles({ items }: { items: ([string, ReactNode, ReactNode?, string?] | false | undefined | null | 0 | '')[] }) {
-  return <dl className="tiles">{items.map(item => item && <div key={item[0]} className={item[3] || undefined}><dt>{item[0]}</dt><dd><span className="tile-line"><b>{item[1]}</b></span>{item[2] && <span className="reason">{item[2]}</span>}</dd></div>)}</dl>
+export function Tiles({ items }: { items: ([string, ReactNode, ReactNode?, string?, ReactNode?] | false | undefined | null | 0 | '')[] }) {
+  return <dl className="tiles">{items.map(item => item && <div key={item[0]} className={item[3] || undefined}><dt>{item[0]}</dt><dd><span className="tile-line"><b>{item[1]}</b>{item[4]}</span>{item[2] && <span className="reason">{item[2]}</span>}</dd></div>)}</dl>
 }
 
 export interface ActionResult {

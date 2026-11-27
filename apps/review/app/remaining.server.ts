@@ -8,19 +8,19 @@ export function remaining(request: Request, view: string) {
     const base = { view, legacy: legacy && legacy + '#/' + view }
     if (view === 'decide') {
       const audit = await reviewGet(request, session, 'decisions', {limit: '1'})
-      const queue = await reviewGet(request, session, 'undecided')
+      // As many as the graph gives at once, so Skip reaches every pair it lists.
+      const found = await reviewGet(request, session, 'undecided', {limit: '500'})
       const context = {seen: audit.decisions[0]?.seq ?? 0, key: randomUUID(), at: graphTime()}
       // The pair the address names, or the strongest. A pair decided since is no longer in the queue, and the first takes its place.
       const named = new URL(request.url).searchParams.get('pair')
-      const at = Math.max(0, queue.pairs.findIndex((pair: {a: string, b: string}) => pair.a + '\n' + pair.b === named))
-      const pair = queue.pairs[at]
+      const at = Math.max(0, found.pairs.findIndex((pair: {a: string, b: string}) => pair.a + '\n' + pair.b === named))
+      const pair = found.pairs[at]
+      // A row of the queue shows the kinds of what a pair shares. The identifiers themselves go to the page for the open pair only.
+      const kindsOf = (each: {reasons: {identifier: string, counted?: false}[]}) => [...new Set(each.reasons.filter(reason => reason.counted !== false).map(reason => reason.identifier.split(':')[0]))].join(', ')
+      const queue = {...found, pairs: found.pairs.map((each: any) => ({a: each.a, b: each.b, score: each.score, level: each.level, kinds: kindsOf(each)}))}
       if (!pair) return {...base, queue, context, at}
       const sides = await Promise.all([pair.a, pair.b].map(async subject => sideOf(subject, await reviewGet(request, session, 'subject', {subject}))))
-      return {...base, queue, context, at, sides, effect: await effectOf(session.token, pair)}
-    }
-    if (view === 'channels') {
-      const {rows} = await reviewGet(request, session, 'report')
-      return {...base, rows: rows.map((r: Record<string,unknown>) => ({source:r.source, name:r.campaign || r.campaignId, visits:r.visits, cost:r.cost, value:r.value, outcomes:r.outcomes}))}
+      return {...base, queue, context, at, reasons: pair.reasons, sides, effect: await effectOf(session.token, pair)}
     }
     throw new Response('Unknown view', {status: 404})
   })
@@ -29,10 +29,15 @@ export function remaining(request: Request, view: string) {
 /** What the comparison of a pair shows of one of them. The page gets this and not the whole record. */
 function sideOf(subject: string, profile: any) {
   const history: {at: number, identifier: string, event?: string}[] = profile.history ?? []
-  const times = history.map(row => row.at).filter(at => at > 0)
+  let first: number | undefined, last: number | undefined
+  for (const { at } of history) {
+    if (!(at > 0)) continue
+    if (first === undefined || at < first) first = at
+    if (last === undefined || at > last) last = at
+  }
   return {
     subject, kinds: [...new Set(history.map(row => row.identifier.slice(0, row.identifier.indexOf(':'))))], events: [...new Set(history.map(row => row.event).filter((event): event is string => !!event))],
-    first: times.length ? Math.min(...times) : undefined, last: times.length ? Math.max(...times) : undefined, sightings: history.length,
+    first, last, sightings: history.length,
     members: Math.max(1, profile.cluster?.members.length ?? 1), separated: profile.separated?.length ?? 0,
   }
 }
