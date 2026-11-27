@@ -701,10 +701,10 @@ A history import of calls, with `npm run bench -- import 2000`, records inbound 
 
 | Store | Calls/s by quarter of 2,000 calls |
 | --- | --- |
-| Memory | 340, 123, 70, 53 |
+| Memory | 3,564, 4,159, 4,418, 4,381 |
 | PostgreSQL | 24, 30, 32, 32 |
 
-PostgreSQL keeps its rate, so 100,000 calls take about an hour. The memory store slows as the history grows, so its first rate does not hold for a larger import.
+Both stores keep their rate as the history grows. On PostgreSQL, 100,000 calls take about an hour. The memory store keeps about 4,300 calls a second through 8,000 calls, because a write that may be undone copies only the entries it uses.
 
 Live load, with `npm run bench -- load RATE SECONDS`, sends one call to a request at a set rate, as a phone system does, without waiting for answers. On PostgreSQL, for 20 seconds at each rate:
 

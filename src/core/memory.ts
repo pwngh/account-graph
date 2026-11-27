@@ -2,6 +2,7 @@ import { affectedMisses, callTraces, creditSubject, ownerOf, partyOf, reopenWait
 import { randomUUID } from 'node:crypto'
 import { malformed } from '../contract/fault.ts'
 import { createMemoryOps } from './ops.ts'
+import { KeptMap, KeptSet, begin, createJournal, end, undo } from './journal.ts'
 import { createMemoryOutbox } from './outbox.ts'
 import type { OutboxStore } from './outbox.ts'
 import { standingFirst } from './store.ts'
@@ -19,9 +20,11 @@ import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Ed
 /**
  * Keeps the graph in process memory, for tests, demos, and small graphs.
  * Writes run one at a time. A write that throws is undone only where it was
- * asked to be whole, by a copy of everything made before it.
+ * asked to be whole, from a journal of the entries it used.
  */
 export function createMemoryStore() {
+  const journal = createJournal()
+  const kept = <K, V>(): Map<K, V> => new KeptMap<K, V>(journal)
   const outbox = createMemoryOutbox((job) => outcomes.get(job.transactionId)?.subject === job.subject, () => settings.get('callParty'), (subjects) => {
     const refusals = new Map<Subject, number>()
     for (const subject of subjects) {
@@ -29,58 +32,63 @@ export function createMemoryStore() {
       if (answer?.adUserData === false) refusals.set(subject, answer.at)
     }
     return refusals
-  })
-  const bySubject = new Map<Subject, Map<Identifier, Edge>>()
-  const byIdentifier = new Map<Identifier, Map<Subject, Edge>>()
-  const profiles = new Map<Subject, Map<Identifier, FactProfile>>()
-  const hidden = new Map<Subject, Map<Identifier, Edge>>()
-  const withdrawals = new Map<Subject, Map<Identifier, FactStamp>>()
-  const factStatements = new Map<Subject, { identifiers: Identifier[]; at: number; key: string; recorded: number; decision?: number }[]>()
-  const ignored = new Set<Identifier>()
-  const labels = new Map<Subject, Labels>()
-  const byComponent = new Map<Subject, Set<Subject>>()
-  const byCluster = new Map<Subject, Set<Subject>>()
-  const sightings = new Map<Subject, Sighting[]>()
-  const created = new Map<Subject, { createdAt: number; at: number; key: string }>()
-  const touches = new Map<Subject, { touch: Touch; call: string | undefined }[]>()
-  const separated = new Map<Subject, Set<Subject>>()
-  const flows = new Map<string, FlowEdge>()
-  const flowsBy = new Map<Subject, Set<string>>()
-  const flowIds = new Map<string, Required<Flow>>()
-  const consents = new Map<Subject, ConsentAnswer[]>()
+  }, kept)
+  const bySubject = new KeptMap<Subject, Map<Identifier, Edge>>(journal)
+  const byIdentifier = new KeptMap<Identifier, Map<Subject, Edge>>(journal)
+  const profiles = new KeptMap<Subject, Map<Identifier, FactProfile>>(journal)
+  const hidden = new KeptMap<Subject, Map<Identifier, Edge>>(journal)
+  const withdrawals = new KeptMap<Subject, Map<Identifier, FactStamp>>(journal)
+  const factStatements = new KeptMap<Subject, { identifiers: Identifier[]; at: number; key: string; recorded: number; decision?: number }[]>(journal)
+  const ignored = new KeptSet<Identifier>(journal)
+  const labels = new KeptMap<Subject, Labels>(journal)
+  const byComponent = new KeptMap<Subject, Set<Subject>>(journal)
+  const byCluster = new KeptMap<Subject, Set<Subject>>(journal)
+  const sightings = new KeptMap<Subject, Sighting[]>(journal)
+  const created = new KeptMap<Subject, { createdAt: number; at: number; key: string }>(journal)
+  const touches = new KeptMap<Subject, { touch: Touch; call: string | undefined }[]>(journal)
+  const separated = new KeptMap<Subject, Set<Subject>>(journal)
+  const flows = new KeptMap<string, FlowEdge>(journal)
+  const flowsBy = new KeptMap<Subject, Set<string>>(journal)
+  const flowIds = new KeptMap<string, Required<Flow>>(journal)
+  const consents = new KeptMap<Subject, ConsentAnswer[]>(journal)
   const latestConsent = (subject: Subject) => [...(consents.get(subject) ?? [])].sort(standingFirst)[0]
   const decisions: Decision[] = []
-  const outcomes = new Map<string, Counted>()
-  const values = new Map<Subject, Map<string, OutcomeValue[]>>()
-  const calls = new Map<string, Omit<KeptCall, 'result'>>()
-  const withheld = new Map<string, CallEvidence>()
-  const reservedBySubject = new Map<Subject, Set<string>>()
-  const reservedByIdentifier = new Map<Identifier, Set<string>>()
-  const callLines = new Map<string, Subject>()
-  const lineKinds = new Map<string, CallLineKind>()
-  const texts = new Map<string, KeptText>()
-  const textStops = new Map<Subject, Map<Subject, FactStamp & { through?: FactStamp }>>()
-  const phoneProfiles = new Map<Subject, Map<Identifier, Map<string, FactStamp>>>()
-  const sent = new Map<string, SentLink>()
-  const payments = new Map<string, Required<Payment>>()
-  const results = new Map<string, CallResult>()
-  const spurned = new Map<string, NotLead>()
+  const outcomes = new KeptMap<string, Counted>(journal)
+  const values = new KeptMap<Subject, Map<string, OutcomeValue[]>>(journal)
+  const calls = new KeptMap<string, Omit<KeptCall, 'result'>>(journal)
+  const withheld = new KeptMap<string, CallEvidence>(journal)
+  const reservedBySubject = new KeptMap<Subject, Set<string>>(journal)
+  const reservedByIdentifier = new KeptMap<Identifier, Set<string>>(journal)
+  const callLines = new KeptMap<string, Subject>(journal)
+  const lineKinds = new KeptMap<string, CallLineKind>(journal)
+  const texts = new KeptMap<string, KeptText>(journal)
+  const textStops = new KeptMap<Subject, Map<Subject, FactStamp & { through?: FactStamp }>>(journal)
+  const phoneProfiles = new KeptMap<Subject, Map<Identifier, Map<string, FactStamp>>>(journal)
+  const sent = new KeptMap<string, SentLink>(journal)
+  const payments = new KeptMap<string, Required<Payment>>(journal)
+  const results = new KeptMap<string, CallResult>(journal)
+  const spurned = new KeptMap<string, NotLead>(journal)
   /** By number, the one that began first, first. */
-  const leases = new Map<string, Lease[]>()
-  const costs = new Map<string, CostRow>()
-  const reads = new Map<string, { at: number; key: string }>()
-  const said = new Map<string, (Said & { deletion?: number })[]>()
-  const receipts = new Map<string, Receipt>()
-  const receiptSubjects = new Map<string, Set<Subject>>()
-  const settings = new Map<string, string>()
+  const leases = new KeptMap<string, Lease[]>(journal)
+  const costs = new KeptMap<string, CostRow>(journal)
+  const reads = new KeptMap<string, { at: number; key: string }>(journal)
+  const said = new KeptMap<string, (Said & { deletion?: number })[]>(journal)
+  const receipts = new KeptMap<string, Receipt>(journal)
+  const receiptSubjects = new KeptMap<string, Set<Subject>>(journal)
+  const settings = new KeptMap<string, string>(journal)
   const events: (GraphEvent & { subject?: Subject; notice?: string; calls?: readonly string[] })[] = []
-  const once = new Map<string, Subject | undefined>()
-  const deliveries = new Map<string, Delivery & { lease: number }>()
+  const once = new KeptMap<string, Subject | undefined>(journal)
+  const deliveries = new KeptMap<string, Delivery & { lease: number }>(journal)
   const pruned = { seq: 0 }
+  /** The events as a whole write found them, copied before it first removes or replaces one. */
+  let eventsBefore: typeof events | undefined
+  const changingEvents = () => {
+    if (journal.open && !eventsBefore) eventsBefore = events.slice()
+  }
   let lastEvent = 0
   let epoch = randomUUID().slice(0, 8)
   let writes = 0
-  const ops = createMemoryOps()
+  const ops = createMemoryOps(kept)
   let built: string | undefined
 
   const withResult = ({ visitor, ...call }: Omit<KeptCall, 'result'>): KeptCall => structuredClone({ ...call, ...(call.party && { flags: withoutGuesses(call.flags) }), ...(!call.party && visitor && { visitor }), ...(results.has(call.id) && { result: results.get(call.id)! }) })
@@ -141,6 +149,7 @@ export function createMemoryStore() {
       const event = events[i]!
       if ((event.type === 'callback.overdue' && (ids.has(event.data.call) || event.calls?.some(id => sources.has(id)) || (event.notice && notices.has(event.notice)))) || (event.type === 'conversion.failed' && conversions.has(event.data.conversion))) {
         if (event.notice) once.delete(event.notice)
+        changingEvents()
         events.splice(i, 1)
       }
     }
@@ -344,7 +353,10 @@ export function createMemoryStore() {
       consents.delete(subject)
       ops.forget(subject)
       for (const [name, about] of once) if (about === subject) once.delete(name)
-      for (let i = events.length - 1; i >= 0; i--) if (events[i]!.subject === subject) events.splice(i, 1)
+      for (let i = events.length - 1; i >= 0; i--) if (events[i]!.subject === subject) {
+        changingEvents()
+        events.splice(i, 1)
+      }
       // Last, so a job added meanwhile has no outcome to be added for.
       return [...gone, ...await outbox.remove(subject)]
     },
@@ -374,7 +386,7 @@ export function createMemoryStore() {
     },
 
     async rivalCalls(number, first, last, line) {
-      return [...calls.values()].filter(call => call.direction === 'inbound' && call.to === number && call.at >= first && call.at < last && (!line || (callLines.get(call.id) ?? call.subject) === line))
+      return [...calls.peek()].filter(call => call.direction === 'inbound' && call.to === number && call.at >= first && call.at < last && (!line || (callLines.get(call.id) ?? call.subject) === line))
         .map(call => ({ ...withResult(call), subject: callLines.get(call.id) ?? call.subject, flags: [...call.flags], ...(call.visitor && { visitor: call.visitor }) }))
     },
 
@@ -649,7 +661,7 @@ export function createMemoryStore() {
     async callbacksThrough(sources) {
       const paths = new Set(sources)
       const notices = ops.callbacksThrough(paths)
-      for (const event of events) if (event.notice && event.calls?.some(id => paths.has(id))) notices.set(event.notice, event.calls)
+      for (const event of events) if (event.notice && event.calls?.some(id => paths.has(id))) notices.set(event.notice, [...event.calls])
       return notices
     },
 
@@ -657,7 +669,10 @@ export function createMemoryStore() {
       const gone = new Set(keys)
       ops.dropCallbacks(keys)
       for (const key of gone) once.delete(key)
-      for (let i = events.length - 1; i >= 0; i--) if (gone.has(events[i]!.notice ?? '')) events.splice(i, 1)
+      for (let i = events.length - 1; i >= 0; i--) if (gone.has(events[i]!.notice ?? '')) {
+        changingEvents()
+        events.splice(i, 1)
+      }
     },
 
     async eventHead() {
@@ -674,6 +689,7 @@ export function createMemoryStore() {
 
     async pruneEvents(before) {
       const keep = events.findIndex((each) => each.at >= before)
+      if (keep !== 0 && events.length > 0) changingEvents()
       const gone = events.splice(0, keep < 0 ? events.length : keep)
       if (gone.length > 0) pruned.seq = Math.max(pruned.seq, gone.at(-1)!.seq)
       return gone.length
@@ -829,7 +845,7 @@ export function createMemoryStore() {
 
     async callsBehind(touch) {
       const matches = (touches.get(touch.subject) ?? []).filter(({ touch: other }) => other.at === touch.at && other.landing === touch.landing && other.source === touch.source && other.campaign === touch.campaign && other.campaignId === touch.campaignId)
-      const older = matches.some(({ call }) => call === undefined) ? [...calls.values()].filter(call => !call.party && !call.visitor && call.direction === 'inbound' && call.subject === touch.subject && call.at === touch.at && 'tel:' + call.to === touch.landing).map(call => call.id) : []
+      const older = matches.some(({ call }) => call === undefined) ? [...calls.peek()].filter(call => !call.party && !call.visitor && call.direction === 'inbound' && call.subject === touch.subject && call.at === touch.at && 'tel:' + call.to === touch.landing).map(call => call.id) : []
       return [...new Set([...older, ...matches.flatMap(({ call }) => call ?? [])])]
     },
 
@@ -1025,13 +1041,13 @@ export function createMemoryStore() {
 
     async callsOf(subjects) {
       const wanted = new Set(subjects)
-      return [...calls.values()].filter((call) => wanted.has(call.subject)).sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
+      return [...calls.peek()].filter((call) => wanted.has(call.subject)).sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
     },
 
     async openCalls(from, to, limit, after) {
       const answered = new Map<Subject, number>()
       // When each was last spoken to, by a call answered or by a return reported for one of theirs.
-      for (const call of calls.values()) {
+      for (const call of calls.peek()) {
         // What was no lead is no conversation with them either.
         if (spurned.has(`call:${call.id}`)) continue
         const { answered: spoke, returned = -Infinity } = results.get(call.id) ?? {}
@@ -1039,7 +1055,7 @@ export function createMemoryStore() {
         const told = call.direction === 'inbound' && spoke === false && returned > call.at ? returned : -Infinity
         answered.set(call.subject, Math.max(spoke ? call.at : -Infinity, told, answered.get(call.subject) ?? -Infinity))
       }
-      const open = [...calls.values()].filter((call) => {
+      const open = [...calls.peek()].filter((call) => {
         if (call.direction !== 'inbound' || call.at < from || call.at >= to || results.get(call.id)?.answered !== false || call.subject === `call:${call.id}` || spurned.has(`call:${call.id}`)) return false
         if (after && !(call.at > after.at || (call.at === after.at && call.id > after.id))) return false
         return (answered.get(call.subject) ?? -Infinity) <= call.at
@@ -1048,7 +1064,7 @@ export function createMemoryStore() {
     },
 
     async callsBetween(from, to) {
-      const found = [...calls.values()].filter((call) => call.at >= from && call.at < to)
+      const found = [...calls.peek()].filter((call) => call.at >= from && call.at < to)
       return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
     },
 
@@ -1058,7 +1074,7 @@ export function createMemoryStore() {
 
     async callTimes(subjects) {
       const wanted = new Set(subjects)
-      const found = [...calls.values()].filter((call) => wanted.has(call.subject) && !spurned.has(`call:${call.id}`))
+      const found = [...calls.peek()].filter((call) => wanted.has(call.subject) && !spurned.has(`call:${call.id}`))
       return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(({ id, direction, subject, at, party }) => {
         const result = results.get(id)
         return { id, direction, subject, at, ...(party && { party: structuredClone(party) }), ...(result && { result: { ...(result.answered !== undefined && { answered: result.answered }), ...(result.returned !== undefined && { returned: result.returned }), ...(result.waited !== undefined && { waited: result.waited }) } }) }
@@ -1075,11 +1091,11 @@ export function createMemoryStore() {
     },
 
     async calledBetween(from, to) {
-      return [...new Set([...calls.values()].filter((call) => call.at >= from && call.at < to && !spurned.has(`call:${call.id}`)).map((call) => call.subject))]
+      return [...new Set([...calls.peek()].filter((call) => call.at >= from && call.at < to && !spurned.has(`call:${call.id}`)).map((call) => call.subject))]
     },
 
     async missesBetween(from, to) {
-      const found = [...calls.values()].filter((call) => call.direction === 'inbound' && call.at >= from && call.at < to && (results.get(call.id)?.answered === false || spurned.has(`call:${call.id}`)))
+      const found = [...calls.peek()].filter((call) => call.direction === 'inbound' && call.at >= from && call.at < to && (results.get(call.id)?.answered === false || spurned.has(`call:${call.id}`)))
       return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
     },
 
@@ -1249,11 +1265,14 @@ export function createMemoryStore() {
 
     async unname(subjects, keys) {
       const gone = new Set(subjects)
-      for (const event of events) {
-        if (event.type !== 'cluster.changed') continue
+      // An event is replaced, never changed in place, so an undone write can put the old one back.
+      events.forEach((event, i) => {
+        if (event.type !== 'cluster.changed') return
         const { subject, from, to } = event.data
-        Object.assign(event, { data: { subject, from: from !== null && gone.has(from) ? null : from, to: to !== null && gone.has(to) ? null : to } })
-      }
+        if (!(from !== null && gone.has(from)) && !(to !== null && gone.has(to))) return
+        changingEvents()
+        events[i] = { ...event, data: { subject, from: from !== null && gone.has(from) ? null : from, to: to !== null && gone.has(to) ? null : to } }
+      })
       ops.unname(keys)
     },
 
@@ -1264,7 +1283,7 @@ export function createMemoryStore() {
       const theirs = only ? new Set([...ids].map(id => `call:${id}`)) : new Set([...own, ...[...ids].map(id => `call:${id}`), ...subjects.flatMap((each) => [...(values.get(each)?.keys() ?? [])].filter((id) => !outcomes.has(id)))])
       return [
         ...[...theirs].map((key) => ({ type: 'conversion', key })),
-        ...[...new Set([...ids, ...(!only ? [...calls.values()].filter(each => of.has(each.subject)).map(call => call.id) : [])])].map(key => ({ type: 'call', key })),
+        ...[...new Set([...ids, ...(!only ? [...calls.peek()].filter(each => of.has(each.subject)).map(call => call.id) : [])])].map(key => ({ type: 'call', key })),
         ...[...ids, ...retained].flatMap(id => (said.get(`party\u0000${id}`) ?? [])
           .filter(each => ids.has(id) || (each.topic === 'party' && 'subject' in each.data && of.has(each.data.subject)))
           .map(({ key }) => ({ type: 'call_update', key }))),
@@ -1386,7 +1405,8 @@ export function createMemoryStore() {
     },
 
     async lastDecision() {
-      return decisions.at(-1)
+      const last = decisions.at(-1)
+      return last && copied(last)
     },
 
     async decisions() {
@@ -1471,19 +1491,6 @@ export function createMemoryStore() {
   /** Every collection, copied together, so what two of them share stays shared. */
   const collections = { bySubject, byIdentifier, profiles, hidden, withdrawals, factStatements, ignored, labels, byComponent, byCluster, sightings, created, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, reservedBySubject, reservedByIdentifier, callLines, lineKinds, texts, textStops, phoneProfiles, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
   const snapshot = () => structuredClone({ ...collections, lastEvent, epoch, writes, built, jobs: outbox.jobs, ops: ops.kept })
-  const restore = (kept: ReturnType<typeof snapshot>) => {
-    const refill = (now: any, then: any) => {
-      if (Array.isArray(now)) now.splice(0, Infinity, ...then)
-      else {
-        now.clear()
-        for (const each of then) now instanceof Map ? now.set(each[0], each[1]) : now.add(each)
-      }
-    }
-    for (const name of Object.keys(collections) as (keyof typeof collections)[]) refill(collections[name], kept[name])
-    refill(outbox.jobs, kept.jobs)
-    for (const name of Object.keys(ops.kept) as (keyof typeof ops.kept)[]) refill(ops.kept[name], kept.ops[name])
-    ;({ lastEvent, epoch, writes, built } = kept)
-  }
 
   let tail: Promise<unknown> = Promise.resolve()
   const queue = <T>(work: (tx: Tx) => Promise<T>): Promise<T> => {
@@ -1492,13 +1499,34 @@ export function createMemoryStore() {
     return run
   }
   const write = <T>(work: (tx: Tx) => Promise<T>, { whole = false } = {}) => queue(async (bound) => {
-    const before = whole ? snapshot() : undefined
+    // The journal keeps the maps and sets. Decisions are only added, so their count is enough, and events are copied only if the write removes or replaces one.
+    const before = whole ? { lastEvent, epoch, writes, built, pruned: pruned.seq, events: events.length, decisions: decisions.length } : undefined
+    if (whole) {
+      begin(journal)
+      eventsBefore = undefined
+    }
     writes += 1
     try {
       return await work(bound)
     } catch (error) {
-      if (before) restore(before)
+      if (before) {
+        undo(journal)
+        // The copy may hold events this write added before it first removed one. Those are last, so the count cuts them off.
+        if (eventsBefore) {
+          events.length = 0
+          for (const each of eventsBefore) events.push(each)
+        }
+        events.length = before.events
+        decisions.length = before.decisions
+        pruned.seq = before.pruned
+        ;({ lastEvent, epoch, writes, built } = before)
+      }
       throw error
+    } finally {
+      if (whole) {
+        end(journal)
+        eventsBefore = undefined
+      }
     }
   })
 

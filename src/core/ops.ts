@@ -358,11 +358,11 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
 }
 
 /** Where a memory store keeps what runs by itself. `fed` is how its writes say what they fed, and `forget` how it loses a subject. */
-export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; unname(keys: readonly string[]): void; dropFailureAlerts(ids: ReadonlySet<string>): void; callbacksThrough(sources: ReadonlySet<string>): Map<string, readonly string[]>; dropCallbacks(keys: readonly string[]): void; dropCallbackAlerts(subjects: readonly string[], calls: ReadonlySet<string>, misses: ReadonlySet<string>, knownAt?: number, changedOwner?: string): string[]; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
-  const feeds = new Map<Feed, FeedNote>()
-  const jobs = new Map<string, Omit<JobRun, 'open'> & { run?: string }>()
-  const runs = new Map<string, { name: string; at: number }>()
-  const alerts = new Map<string, KeptAlert & { delivered?: number; tried: number; calls?: readonly string[] }>()
+export function createMemoryOps(made: <K, V>() => Map<K, V> = () => new Map()): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; unname(keys: readonly string[]): void; dropFailureAlerts(ids: ReadonlySet<string>): void; callbacksThrough(sources: ReadonlySet<string>): Map<string, readonly string[]>; dropCallbacks(keys: readonly string[]): void; dropCallbackAlerts(subjects: readonly string[], calls: ReadonlySet<string>, misses: ReadonlySet<string>, knownAt?: number, changedOwner?: string): string[]; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
+  const feeds = made<Feed, FeedNote>()
+  const jobs = made<string, Omit<JobRun, 'open'> & { run?: string }>()
+  const runs = made<string, { name: string; at: number }>()
+  const alerts = made<string, KeptAlert & { delivered?: number; tried: number; calls?: readonly string[] }>()
   const open = () => [...alerts.values()].filter((alert) => alert.delivered === undefined).sort((x, y) => x.at - y.at)
   const bare = ({ delivered: _, tried: __, calls: ___, ...alert }: KeptAlert & { delivered?: number; tried: number; calls?: readonly string[] }): KeptAlert => alert
   return {
