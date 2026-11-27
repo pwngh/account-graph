@@ -53,3 +53,50 @@ test('an overdue person on the Board and the history of a missed call can be rea
     for (const [wide, tall] of told) assert.ok(wide >= 160 && tall <= 200, `a line of the history is ${wide} by ${tall} at ${width}`)
   }
 })
+
+test('a campaign name is shown whole on Channels, Board and Calls, at a laptop and a phone width', { skip: !process.env.CHROME && 'set CHROME to measure the pages in a browser', timeout: 120000 }, async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const { at } = await (await fetch(firm.graph + '/review/api/board?days=90', { headers: { authorization: 'Bearer demo' } })).json()
+  const day = at => new Date(at).toISOString().slice(0, 10)
+  // A name longer than any column, such as an ad platform exports: account, region, practice, match type and audience.
+  const long = 'North and River offices | Family law and custody | Search | Exact match | Returning visitors in Spanish'
+  const entries = [
+    { type: 'cost', key: 'long-cost', at, rows: [{ day: day(at), source: 'google', amount: 25, currency: 'USD', campaignId: '55555', campaign: long, clicks: 9 }] },
+    { type: 'arrival', key: 'long-arrival', at: at - 3600_000, subject: 'visitor:long-name', source: 'google', campaign: long, campaignId: '55555', landing: 'https://www.firm.example.org/' },
+    { type: 'call', key: 'long-call', at: at - 4 * 86400_000, direction: 'inbound', from: '+15550100077', to: '+15550100102', duration: 30, result: { answered: false, waited: 20 } },
+  ]
+  const written = await fetch(firm.graph + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ entries }) })
+  assert.ok((await written.json()).results.every(result => result.ok))
+  const { browse, until } = await import('../../../test/chrome.ts')
+  const { run, send, close } = await browse(firm.graph + '/signin?next=' + encodeURIComponent('/channels'))
+  t.after(close)
+  await until('the sign-in form', () => run("Boolean(document.querySelector('input[name=token]'))").catch(() => false))
+  await run(`{
+    const input = document.querySelector('input[name=token]')
+    input.value = 'demo'
+    input.form.requestSubmit()
+  }`)
+  await until('Channels after signing in', () => run(`location.pathname === '/channels' && Boolean(document.querySelector('.campaign-report'))`).catch(() => false), 20)
+  // What is cut short: text wider than its box, or a box that hides what does not fit behind an ellipsis.
+  const cut = selector => run(`JSON.stringify([...document.querySelectorAll(${JSON.stringify(selector)})].filter(each => each.scrollWidth > each.clientWidth + 1 || getComputedStyle(each).textOverflow === 'ellipsis').map(each => each.textContent.slice(0, 60)))`).then(JSON.parse)
+  const pages = [
+    ['/channels', '.campaign-report', '.campaign-report td:nth-child(2) .ranked-what, .campaign-report td:nth-child(2) .reason, .ranked .ranked-what'],
+    ['/board/90', '.board li', '.board-meta > span'],
+    ['/calls?from=' + day(at - 6 * 86400_000) + '&to=' + day(at), '.inbox-call', '.inbox-from'],
+  ]
+  for (const width of [375, 1280]) {
+    for (const [path, ready, names] of pages) {
+      await send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 500 })
+      await send('Page.navigate', { url: firm.graph + path })
+      await until(ready + ' at ' + width, () => run(`location.pathname === ${JSON.stringify(path.split('?')[0])} && Boolean(document.querySelector(${JSON.stringify(ready)}))`).catch(() => false), 20)
+      assert.ok(await run(`document.querySelectorAll(${JSON.stringify(names)}).length > 0`), 'names on ' + path)
+      assert.deepEqual(await cut(names), [], 'cut short on ' + path + ' at ' + width)
+    }
+    // The long name is in the table and in the ranking, letter for letter.
+    await send('Page.navigate', { url: firm.graph + '/channels?rank=Spend' })
+    await until('the long campaign at ' + width, () => run(`[...document.querySelectorAll('.campaign-report .ranked-what')].some(each => each.textContent === ${JSON.stringify(long)})`).catch(() => false), 20)
+    assert.ok(await run(`[...document.querySelectorAll('.ranked .ranked-what')].some(each => each.textContent === ${JSON.stringify(long)})`), 'the long name in the ranking at ' + width)
+    assert.deepEqual(await cut('.campaign-report td:nth-child(2) .ranked-what, .ranked .ranked-what'), [], 'the long name cut short at ' + width)
+  }
+})

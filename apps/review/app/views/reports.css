@@ -46,6 +46,20 @@
   .chart .plot .mark .heap, .graph .node .disc { fill: Canvas; stroke: CanvasText; }
   .chart .plot .group-count { fill: CanvasText; }
 }
+/*
+ * A campaign's name is given whole, on as many lines as it needs. The original screen cut it short with an ellipsis,
+ * and two campaigns that begin alike could not be told apart.
+ */
+.ranked-what, .campaign-report td:nth-child(2) .ranked-what, .campaign-report td:nth-child(2) .reason, .inbox-from, .board-meta > span { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+.campaign-report td:nth-child(2) { min-width: 15rem; max-width: 30rem; }
+.campaign-report td:nth-child(2) :is(.ranked-what, .reason) { width: auto; min-width: 0; }
+.campaign-report tbody > tr:not(.part) > td { height: auto; padding-block: 12px; }
+.ranked li { padding-block: 7px; }
+.ranked-name { align-items: baseline; }
+.inbox-call { height: auto; min-height: 54px; align-items: start; }
+.inbox-call > .tile, .inbox-call > .detail { align-self: center; }
+.board-meta { align-items: start; }
+
 /* The bar behind a ranked row. Its width is a share, so the server can draw it. */
 .ranked-bar { position: absolute; z-index: -1; inset: 0; pointer-events: none; }
 .ranked-bar rect { fill: color-mix(in srgb, var(--ink) 7%, transparent); transition: fill .15s; }
