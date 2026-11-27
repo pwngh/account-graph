@@ -527,6 +527,8 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(await waits(() => 1), longest)
       // Shortened by as much as half, the waits keep the same shape.
       assert.deepEqual(await waits(() => 0), longest.map((wait) => wait / 2))
+      // A wait shortened by any other part comes out as a fraction of a millisecond, and a retry time is kept as a whole one.
+      assert.deepEqual(await waits(() => 0.123457), longest.map((wait) => Math.round(wait * (0.5 + 0.123457 / 2))))
     })
 
     test('a job that keeps failing stops after the last attempt', async () => {
