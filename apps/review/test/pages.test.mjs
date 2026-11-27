@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ticksOf } from '../app/views/report-words.js'
+import { csvCell } from '../app/csv.ts'
 import { startFirm } from '../../../examples/firm/firm.ts'
 
 test('the lines of the Journey chart fall on whole hours of the reviewer zone and name each day once', () => {
@@ -54,6 +55,14 @@ test('Matches has the queue beside the strongest pair, the two records side by s
   assert.match(html, /<p class="pair-effect" role="status">(After joining: \d+ (person|people) \(.+ IDs?\)|Joining changes no groups\.)<\/p>/)
   assert.match(html, /<div class="pair-why"><p class="inbox-age">Evidence<\/p><div class="reason"><b>\w+<\/b> \d+% · \d+ IDs · /)
   assert.match(html, /<summary aria-keyshortcuts="j">Join<kbd>J<\/kbd><\/summary>/)
+  // The page holds the identifiers of the open pair, for Ignore, and of no other pair.
+  const whole = await (await fetch(firm.graph + '/decide', { headers: { cookie } })).text()
+  const found = await (await fetch(firm.graph + '/review/api/undecided', { headers: { authorization: 'Bearer demo' } })).json()
+  const mine = found.pairs[0].reasons.map(reason => reason.identifier)
+  const theirs = found.pairs.slice(1).flatMap(pair => pair.reasons.map(reason => reason.identifier)).filter(identifier => !mine.includes(identifier))
+  assert.ok(mine.length > 0 && theirs.length > 0, 'identifiers in the seeded queue')
+  assert.ok(mine.every(identifier => whole.includes(identifier)), 'the open pair has its identifiers')
+  assert.deepEqual(theirs.filter(identifier => whole.includes(identifier)), [], 'no identifier of a pair that is not open')
   // The second pair opens by its own address, and Skip from the last goes back to the first.
   const second = await get('/decide?pair=' + queue[1][2].replaceAll('&amp;', '&'))
   assert.match(second, new RegExp('<span class="meta">2 of ' + queue.length + '</span>'))
@@ -127,4 +136,29 @@ test('Channels has what each campaign cost and brought in, ranked and in a table
   assert.ok(lines.at(-1).startsWith('Total,,,' + report.total.cost + ',' + report.total.clicks + ',' + report.total.visits + ','), lines.at(-1))
   const guest = await fetch(firm.graph + '/channels/csv', { redirect: 'manual' })
   assert.ok([302, 303].includes(guest.status) && /signin/.test(guest.headers.get('location')), 'the file is for a signed-in reviewer')
+  // With a breakdown the file has the lines the table has, each named, and no spend on a line of a breakdown.
+  const parted = await (await fetch(firm.graph + '/review/api/report?by=' + encodeURIComponent(by), { headers: { authorization: 'Bearer demo' } })).json()
+  const parts = [...parted.rows, parted.total].reduce((sum, row) => sum + (row.breakdown ?? []).length, 0)
+  assert.ok(parts > 0, 'a breakdown in the seeded firm')
+  const broken = (await (await fetch(firm.graph + '/channels/csv?by=' + encodeURIComponent(by), { headers: { cookie } })).text()).trimEnd().split('\r\n')
+  assert.match(broken[0], /^Source,Campaign,Campaign ID,Breakdown,Spend,/)
+  assert.equal(broken.length, parted.rows.length + 2 + parts)
+  assert.ok(broken.slice(1).some(line => /^[^,]+,[^,]*,[^,]*,[^,]+,,,,/.test(line)), 'a line of a breakdown, with no spend, clicks or visits')
+  // Days are both given or neither, each on the calendar, and in order. Other days than those asked for are never reported.
+  for (const query of ['from=2026-09-01', 'to=2026-09-30', 'from=2026-02-31&to=2026-03-05', 'from=2026-09-30&to=2026-09-01', 'from=yesterday&to=today']) {
+    for (const path of ['/channels?', '/channels/csv?']) assert.equal((await fetch(firm.graph + path + query, { headers: { cookie } })).status, 400, path + query)
+  }
+  assert.equal((await fetch(firm.graph + '/channels?from=' + report.from + '&to=' + report.to, { headers: { cookie } })).status, 200)
+})
+
+test('a cell of a CSV file that a spreadsheet would run is text, even behind spaces, and a number keeps its sign', () => {
+  assert.equal(csvCell('=1+1'), "'=1+1")
+  assert.equal(csvCell('  +cmd'), "'  +cmd")
+  assert.equal(csvCell('\n=1+1'), '"\'\n=1+1"')
+  assert.equal(csvCell('\t@sum'), "'\t@sum")
+  assert.equal(csvCell('-5'), "'-5")
+  assert.equal(csvCell(-5), '-5')
+  assert.equal(csvCell('North | Family law, "Search"'), '"North | Family law, ""Search"""')
+  assert.equal(csvCell(null), '')
+  assert.equal(csvCell('google'), 'google')
 })

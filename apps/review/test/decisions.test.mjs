@@ -136,7 +136,10 @@ test('Health says when sends to ad platforms are stopped, why, since when, and h
   const edge = createEdge(graph, { token: 'service-fixture', reviewers: { dana: 'review-fixture' }, origins: [], limit: false })
   // The graph's ops answer with a stop, as test/integrations.test.ts checks it gives one.
   let paused = { at: Date.now() - 120_000, reason: 'checking a wrong tie' }
+  // What the graph answers a retry with: 'gone' when the token was revoked, 'down' when the connection drops.
+  let retry = 'gone'
   const upstream = createServer(async (request, response) => {
+    if (request.url.startsWith('/review/api/retry')) return retry === 'gone' ? void response.writeHead(401, { 'content-type': 'application/json' }).end('{"error":"Token revoked"}') : void request.socket.destroy()
     if (!request.url.startsWith('/review/api/ops')) return edge(request, response)
     const answer = await (await fetch(address(real) + request.url, { headers: { authorization: request.headers.authorization } })).json()
     response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...answer, paused }))
@@ -163,4 +166,16 @@ test('Health says when sends to ad platforms are stopped, why, since when, and h
   paused = null
   assert.doesNotMatch(await page(), /Sends to ad platforms are paused/)
   assert.match(await page(), /<dt>Issues<\/dt><dd><span class="tile-line"><b>0<\/b>/)
+  // A retry the graph does not answer says so and keeps the session. One it refuses as signed out ends the session.
+  const again = () => fetch(origin + '/health', { method: 'POST', headers: { cookie, origin }, body: new URLSearchParams({ intent: 'retry', transactionId: 'sale-1', target: 'google' }), redirect: 'manual' })
+  retry = 'down'
+  const lost = await again()
+  assert.equal(lost.status, 503)
+  assert.match(await lost.text(), /The graph did not answer\. Reload Health to see whether the conversion was queued\./)
+  assert.equal((await fetch(origin + '/health', { headers: { cookie }, redirect: 'manual' })).status, 200)
+  retry = 'gone'
+  const revoked = await again()
+  assert.equal(revoked.status, 303)
+  assert.equal(revoked.headers.get('location'), '/signin')
+  assert.ok([302, 303].includes((await fetch(origin + '/health', { headers: { cookie }, redirect: 'manual' })).status), 'the session ended')
 })

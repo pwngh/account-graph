@@ -1,17 +1,26 @@
 import { reviewGet, withGraph } from './auth.server'
 import { daysBefore } from './cards.server.js'
 import { graphTime } from './runtime.server'
+import { csvCell as cell } from './csv'
 
 type Row = Record<string, any>
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
-/** What a Channels address asks for. Anything it does not say is left to the graph. */
+/** A day that the calendar has. A month has no day 31 it lacks, whatever the pattern allows. */
+const isDay = (text: string) => DAY.test(text) && new Date(text + 'T00:00:00Z').toISOString().slice(0, 10) === text
+
+/**
+ * What a Channels address asks for. With no days given the graph chooses them.
+ * With days given, both are needed, each a day of the calendar and in order, because a report of other days than those asked would mislead.
+ */
 function asked(request: Request) {
   const query = new URL(request.url).searchParams
   const text = (name: string) => (query.get(name) ?? '').trim().slice(0, 200)
+  const [from, to] = [text('from'), text('to')]
+  if ((from || to) && !(isDay(from) && isDay(to) && from <= to)) throw new Response('Choose a first and a last day, the first no later than the last.', { status: 400 })
   const days = Number(text('days'))
   return {
-    window: (DAY.test(text('from')) && DAY.test(text('to')) ? { from: text('from'), to: text('to') } : {}) as Record<string, string>,
+    window: (from ? { from, to } : {}) as Record<string, string>,
     by: text('by'), per: text('per'), rank: text('rank'), step: text('step'), days: Number.isInteger(days) && days >= 1 && days <= 365 ? days : 30,
   }
 }
@@ -31,27 +40,24 @@ export function loadChannels(request: Request) {
   })
 }
 
-// A cell a spreadsheet would run as a formula is given as text.
-const cell = (value: unknown) => {
-  const text = value === null || value === undefined ? '' : String(value)
-  const safe = /^[=+\-@\t\r]/.test(text) && typeof value !== 'number' ? "'" + text : text
-  return /[",\n\r]/.test(safe) ? '"' + safe.replaceAll('"', '""') + '"' : safe
-}
-
-/** The campaigns of a Channels address as a CSV file: one line a campaign, then the total. */
+/** The campaigns of a Channels address as a CSV file: a line for each campaign, the lines of a breakdown under it, then the total. */
 export function channelsCsv(request: Request) {
   return withGraph(request, async session => {
-    const { window, per } = asked(request)
-    const report = await reviewGet(request, session, 'report', { ...window, ...(per && { per }) }) as Row
+    const { window, by, per } = asked(request)
+    const report = await reviewGet(request, session, 'report', { ...window, ...(by && { by }), ...(per && { per }) }) as Row
     const stages: string[] = report.steps.filter((step: string) => report.total.stages[step])
     // A campaign nobody reported a cost for may have cost nothing or anything. Only a number somebody sent is given as one.
     const unknown = (row: Row) => row.source === '(none)' || (row.costDays === 0 && row.cost === 0 && row.clicks === 0)
-    const line = (row: Row, source: string, campaign: string, id: string) => [source, campaign, id, unknown(row) ? '' : row.cost, unknown(row) ? '' : row.clicks, row.visits, ...stages.map(stage => row.stages[stage]?.count ?? 0), row.people, row.missed, row.value, row.costPerOutcome ?? '', row.returnOnCost ?? '', row.missingDays ?? '']
-    const lines = [
-      ['Source', 'Campaign', 'Campaign ID', 'Spend', 'Clicks', 'Visits', ...stages, 'People', 'Missed calls', 'Value', per ? 'Cost per ' + per : 'Cost per outcome', 'ROAS', 'Days without cost data'],
-      ...report.rows.map((row: Row) => line(row, row.source === '(none)' ? 'Unattributed' : row.source, row.campaign ?? '', row.campaignId ?? '')),
-      line(report.total, 'Total', '', ''),
+    const reached = (row: Row) => [...stages.map(stage => row.stages[stage]?.count ?? 0), row.people, row.missed, row.value]
+    const named = (row: Row) => row === report.total ? ['Total', '', ''] : [row.source === '(none)' ? 'Unattributed' : row.source, row.campaign ?? '', row.campaignId ?? '']
+    const split = by ? [''] : []
+    // A campaign is charged whole, so the lines of its breakdown have no spend, clicks or visits of their own.
+    const lines = (row: Row) => [
+      [...named(row), ...split, unknown(row) ? '' : row.cost, unknown(row) ? '' : row.clicks, row.visits, ...reached(row), row.costPerOutcome ?? '', row.returnOnCost ?? '', row.missingDays ?? ''],
+      ...(row.breakdown ?? []).map((part: Row) => [...named(row), part.name === '(not set)' ? 'Not set' : part.name, '', '', '', ...reached(part), '', '', '']),
     ]
-    return new Response(lines.map(each => each.map(cell).join(',')).join('\r\n') + '\r\n', { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="channels-${report.from}-${report.to}.csv"`, 'cache-control': 'no-store' } })
+    const head = ['Source', 'Campaign', 'Campaign ID', ...(by ? ['Breakdown'] : []), 'Spend', 'Clicks', 'Visits', ...stages, 'People', 'Missed calls', 'Value', per ? 'Cost per ' + per : 'Cost per outcome', 'ROAS', 'Days without cost data']
+    const file = [head, ...report.rows.flatMap(lines), ...lines(report.total)]
+    return new Response(file.map(each => each.map(cell).join(',')).join('\r\n') + '\r\n', { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="channels-${report.from}-${report.to}.csv"`, 'cache-control': 'no-store' } })
   })
 }

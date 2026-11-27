@@ -206,6 +206,9 @@
 - The review app's Health has the original screen's page: the count of what needs someone and the list of it, a card for each feed, the jobs, what waits to be sent as one bar, rejected conversions with Retry, the matching rules, the audit hash and conflicting decisions. `POST /health` with `intent=retry` puts a rejected conversion back in line.
 - The review app's Channels has the original screen's page: six totals with the change from the days before, the campaigns ranked by value, spend, people, visits or a step, the campaign table with a breakdown and a cost per chosen step, platform-reported conversions, time to convert, value changes and what followed calls. Every choice is in the address. `GET /channels/csv` gives the campaign table as a CSV file.
 - An old `#/channels/…` bookmark opens Channels in the review app with its days, breakdown and steps. Health and Channels no longer link to the original screen.
+- `/channels` and `/channels/csv` answer `400` to one day without the other, a day the calendar lacks, or a first day after the last. The CSV file has the lines of a breakdown, and writes text a spreadsheet would run as a formula as text, also behind leading spaces.
+- Matches lists up to 500 pending pairs, so Skip reaches each one. The page holds the identifiers of the open pair only.
+- Retry on Health ends the session when the graph no longer takes the token, and answers `503` when the graph does not answer.
 - A mark, a number or a dashed wait on the Journey chart shows a short card when it is pointed at or focused. The panel beside the chart has every row.
 - `#/journey/ID/CALL` opens a journey at one call.
 - Each kind of event has one icon, drawn the same in the timeline, its filters, the chart, the story of a missed call and the feeds. A call nobody answered has a phone with a cross.
