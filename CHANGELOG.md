@@ -190,6 +190,7 @@
 - The firm stage serves its current scene, loading progress and last result from the server. Scenes submit as forms, and open stages receive updates over a server-sent event stream. PostgreSQL loads the sample history in a batched transaction. See the [demo](docs/demo.md).
 - `undecided` pages through ranked pairs from recent sightings and can sweep every subject, including those with pruned sightings.
 - Detail cards open from an icon beside a number or a row on Calls, Board, Journey and Health. Each holds what is behind it, names how it is known and leaves out what is not. See the [reviewer screen](docs/operations.md#reviewer-screen).
+- Each row of Call results has a detail card with its count, its share of what and the same in the days before.
 - A mark, a number or a dashed wait on the Journey chart shows a short card when it is pointed at or focused. The panel beside the chart has every row.
 - `#/journey/ID/CALL` opens a journey at one call.
 - Each kind of event has one icon, drawn the same in the timeline, its filters, the chart, the story of a missed call and the feeds. A call nobody answered has a phone with a cross.
