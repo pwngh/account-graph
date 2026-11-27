@@ -16,14 +16,14 @@ export function CardBody({ card }) {
 const presentedCard = createContext(undefined)
 const reportSnapshot = createContext('')
 
-function Detail({ card, title = 'Details', id }) {
+function Detail({ card, title = 'Details', id, label }) {
   const fetcher = useFetcher()
   const openCard = useContext(presentedCard)
   const snapshot = useContext(reportSnapshot)
   if (!card) return null
   const fresh = detailReply(card, snapshot, fetcher.data)
   const current = fresh?.card ?? card
-  return <details className="report-detail" data-card={card.type} open={openCard === card.type || undefined}><summary aria-label={'Details of ' + card.title}>{title}</summary>
+  return <details className="report-detail" data-card={card.type} open={openCard === card.type || undefined}><summary aria-label={label ?? 'Details of ' + card.title}>{title}</summary>
     <h4 id={id} tabIndex={id ? -1 : undefined}>{current.title} {current.value}</h4><CardBody card={current}/>
     {fresh?.error && <p role="alert">{fresh.error}</p>}<Link to={card.href} onClick={event => {
       if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
@@ -134,7 +134,7 @@ function Calls({ data }) {
   return <><section><div className="page-head"><h2>Calls</h2><Form className="row period" action="/calls" method="get"><label>From <input type="date" name="from" required defaultValue={summary.from}/></label><label>To <input type="date" name="to" required defaultValue={summary.to}/></label><button>Show</button><Presets today={data.today} from={summary.from} to={summary.to}/></Form></div><Range {...summary}/>
   {total.calls > 0 && <dl className="tiles">{data.metrics.map((key,i) => (i !== 3 || lost > 0) && <Metric key={key} card={cards[key]} note={notes[i]} change={changes[i]} bars={bars[i]}/>)}</dl>}</section><section id="calls-missed"><h2>Missed calls</h2>
   {open.calls.length ? <CallInbox data={data} Detail={Detail} Story={Story}/> : <p>{total.calls === 0 ? 'No inbound calls' : lost > 0 ? 'All missed callers have been reached.' : 'No missed calls'}</p>}
-  {total.hidden > 0 && <p>{amount(total.hidden)} more with a withheld number</p>}</section>{total.calls > 0 && <><div className="panel-grid call-grid"><section><h2>Call results</h2><Table title="Call results" headers={['Result','Calls','Share','Detail']}>{results.map(([name,n,all,note]) => <tr key={name}><th scope="row">{name}</th><td>{amount(n)}</td><td>{all ? percent(n / all) : '—'}</td><td>{note}</td></tr>)}</Table></section><section><h2>Call attribution</h2><Coverage coverage={coverage}/></section></div><Hours data={data}/></>}</>
+  {total.hidden > 0 && <p>{amount(total.hidden)} more with a withheld number</p>}</section>{total.calls > 0 && <><div className="panel-grid call-grid"><section><h2>Call results</h2><Table title="Call results" headers={['Result','Calls','Share','Detail']}>{results.map(([name,n,all,note]) => <tr key={name}><th scope="row">{name}</th><td>{amount(n)}</td><td>{all ? percent(n / all) : '—'}</td><td>{note}<Detail card={cards[data.results[name]]} label={'Details of ' + name + ', ' + amount(n) + ', in Call results'}/></td></tr>)}</Table></section><section><h2>Call attribution</h2><Coverage coverage={coverage}/></section></div><Hours data={data}/></>}</>
 }
 
 /** @param {{ data: Record<string, any>, openCard?: string }} props */

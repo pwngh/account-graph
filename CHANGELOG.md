@@ -196,6 +196,7 @@
 - `undecided` pages through ranked pairs from recent sightings and can sweep every subject, including those with pruned sightings.
 - Detail cards open from an icon beside a number or a row on Calls, Board, Journey and Health. Each holds what is behind it, names how it is known and leaves out what is not. See the [reviewer screen](docs/operations.md#reviewer-screen).
 - Each row of Call results has a detail card with its count, its share of what and the same in the days before.
+- The review app has that card too, in the Detail column of Call results. A test fails when the original screen gains a card the app lacks.
 - A mark, a number or a dashed wait on the Journey chart shows a short card when it is pointed at or focused. The panel beside the chart has every row.
 - `#/journey/ID/CALL` opens a journey at one call.
 - Each kind of event has one icon, drawn the same in the timeline, its filters, the chart, the story of a missed call and the feeds. A call nobody answered has a phone with a cross.

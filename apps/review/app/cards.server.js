@@ -431,5 +431,31 @@ export function cardModels(recent) {
         links: [toMissed()] }
     },
   }
+  /** The rows of Call results, each with the field it counts and what it is a share of. Returns are not compared with the days before, as the newest callers have had less time. */
+  const RESULTS = {
+    Answered: { field: 'answered', of: 'calls' }, Missed: { field: 'missed', of: 'calls', listed: true }, Voicemail: { field: 'voicemail', of: 'calls', listed: true },
+    Waiting: { field: 'waiting', of: 'calls' }, Unknown: { field: 'unknown', of: 'calls' },
+    Returned: { field: 'returned', of: 'lost', late: true }, 'Called again': { field: 'calledAgain', of: 'lost', late: true }, 'Not a lead': { field: 'notLeads' },
+  }
+  const OF = { calls: ['All inbound calls', (total) => total.calls], lost: ['Missed and voicemail', (total) => total.missed + total.voicemail] }
+  DETAILS['calls.result'] = {
+    now({ name, summary, then } = {}) {
+      const { field, of, listed, late } = RESULTS[name] ?? {}
+      const total = summary?.total
+      const count = field && total?.[field]
+      const [whole, wholeOf] = of ? [OF[of][0], OF[of][1]] : []
+      const all = total && wholeOf ? wholeOf(total) : undefined
+      const share = typeof count === 'number' && all > 0 ? count / all : undefined
+      const words = (period) => {
+        const part = wholeOf?.(period)
+        return part > 0 ? `${amount(period[field])} · ${percent(period[field] / part)}` : amount(period[field])
+      }
+      return { title: name, value: counted(count),
+        rows: [['Calls', counted(count)], [whole, counted(all)], ['Share', share === undefined ? undefined : percent(share)], late ? ['', undefined] : previous({ summary, then }, words)],
+        sum: share === undefined ? undefined : `${percent(share)} = ${amount(count)} ${name.toLowerCase()} ÷ ${amount(all)} ${of === 'lost' ? 'missed' : all === 1 ? 'call' : 'calls'}`,
+        say: [!of && field && 'Calls marked as not a lead are left out of every other count.', late && 'Not compared with the days before: the newest callers have had less time to be reached.'],
+        links: [listed && toMissed(), field && docs('Call Results', 'calls.md#call-results')] }
+    },
+  }
   return DETAILS
 }
