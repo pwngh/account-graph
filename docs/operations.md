@@ -12,7 +12,7 @@ npm start
 ```
 
 ```text
-database upgraded: tables, sighting record time, …
+database upgraded: the schema
 listening on 0.0.0.0:8080
 collect accepts https://example.org
 reviewers none, server cookie off, fingerprint off, maxmind off, server ranges off, signed links off, staff networks off, opening hours off, webhook off, alerts off, address checks off, phone line checks off
@@ -362,15 +362,11 @@ Each configured lead source has its own limit of 60 authenticated posts per minu
 
 ## Upgrades
 
-Start the new version. At startup the server applies pending database changes in order. Completed changes stay committed if the process stops. Upgrades 29 and 30 commit together because a confirmed call and its old channel visit must agree about who can see it. Upgrade 31 commits its new columns before filling them. Starting the server again repeats any unfinished phase.
+Start the new version. At startup the server applies pending database changes in order. Completed changes stay committed if the process stops.
 
-Each change has a number and runs once. When several servers start together, one applies the changes and the others wait. A direct PostgreSQL store read that needs a missing column or table reports the first pending upgrade. Call `store.migrate()` before retrying. What a caller must change is in the [changelog](../CHANGELOG.md#upgrading).
+Each change has a number and runs once. When several servers start together, one applies the changes and the others wait. A direct PostgreSQL store read that fails for a missing table or column reports the first pending change. Call `store.migrate()` before retrying. What a caller must change is in the [changelog](../CHANGELOG.md#upgrading).
 
-Upgrade 36 creates an empty table for standing creation dates. First-seen times are read from existing records, so the upgrade needs no backfill. Older servers can keep writing profiles without dates, pruning and forgetting subjects during the rollout. Send profiles with `createdAt` to an upgraded server.
-
-Upgrade 37 takes the same write lock as a running server before changing the edge or sighting table. An older writer can finish its observation before the upgrade locks either table. The upgrade adds nullable columns for profile ordering and creates empty tables for withdrawals and their matching evidence. It requires no backfill. If the upgrade stops before committing, restart it. Older servers can keep recording while a withdrawal is in force. Send profiles that restore facts to an upgraded server, and use that version for historical snapshots, rebuild and verification. See [withdrawing a matching fact](matching.md#withdrawing-a-matching-fact).
-
-Upgrade 38 creates empty tables for STOPs kept after a group changes and for pruned profile dates of withdrawn numbers. Existing text and sighting rows can be read in place. A STOP previously lost solely through a group split on version 37 can only be recovered if the earlier association is still known. During a rolling upgrade an older server can answer `textsOptedOut: false` for a record whose STOP the upgraded server keeps. Route opt-out lookups to an upgraded server first, then send withdrawals there. Older servers can still record, prune and forget.
+A new database is made in one step. A database made by a version before 0.1.0 was built by steps this version no longer has. The server refuses it with `CONFIG.MISMATCH` and changes nothing in it. Use a new database or schema.
 
 ## Settings that must match
 
@@ -433,16 +429,6 @@ If you stop between acting and keeping the cursor, the same events come again, s
 > **A deletion takes its events with it.** A subject you delete with `forget` is gone from the events. Delete your own copy when you ask for the deletion.
 
 A callback notice keeps track of its missed calls, outgoing attempts, number-channel visits and the identity links that earned its credit. Assigning one of those calls to another record or forgetting it removes the notice and its kept event. After a correction changes a component, a notice that used an identity link keeps its event if the same route still credits the same arrival. A later check can issue a corrected notice for a miss that is still open. A message already received outside the graph stays with its recipient.
-
-PostgreSQL upgrade 31 reads calls, their former lines and their named parties once into a temporary list indexed by owner, direction and time. Each old event finds its named call by primary key, its possible misses and attempts by that index, and a qualifying visit by subject and time. Alerts share one summary per notice and one per owner. The backfill holds the graph write lock and pauses changes to the alert and event tables. Ordinary reads can continue after the new columns commit. The temporary lists disappear when the backfill finishes or rolls back.
-
-PostgreSQL upgrade 31 checks old callback events by the owner and times they contain. Only misses and attempts reported by the time the notice was queued can have supplied it. An attempt also has to fall between the missed call and the notice. Assigning a later attempt to another record can change that record's pending callback. An independent earlier notice on the former line stays. An old event that may have counted another record's call is removed. Older notices could draw credit through links that have since disappeared. After a correction to an inbound call, an old notice keeps its campaign where the call's confirmed record or a paid arrival on the exact subject accounts for it. Where old alerts for one owner cannot be told apart, their possible source calls are kept together for later corrections.
-
-Retire older servers and workers before enabling call confirmations. Upgrade 34 refuses an older server's raw report for a call that staff already assigned, including a statement made before the first report. Retry the report on an upgraded server. Before serving or starting workers, startup repairs earlier reports whose stored owner disagrees with the statement, in batches of 50. A blocked call may still have the right owner. Its dated completed-call note also shows that an old writer reported it again. It applies the standing statement to the call, its matching evidence, value history, pending deliveries and callbacks. It drops the overwritten visitor and tags. The original time, duration and dialed number cannot be recovered from an overwritten report.
-
-Upgrade 35 rechecks statements about previously deleted records even if an older server already completed its repair. Startup checks each old statement against the receipt and sighting times before it serves requests. A confirmed call can stay with a returning record while an earlier statement about that same call is erased. See [Call statement privacy](privacy.md).
-
-If the corrected call was already forgotten, an old receipt can be all that survives. A call and a party update erased together can still be recognised after receipt pruning. For older receipts that could also describe an ordinary result or return, the upgrade looks for a saved revision from a party correction. Where both are present it removes older notices whose missed call, attempts or campaign can no longer be accounted for. A matching notice for another miss can stay, even on the same line.
 
 ### Webhook
 
@@ -735,5 +721,4 @@ The last column is the median of 300 sequential runs. Other tests used the datab
 - The shared test suite runs on the memory store and PostgreSQL 16, locally and in CI. It includes a fuzz test of observations, decisions, deletions and transfers, and six concurrent outbox workers.
 - The Docker image, the example site, ad click attribution, signed links, cross-site visitors and tap-to-call matching were exercised end to end in Chrome.
 - The reviewer screen and the `HttpOnly` device cookie were exercised in Chrome under their production headers.
-- A database created before an upgrade was upgraded by starting the server.
 - The hardware id was exercised on macOS and Linux.
