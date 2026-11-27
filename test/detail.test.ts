@@ -36,6 +36,15 @@ for (const [store, open] of Object.entries(STORES)) test(`every card is true to 
   assert.deepEqual([waits['Awaiting callback'], waits.Oldest, waits['Past the limit of 24 h'], waits.Voicemail, waits['Tried already'], waits['Credited to a source']], ['1', `${await written(page, ago(-50))} · 2 days 2 h ago`, '1', '1', '0', '1'])
   assert.match(await page.text('#card .detail-say'), /^Target 2 h by the clock, set by you\. Not met: 1 has waited longer\./)
 
+  // Each row of Call results says how many, of what, and where they are listed.
+  assert.deepEqual(await page.card('#/calls', 'calls.result Voicemail'), { Calls: '1', 'All inbound calls': '8', Share: '13%' })
+  assert.deepEqual([await page.text('#card-title'), await page.text('#card .detail-sum'), (await page.links()).map(([text]) => text)], ['Voicemail', '13% = 1 voicemail ÷ 8 calls', ['View Missed Calls', 'Call Results, opens in a new tab']])
+  assert.deepEqual(await page.card('#/calls', 'calls.result Returned'), { Calls: '2', 'Missed and voicemail': '4', Share: '50%' })
+  assert.deepEqual([await page.text('#card .detail-sum'), (await page.links()).length], ['50% = 2 returned ÷ 4 missed', 1])
+  assert.match(await page.text('#card .detail-say'), /^Not compared with the days before/)
+  assert.deepEqual(await page.card('#/calls', 'calls.result Not a lead'), { Calls: '1' })
+  assert.match(await page.text('#card .detail-say'), /^Calls marked as not a lead are left out of every other count\./)
+
   // The five states, in the list and in a journey. Nothing is said where nothing is known.
   const listed = await page.card('#/calls', 'call bea-1 list')
   assert.deepEqual(listed, { Called: await written(page, ago(-50), true), 'How we know': `Reported, ${await written(page, ago(-50))}`, 'Duration · wait': '40 s · 20 s', Returned: 'Not yet, 2 days 2 h so far', 'Time limit': '24 h · late by 26 h', 'Came from': 'listing · Map listing', 'Tied by': 'The number they dialed' })
@@ -154,7 +163,7 @@ test('every card survives nothing known, and every link of one leads somewhere',
   for (const name of ['calls', 'operations', 'report']) anchors.set(name, new Set([...readFileSync(new URL(`../docs/${name}.md`, import.meta.url), 'utf8').matchAll(/^#+ (.+)$/gm)].map((match) => match[1]!.toLowerCase().replace(/[^\w -]/g, '').replaceAll(' ', '-'))))
   const views = (await page.run(`[...views.keys()]`)) as string[]
   let seen = 0
-  for (const [hash, names] of [['#/calls', ['calls.inbound', 'calls.answered', 'calls.missed', 'calls.returned', 'calls.awaiting', 'call bea-1 list']], ['#/board/90', ['board.people', 'board.overdue', 'board.fresh', 'board.advanced', 'board.person', 'board.text']], ['#/health', ['health.feed calls']], [`#/journey/${encodeURIComponent('contact:ada')}`, ['call ada-1 timeline', 'chart.wait']]] as const) for (const name of names) {
+  for (const [hash, names] of [['#/calls', ['calls.inbound', 'calls.answered', 'calls.missed', 'calls.returned', 'calls.awaiting', 'calls.result Missed', 'call bea-1 list']], ['#/board/90', ['board.people', 'board.overdue', 'board.fresh', 'board.advanced', 'board.person', 'board.text']], ['#/health', ['health.feed calls']], [`#/journey/${encodeURIComponent('contact:ada')}`, ['call ada-1 timeline', 'chart.wait']]] as const) for (const name of names) {
     await page.card(hash, name)
     for (const [, href, target, rel] of await page.links()) {
       seen += 1
