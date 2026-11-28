@@ -70,3 +70,13 @@ summary:focus-visible, a:focus-visible, button:focus-visible, input:focus-visibl
 .manual { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.55 }
 /* What somebody wrote keeps its own lines, and breaks a long word before it leaves the table. */
 .wrote { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 16rem; }
+
+/* The filter menu of the Links and Sightings tables lists links, styled as the original screen's choices, and opens under its button. */
+.filter-menu a { clear: both; display: flex; gap: 9px; width: 100%; padding: 6px 8px; border-radius: 7px; color: var(--ink); font-size: var(--body); text-decoration: none; }
+.filter-menu a:hover, .filter-menu a[aria-current] { background: var(--raise); }
+.filter-menu a span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-chip, .filter-clear { text-decoration: none; }
+#links .filter-add { anchor-name: --filter-links; } #filter-links { position-anchor: --filter-links; }
+#sightings .filter-add { anchor-name: --filter-sightings; } #filter-sightings { position-anchor: --filter-sightings; }
+.filter-menu { top: anchor(bottom); left: anchor(left); margin-top: 6px; }
+.filter-words-form { display: contents; }

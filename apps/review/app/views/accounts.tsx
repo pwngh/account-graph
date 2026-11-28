@@ -23,6 +23,8 @@ export interface KnownProfile {
 export type ProfilePage = Omit<KnownProfile, 'cluster' | 'apart' | 'edges'> & {
   cluster: { oversized: boolean, limitedByCalls?: boolean }
   memberCount: number, linkCount: number, separatedCount: number, strongest: number, listedMembers: string[], start: number
+  /** The values each column can be narrowed to, with how many rows have each, and how many rows are left. */
+  filters: { links: Record<string, [string, number][]>, sightings: Record<string, [string, number][]>, shown: number, seen: number, total: number, lastSeen: number }
 }
 export type Profile = ProfilePage | { subject: string, known: false, dates?: Dates }
 export interface AccountsData {
@@ -116,18 +118,62 @@ function DatesOf({ id, dates }: { id: string, dates?: Dates }) {
 /** The heading of an account: the person's name, else their number, else the whole ID, which is never shortened here. */
 const headed = (subject: string, called?: Called) => called?.name ?? (called?.phone ? shownPhone(called.phone) : subject)
 
+/**
+ * The bar over a table that narrows its rows, as on the original screen: each value chosen shows as a chip to take away, and + Filter
+ * lists the values of each column with how many rows have them. It is a set of links, so it works without scripts, and the address keeps it.
+ */
+function FilterBar({ label, columns, names, words, shown, total, hash }: { label: string, columns: Record<string, [string, number][]>, names: Record<string, string>, words: string, shown: number, total: number, hash: string }) {
+  const [query] = useSearchParams()
+  const { pathname } = useLocation()
+  const menu = 'filter-' + label.toLowerCase()
+  // A narrower table starts at its first page.
+  const href = (name: string, value?: string) => { const q = new URLSearchParams(query); if (hash === '#links') q.delete('links'); if (value === undefined) q.delete(name); else q.set(name, value); return pathname + (q.size ? '?' + q : '') + hash }
+  const chosen = Object.entries(names).flatMap(([column, name]) => query.get(name) ? [[column, name, query.get(name)!] as const] : [])
+  const typed = query.get(words) ?? ''
+  // The words go in an ordinary form, so Enter narrows the table with or without scripts, and the other values chosen stay.
+  return <div className="filter-bar" role="search" aria-label={'Filter ' + label.toLowerCase()}>
+    <Form method="get" action={pathname + hash} preventScrollReset className="filter-words-form">{[...query].filter(([name]) => name !== words && name !== 'links').map(([name, value]) => <input key={name} type="hidden" name={name} value={value}/>)}<input type="search" className="filter-words" name={words} defaultValue={typed} placeholder={'Filter ' + label.toLowerCase()} aria-label={'Filter ' + label.toLowerCase()}/></Form>
+    <span className="filter-chips">{chosen.map(([column, name, value]) => <Link key={name} className="filter-chip button" to={href(name)} aria-label={'Remove ' + column + ' ' + value} preventScrollReset><span>{column}</span>{value}<i aria-hidden="true">×</i></Link>)}
+      {(chosen.length > 0 || typed) && <Link className="filter-clear" to={[...Object.values(names), words].reduce((path, name) => { const q = new URLSearchParams(path.split('?')[1]?.split('#')[0]); q.delete(name); return pathname + (q.size ? '?' + q : '') }, href('links')) + hash} preventScrollReset>Clear</Link>}</span>
+    <button type="button" className="filter-add" popoverTarget={menu}>+ Filter</button>
+    {(chosen.length > 0 || typed) && <span className="meta" role="status">{amount(shown)} of {amount(total)}</span>}
+    <div className="filter-menu" id={menu} popover="auto">{Object.entries(columns).filter(([, values]) => values.length > 0).map(([column, values]) => <fieldset key={column}><legend>{column}</legend>
+      {[...values].sort(([x, n], [y, m]) => m - n || (x < y ? -1 : 1)).slice(0, 12).map(([value, n]) => <Link key={value} to={href(names[column]!, value)} aria-current={query.get(names[column]!) === value ? 'true' : undefined} preventScrollReset><span>{value}</span><span className="count">{amount(n)}</span></Link>)}</fieldset>)}</div>
+  </div>
+}
+
+/** The four groups of the Links table, in order, each with the tone of its dot. */
+const GROUPS: [string, string][] = [['Same person', 'same'], ['High confidence', 'same'], ['Related', 'related'], ['Separated', 'apart']]
+
 function ProfileView({ profile, data, context }: { profile: Profile, data: AccountsData, context: WriteContext }) {
   const { subject, dates } = profile
   const [query] = useSearchParams()
   const { pathname } = useLocation()
+  // Folding is the browser's: without scripts every group stays open, and its button cannot be pressed.
+  const [folded, setFolded] = useState<string[]>([])
+  const [ready, setReady] = useState(false)
+  useEffect(() => setReady(true), [])
   if (!profile.known) return <section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi title={subject}>{headed(subject, data.called?.[subject])}</bdi></h2><Guide view="accounts"/></div><DatesOf id={subject} dates={dates}/><p className="muted">No records</p></section>
   const members = new Set(profile.listedMembers)
   const consent = profile.consent[0]
   const verdicts = new Map(profile.verdicts.map(v => [v.a === subject ? v.b : v.a, v]))
-  const count = profile.linkCount + profile.separatedCount
+  const count = profile.filters.shown
   const start = profile.start
   const pageHref = (offset: number) => { const q = new URLSearchParams(query); q.set('links', String(offset / 50)); return pathname + '?' + q + '#links' }
   const indices = Array.from({ length: Math.min(50, count - start) }, (_, i) => i)
+  const statusAt = (i: number) => { const link = profile.links[i]; return !link ? 'Separated' : link.level === 'same' ? members.has(link.subject) ? 'Same person' : 'High confidence' : 'Related' }
+  const scoresOf = (group: string) => indices.filter(i => statusAt(i) === group).flatMap(i => profile.links[i] ? [profile.links[i]!.score] : [])
+  const range = (scores: number[]) => scores.length === 0 ? '' : percent(Math.min(...scores)) === percent(Math.max(...scores)) ? percent(Math.min(...scores)) : percent(Math.min(...scores)) + ' – ' + percent(Math.max(...scores))
+  const linkFilters = { Status: 'status', Identifier: 'kind', Type: 'type' }
+  const row = (i: number, away: boolean) => {
+    const link = profile.links[i]
+    const id = link?.subject ?? profile.separated[i - profile.links.length]
+    const v = verdicts.get(id)
+    const word = !link ? 'Separated' : link.level === 'same' ? members.has(id) ? 'Same person' : 'High confidence' : 'Related'
+    return <tr key={word + id} className={away ? 'folded' : undefined}><td className="who"><Badge id={id}/><Subject id={id}/><DatesOf id={id} dates={dates}/></td><td><span className={'chip ' + (link?.level ?? 'apart')}>{word}</span>{(v?.reversals ?? 0) >= 3 && <span className="chip apart">Conflict</span>}</td><td className="num score edge">{link ? <Compare share={link.score}>{percent(link.score)}</Compare> : <span className="muted">—</span>}</td><td className="why">{link ? <Reasons reasons={link.reasons} context={context} subject={subject}/> : v?.apart ? <><Author by={v.apart.by}/> · <Time at={v.apart.at} now={data.at}/> {v.apart.reason}{v.last.action === 'join' && <p>Later joined by <Author by={v.last.by}/>, <Time at={v.last.at} now={data.at}/>. The separation takes precedence.</p>}</> : <span className="muted">No data</span>}</td>
+      <td className="edge"><DecisionForm context={context} subject={subject} other={id} intent={link ? 'separate' : 'rejoin'}/>{/* A join a reviewer made can be taken back, which is not the same as saying the two are different people. */}{link && v?.last.action === 'join' && !v.apart && <DecisionForm context={context} subject={subject} other={id} intent="unjoin" look="link"/>}</td></tr>
+  }
+  const sightingFilters = { Event: 'event', Identifier: 'seen' }
   return <><section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi title={subject}>{headed(subject, data.called?.[subject])}</bdi></h2><Guide view="accounts"/><div className="row">{data.link && <a className="button" href={data.link.href} target="_blank" rel="noopener noreferrer">Open in {data.link.host}</a>}<Link className="button" to={subjectPath(subject, 'journey')}>Journey</Link><DecisionForm context={context} subject={subject} intent="join" label="Join with…"/><DecisionForm context={context} subject={subject} intent="forget" label="Delete…" targets={data.retraction?.always ? undefined : data.retraction?.targets}/></div></div>
   <p className="meta" id="known"><bdi>{knownOf(subject, data.called?.[subject])}</bdi></p>
   {(data.called?.[subject]?.dob || data.called?.[subject]?.address || data.called?.[subject]?.line) && <p className="meta" id="born"><bdi>{[LINE_WORDS[data.called[subject].line ?? ''], data.called[subject].dob && 'Born ' + data.called[subject].dob, data.called[subject].address].filter(Boolean).join(' · ')}</bdi></p>}<p className="meta"><CallerId id={subject}/></p>
@@ -135,22 +181,20 @@ function ProfileView({ profile, data, context }: { profile: Profile, data: Accou
       [['Linked IDs', 'linkedIds'], amount(profile.memberCount), profile.cluster.oversized && 'Above review limit'],
       profile.linkCount > 0 && [['Strongest link', 'strongest'], percent(profile.strongest), amount(profile.linkCount) + (profile.linkCount === 1 ? ' link' : ' links')],
       profile.separatedCount > 0 && [['Separated', 'separated'], amount(profile.separatedCount)],
-      profile.history.length > 0 && [['Last seen', 'lastSeen'], <Time at={profile.history.reduce((top, row) => Math.max(top, row.at), 0)} now={data.at}/>],
+      profile.filters.lastSeen > 0 && [['Last seen', 'lastSeen'], <Time at={profile.filters.lastSeen} now={data.at}/>],
       !!consent && [['Ad consent', 'consent'], consent.adUserData && consent.adPersonalization ? 'Granted' : consent.adUserData || consent.adPersonalization ? 'Partial' : 'Denied', consent.source]
     ]}/>{profile.cluster.limitedByCalls && <p className="banner">Several call histories fit this group. Some possible matches have been kept apart.</p>}{profile.cluster.oversized && <p className="banner"><b>Large group.</b> A widely shared identifier may be joining different people. Review the links below.</p>}
   </section>{data.layout && (data.layout.paths.length > 0 || profile.separatedCount > 0) && <section><h2><Term id="graph"/></h2><ClusterGraph key={subject} layout={data.layout}/></section>}
-  <section id="links"><h2><Term id="links"/></h2>{count ? <Table title="Links" headers={['ID', 'Status', ['Score', 'num edge', 'score'], ['Evidence', '', 'evidence'], ['Action', 'edge']]}>{indices.map(i => {
-    const link = profile.links[i]
-    const id = link?.subject ?? profile.separated[i - profile.links.length]
-    const v = verdicts.get(id)
-    const word = !link ? 'Separated' : link.level === 'same' ? members.has(id) ? 'Same person' : 'High confidence' : 'Related'
-    return <tr key={word + id}><td className="who"><Badge id={id}/><Subject id={id}/><DatesOf id={id} dates={dates}/></td><td><span className={'chip ' + (link?.level ?? 'apart')}>{word}</span>{(v?.reversals ?? 0) >= 3 && <span className="chip apart">Conflict</span>}</td><td className="num score edge">{link ? <Compare share={link.score}>{percent(link.score)}</Compare> : <span className="muted">—</span>}</td><td className="why">{link ? <Reasons reasons={link.reasons} context={context} subject={subject}/> : v?.apart ? <><Author by={v.apart.by}/> · <Time at={v.apart.at} now={data.at}/> {v.apart.reason}{v.last.action === 'join' && <p>Later joined by <Author by={v.last.by}/>, <Time at={v.last.at} now={data.at}/>. The separation takes precedence.</p>}</> : <span className="muted">No data</span>}</td>
-      <td className="edge"><DecisionForm context={context} subject={subject} other={id} intent={link ? 'separate' : 'rejoin'}/>{/* A join a reviewer made can be taken back, which is not the same as saying the two are different people. */}{link && v?.last.action === 'join' && !v.apart && <DecisionForm context={context} subject={subject} other={id} intent="unjoin" look="link"/>}</td></tr>
+  <section id="links"><h2><Term id="links"/></h2>{(profile.linkCount + profile.separatedCount > 5 || Object.values(linkFilters).some(name => query.get(name)) || query.get('words')) && <FilterBar label="Links" columns={profile.filters.links} names={linkFilters} words="words" shown={count} total={profile.linkCount + profile.separatedCount} hash="#links"/>}{count ? <Table title="Links" headers={['ID', 'Status', ['Score', 'num edge', 'score'], ['Evidence', '', 'evidence'], ['Action', 'edge']]}>{GROUPS.flatMap(([group, tone]) => {
+    const rows = indices.filter(i => statusAt(i) === group)
+    if (rows.length === 0) return []
+    const away = folded.includes(group)
+    return [<tr className="fold" key={'fold ' + group}><th scope="rowgroup" colSpan={5}><button type="button" aria-expanded={!away} disabled={!ready} onClick={() => setFolded(away ? folded.filter(each => each !== group) : [...folded, group])}><i className="chevron" aria-hidden="true"/><i className={'dot ' + tone} aria-hidden="true"/>{group}<span className="count">{amount(rows.length)}</span><span className="meta">{range(scoresOf(group))}</span></button></th></tr>, ...rows.map(i => row(i, away))]
   })}</Table> : <p className="muted">No links</p>}{start > 0 && <Link className="button" to={pageHref(start - 50)}>Previous links</Link>} {start + 50 < count && <Link className="button" to={pageHref(start + 50)}>Show more links</Link>}</section>
   {!!data.wrote?.length && <section id="wrote"><h2>Messages</h2><Table title="Messages" headers={['When', 'From', 'Message']}>{data.wrote.map(each => <tr key={each.from + ' ' + each.id}><td><Time at={each.at}/></td><td>{each.from === 'lead' ? 'Form' : 'Text'}</td><td className="wrote">{each.text}{each.cut && <span className="muted"> (the rest was not kept)</span>}</td></tr>)}</Table></section>}
   {!!profile.flows.length && <section><h2><Term id="transfers"/></h2><Table title="Transfers" headers={['ID', 'Status', 'Sent', 'Received', 'Transfers', 'Last']}>{profile.flows.map((flow, i) => <tr key={i}><td><Subject id={flow.subject}/></td><td>{flow.relation === 'none' ? 'Not linked' : flow.relation === 'same' ? 'Same person' : 'Related'}</td><td>{amount(flow.sent)} {flow.asset}</td><td>{amount(flow.received)} {flow.asset}</td><td>{amount(flow.count)}</td><td><Time at={flow.last} short/></td></tr>)}</Table>{!!profile.rings.length && <><h2><Term id="rings"/></h2><ul>{profile.rings.map((ring, i) => <li key={i}>{ring.subjects.map(id => <Fragment key={id}><Subject id={id}/> → </Fragment>)}{subject} · {amount(ring.amount)} {ring.asset} {ring.tied > 0 && (ring.tied + ' linked to this ID')}</li>)}</ul></>}</section>}
   <div className="panel-grid profile-grid">{!!profile.consent.length && <section><h2>Ad consent</h2><Table title="Ad consent" headers={['Date', 'Ad measurement', 'Ad personalization', 'Source', 'Recorded', 'Status']}>{profile.consent.map((c, i) => <tr key={i}><td><Time at={c.at || undefined} short/></td><td>{c.adUserData ? 'Granted' : 'Denied'}</td><td>{c.adPersonalization ? 'Granted' : 'Denied'}</td><td>{c.source || 'No data'}</td><td><Time at={c.recorded} short/></td><td>{i === 0 && 'Current'}</td></tr>)}</Table></section>}
-  <section><h2><Term id="sightings"/><span className="count">{amount(profile.history.length)}</span></h2>{profile.history.length ? <Table title="Sightings" headers={['Date', 'Event', 'Identifier']}>{profile.history.map((row, i) => <tr key={i}><td><Time at={row.at} short/></td><td>{row.event}</td><td title={row.identifier}>{seenAs(row.identifier)}</td></tr>)}</Table> : <p className="muted">No sightings</p>}</section></div></>
+  <section id="sightings"><h2><Term id="sightings"/><span className="count">{amount(profile.filters.total)}</span></h2>{(profile.filters.total > 8 || Object.values(sightingFilters).some(name => query.get(name)) || query.get('saw')) && <FilterBar label="Sightings" columns={profile.filters.sightings} names={sightingFilters} words="saw" shown={profile.filters.seen} total={profile.filters.total} hash="#sightings"/>}{profile.history.length ? <Table title="Sightings" headers={['Date', 'Event', 'Identifier']}>{profile.history.map((row, i) => <tr key={i}><td><Time at={row.at} short/></td><td>{row.event}</td><td title={row.identifier}>{seenAs(row.identifier)}</td></tr>)}</Table> : <p className="muted">No sightings</p>}</section></div></>
 }
 
 /** The kind of line a phone lookup found, as staff say it. A landline cannot be texted, and an app's number is weaker evidence of who somebody is. */
