@@ -71,7 +71,7 @@ A server has the settings as [environment variables](operations.md#environment-v
 | `fetch` | all | none | Used in place of the global one. A local graph asks ad platforms, checks and webhooks with it, for tests. |
 | `timeoutMs` | all | none | How long one call may take, in milliseconds. 30,000 when left out. |
 
-> **Say `workers` on purpose.** With `true`, a script that runs for a second reads costs and sends conversions. With `false` everywhere, no cost is read and nothing is sent to ad platforms or webhooks. `record` still asks the services under `checks`.
+> **Say `workers` on purpose.** With `true`, a script that runs for a second reads costs and sends conversions. With `false` everywhere, no cost is read and nothing is sent to ad platforms or webhooks, except the retractions `forget` asks for. `record` still asks the services under `checks`.
 
 A local graph with settings:
 

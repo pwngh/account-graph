@@ -36,12 +36,12 @@ The graph also keeps what people are called, so the reviewer screen can say who 
 
 | Recipient | Data | When |
 | --- | --- | --- |
-| Ad platforms you set up | The outcome with its time and value, and whichever of these exist: that platform's click id, the email and phone hashed the way it matches them, and for Meta its browser id beside its click. TikTok, and Meta for a website event, also get the credited visit's landing page, or your site's address without one. With `META_CLIENT_USER_AGENT` and ad-user-data consent, Meta gets the converting browser's user agent. | For a step that names an action, when there is a click id or a hash to match by, and ad measurement was not refused |
+| Ad platforms you set up | The outcome with its time and value, and whichever of these exist: that platform's click id, the email and phone hashed the way it matches them, and for Meta its browser id beside its click. TikTok, and Meta for a website event, also get the credited visit's landing page, or your site's address without one. With `META_CLIENT_USER_AGENT` and ad-user-data consent, Meta gets the user agent recorded with a website conversion, where there is one. | For a step that names an action, when there is a click id or a hash to match by, and ad measurement was not refused |
 | Services you set up: fingerprint, address check, line check, IP lookup | The one value being checked | On arrival |
 | Your own webhooks | Alerts and [events](operations.md#events), by id | When they happen |
 | Fingerprint's script host, or the open-source helper's | The visitor's IP address and browser, as the browser loads the script | On a page that uses a fingerprint |
 
-A person's data goes to these recipients only. The server also reads costs from Google Ads and Meta, and asks Google and Microsoft for access tokens. Those requests carry no person's data.
+The server sends a person's data to these recipients only. Callers of the API can read it back. The server also reads costs from Google Ads and Meta, and asks Google and Microsoft for access tokens. Those requests carry no person's data.
 
 The creation date is for review of the exact record. It contributes no identifier, link or score. Events, reports and ad platform deliveries omit it.
 

@@ -86,7 +86,7 @@ There is one result per entry, in order. Every accepted entry answers two fields
 
 | Field | Meaning |
 | --- | --- |
-| `duplicate` | The key was recorded before. The rest of the answer says how it stands now, except for an inbound `call`. See [idempotency](#idempotency). |
+| `duplicate` | The key was recorded before. The rest of the answer says how it stands now, except for an inbound `call` and a `cost`. See [idempotency](#idempotency). |
 | `stands` | `false` when something newer already does. See [order](#order). |
 
 ### Entry types
@@ -209,7 +209,7 @@ Put a `profile` before its `conversion`. The other way round, a conversion can b
 
 ### Idempotency
 
-An accepted retry of a recorded key answers `duplicate: true`. The answer is read from the graph as it stands, so a `profile` sent again has no `changes`. An inbound `call` sent again is the exception. Its `flags` are empty and `visitor` is left out unless the retry gives the call a `code` it did not have. `counted` is `false` unless the retry gives it a `result`. A second reporter can supply missing call details or an inbound text opt-out.
+An accepted retry of a recorded key answers `duplicate: true`. The answer is read from the graph as it stands, so a `profile` sent again has no `changes`. A `cost` sent again answers `written: 0` and `older: 0` without reading the cost rows. An inbound `call` sent again is the other exception. Its `flags` are empty and `visitor` is left out unless the retry gives the call a `code` it did not have. `counted` is `false` unless the retry gives it a `result`. A second reporter can supply missing call details or an inbound text opt-out.
 
 The same key with other details answers `KEY_REUSED`. What is compared depends on the type:
 
@@ -224,6 +224,8 @@ The same key with other details answers `KEY_REUSED`. What is compared depends o
 | `conversion` | Every other field | `userAgent` |
 | `profile` | Every other field | `message` |
 | Every other entry | Every field | |
+
+The fields are compared while the receipt is kept.
 
 Emails and phones are compared as they are normalized, currencies in capitals, identifiers in any order. `Pat.Lee@gmail.com` and `patlee@gmail.com` are one.
 
