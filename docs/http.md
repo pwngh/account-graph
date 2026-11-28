@@ -191,7 +191,7 @@ A refusal is an answer, with status 200 and `"ok": false`. None is kept with the
 | `FORGOTTEN` | The key, or what it is about, belongs to somebody who was deleted | |
 | `NOT_ATTEMPTED` | The time ran out before its turn. Nothing was tried. | |
 
-The reserved kinds are `review`, `link`, `carry`, `opened`, `lease`, `dial`, `text`, `place`, `birth`, `dialed`, `behalf`, `named`, `ward`, `given`, `dated` and `initial`.
+The reserved kinds are `review`, `link`, `carry`, `opened`, `lease`, `dial`, `text`, `place`, `birth`, `dialed`, `behalf`, `named`, `ward`, `given`, `dated`, `initial`, `compound`, `person`, `perhaps` and `called`.
 
 ### Batches
 

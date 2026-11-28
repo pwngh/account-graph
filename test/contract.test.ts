@@ -204,6 +204,37 @@ everywhere('a record keeps its name, a number and an email are kept beside their
   return [first, found, joined, later, every, after, again]
 })
 
+everywhere('a name is always hashed, as a note that links nobody, whatever the policy does with names', async ({ graph, local }) => {
+  const { engine } = await internalsOf(local)!()
+  const profile = (key: string, subject: string, facts: object) => ({ type: 'profile', key, at: AT, subject, facts })
+  const sent = await graph.record({ entries: [
+    profile('one', 'contact:one', { email: 'one@example.org', name: { first: 'María', last: 'García' } }),
+    profile('two', 'contact:two', { email: 'two@example.org', name: { first: 'MARIA', last: 'garcia' } }),
+    profile('three', 'contact:three', { email: 'three@example.org', name: { first: 'Unknown', last: 'Unknown' } }),
+    // A name alone is taken, and kept, and is nobody's.
+    profile('four', 'contact:four', { name: { first: 'Maria', last: 'Garcia' } }),
+    profile('five', 'contact:five', { email: 'five@example.org' }),
+  ] as any })
+  assert.deepEqual(sent.results.map((each) => each.ok), [true, true, true, true, true])
+  // No setting may make the note count for anything.
+  for (const called of [{ cap: 2 }, { relates: true }, { corroborates: true }, { group: 'name' }, { weight: 0.5 }]) assert.throws(() => accountGraph({ memory: true, policy: { kinds: { called } } } as any), (error) => hasCode(error, FAULT_CODES.CONFIG.INVALID), JSON.stringify(called))
+  const noted = async (subject: string) => (await engine.graph.history(subject)).map((seen: { identifier: string }) => seen.identifier).filter((id: string) => id.startsWith('called:'))
+  const notes = await Promise.all(['contact:one', 'contact:two', 'contact:three', 'contact:four', 'contact:five'].map(noted))
+  // One key for one name, however it was written, and none for something written in place of a name or for no name.
+  assert.deepEqual(notes.map((each) => each.length), [1, 1, 0, 1, 0])
+  assert.deepEqual(new Set([...notes[0]!, ...notes[1]!, ...notes[3]!]).size, 1)
+  assert.match(notes[0]![0]!, /^called:[0-9a-f]{64}$/)
+  // Three records of one name are three people until something else says otherwise.
+  const groups = await Promise.all(['contact:one', 'contact:two', 'contact:four'].map(async (subject) => (await engine.graph.cluster(subject))?.members ?? [subject]))
+  assert.deepEqual(groups, [['contact:one'], ['contact:two'], ['contact:four']])
+  assert.deepEqual((await engine.graph.links('contact:one')).length, 0)
+  // Nobody may write the kind themselves.
+  const own = (await graph.record({ entries: [profile('six', 'contact:six', { identifiers: ['called:' + 'a'.repeat(64)] })] as any })).results[0]!
+  assert.deepEqual([own.ok, !own.ok && own.reason], [false, 'KIND_RESERVED'])
+  assert.deepEqual((await engine.graph.called(['contact:four']))['contact:four'], { name: 'Maria Garcia' })
+  return [notes.map((each) => each.length), groups]
+})
+
 everywhere('what somebody wrote is kept as a copy to read back, cut where it is long, and goes with the person or with time', async ({ graph, local }) => {
   const { engine } = await internalsOf(local)!()
   const caller = `caller:${hashPhone('+15558675301')}`
