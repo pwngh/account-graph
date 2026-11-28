@@ -1,3 +1,4 @@
+import { tagsOf } from '../contract/tags.ts'
 import type {
   Arrival, At, DecideRefusal, DecideRequest, DecideValue, Delivery, EventPage, EventsRequest, ForgetRefusal, ForgetRequest, ForgetValue, JourneyEntry, LookupRequest, LookupValue, Match,
   Person, RecordEntry, RecordRefusal, RecordRequest, RecordResponse, RecordResult, RecordView, ReportRequest, ReportValue, Tied, Window,
@@ -16,7 +17,7 @@ import type { NewEvent } from './events.ts'
 import { Outdated } from './graph.ts'
 import type { Tx } from './store.ts'
 import type { Hours } from './hours.ts'
-import { email, hashPhone, identifier, ip, normalizeEmail, normalizePhone, RESERVED, withdrawable } from './identifiers.ts'
+import { email, hashPhone, identifier, ip, normalizeEmail, normalizePhone, RESERVED, UNSTORABLE, withdrawable } from './identifiers.ts'
 import { newest } from './said.ts'
 import { sentOf } from './outbox.ts'
 import type { Job } from './outbox.ts'
@@ -161,8 +162,17 @@ export function createSix(engine: Engine, options: SixOptions) {
     }
   }
 
+  /** What an arrival says, with the click ids and tags of its landing address where it did not say them, and the address without its query. */
   function touchOf({ subject, at, clicks, type: _, key: __, ...rest }: Extract<RecordEntry, { type: 'arrival' }>): Touch {
-    return { subject, at, ...rest, ...clicks }
+    let landing: URL | undefined
+    try {
+      landing = rest.landing !== undefined && /^https?:\/\//i.test(rest.landing) ? new URL(rest.landing) : undefined
+    } catch {}
+    if (!landing) return { subject, at, ...rest, ...clicks }
+    const given = Object.fromEntries(Object.entries({ ...rest, ...clicks }).filter(([, value]) => value !== undefined))
+    // A value no store can keep is left out, as if the address had not had it.
+    const read = Object.fromEntries(Object.entries(tagsOf(landing.searchParams)).filter(([, value]) => !UNSTORABLE.test(value)))
+    return { subject, at, ...read, ...given, landing: landing.origin + landing.pathname }
   }
   const linkOf = (entry: Extract<RecordEntry, { type: 'link' }>) => knownLink(entry.url, entry.subject, { secret: options.linkSecret!, id: entry.key, now: () => entry.at, lasts: Math.floor(entry.expires / 1000) * 1000 - entry.at })
 

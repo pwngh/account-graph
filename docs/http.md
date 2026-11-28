@@ -108,6 +108,8 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 | `link` | `subject`, `url`, `expires`, `purpose?` | `url`. See [signed links](identify.md#signed-links). |
 | `transfer` | `from`, `to`, `amount`, `asset?` | `relation`, `score` |
 
+An `arrival` whose `landing` is a whole `https` or `http` address gets the click ids and tags in its query, as the browser tag reads them: `gclid`, `utm_source`, `utm_campaign`, `utm_id` and the rest. A field the entry gives itself wins. The address is kept without its query and fragment.
+
 | Field | Values |
 | --- | --- |
 | `facts` | At least one, unless there is a `speaker`: `email`, `phone`, `device`, `ip`, `address`, `name`, `dob`, `identifiers` |

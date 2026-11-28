@@ -597,6 +597,42 @@ everywhere('a pair says whether two records are one person, whether they were ke
   return [joined, apart]
 })
 
+test('the server reads an address with the same tables as the browser tag', async () => {
+  const { CLICK_PARAMS, TAG_PARAMS } = await import('../src/contract/tags.ts')
+  const { readFileSync } = await import('node:fs')
+  const tag = readFileSync(new URL('../src/edge/collect.ts', import.meta.url), 'utf8')
+  // The tag's own table, as the value it is.
+  const table = (name: string) => {
+    const start = tag.indexOf('=', tag.indexOf(`const ${name} = `)) + 1
+    return new Function(`return ${tag.slice(start, tag.indexOf('as const', start))}`)()
+  }
+  assert.deepEqual(table('CLICK_IDS'), CLICK_PARAMS)
+  assert.deepEqual(table('TAGS'), TAG_PARAMS)
+})
+
+everywhere('an arrival that sends only its address is credited by the click and campaign in it, and the address is kept without its query', async ({ graph, local }) => {
+  const landing = 'https://example.org/offer?gclid=G9&utm_source=google&utm_campaign=Spring&utm_id=301&email=pat%40example.org#form'
+  const { results } = await graph.record({ entries: [
+    { type: 'arrival', key: 'only-address', at: AT, subject: 'visitor:l', landing },
+    // What an entry says itself wins over its address.
+    { type: 'arrival', key: 'said', at: AT + 1, subject: 'visitor:m', source: 'bing', landing: 'https://example.org/?utm_source=google&msclkid=M1', clicks: { msclkid: 'M2' } },
+    { type: 'arrival', key: 'relative', at: AT + 2, subject: 'visitor:n', landing: '/offer?gclid=G3' },
+    // A value no store can keep is left out of what is read.
+    { type: 'arrival', key: 'unkeepable', at: AT + 2, subject: 'visitor:o', landing: 'https://example.org/?utm_campaign=Spring%00Sale&gclid=G4' },
+    { type: 'profile', key: 'pl', at: AT + 3, subject: 'contact:l', facts: { device: 'dl' } },
+    { type: 'profile', key: 'vl', at: AT + 3, subject: 'visitor:l', facts: { device: 'dl' } },
+  ] })
+  assert.ok(results.every((each) => each.ok))
+  const [person] = (await graph.lookup({ kind: 'person', subjects: ['contact:l'], at: NOW })).people
+  const { engine } = await internalsOf(local)!()
+  const touches = async (subject: string) => (await engine.graph.attribute(subject, { at: NOW })).touches.map(({ source, campaign, campaignId, gclid, msclkid, landing }) => ({ source, campaign, campaignId, gclid, msclkid, landing }))
+  assert.deepEqual(await touches('contact:l'), [{ source: 'google', campaign: 'Spring', campaignId: '301', gclid: 'G9', msclkid: undefined, landing: 'https://example.org/offer' }])
+  assert.deepEqual(await touches('visitor:m'), [{ source: 'bing', campaign: undefined, campaignId: undefined, gclid: undefined, msclkid: 'M2', landing: 'https://example.org/' }])
+  assert.deepEqual(await touches('visitor:o'), [{ source: undefined, campaign: undefined, campaignId: undefined, gclid: 'G4', msclkid: undefined, landing: 'https://example.org/' }])
+  assert.deepEqual(await touches('visitor:n'), [{ source: undefined, campaign: undefined, campaignId: undefined, gclid: undefined, msclkid: undefined, landing: '/offer?gclid=G3' }])
+  return person!.arrival
+})
+
 everywhere('facts that say nothing of who somebody is are refused, and can be sent again', async ({ graph }) => {
   const result = await one(graph, { type: 'profile', key: 'p', at: AT, subject: 'contact:1', facts: { address: { street: '1 Main St' } } })
   assert.ok((await one(graph, { type: 'profile', key: 'p', at: AT, subject: 'contact:1', facts: { device: 'd' } })).ok)
