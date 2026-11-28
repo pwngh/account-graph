@@ -46,19 +46,21 @@ function CopyTime({ at }) {
  * What a reviewer says of the open missed call, behind a button: that the caller was reached, or that it was nobody's inquiry.
  * The answer is shown above the list, because the call leaves the list once it is said.
  */
-export function SayOfCall({ intent, call, formKey, at, label, look = 'button', title, children }) {
+export function SayOfCall({ intent, call, formKey, at, label, submit = label, look = 'button', title, children }) {
   const { pathname, search } = useLocation()
   const fetcher = useFetcher({ key: 'said-of-call' })
   const [enhanced, setEnhanced] = useState(false)
   useEffect(() => setEnhanced(true), [])
   const busy = fetcher.state !== 'idle'
   const pop = useId()
-  const form = <fetcher.Form method="post" action={pathname + search} preventScrollReset>
+  // Many forms share one answer. A form that opens over the page shows what was wrong with it where the reviewer is looking.
+  const [sent, setSent] = useState(false)
+  const form = <fetcher.Form method="post" action={pathname + search} preventScrollReset onSubmit={() => setSent(true)}>
     {enhanced && <input type="hidden" name="_enhanced" value="1"/>}<input type="hidden" name="intent" value={intent}/><input type="hidden" name="call" value={call}/><input type="hidden" name="key" value={formKey}/><input type="hidden" name="at" value={at}/>
-    {children}<button type="submit" className="primary" aria-disabled={busy} disabled={busy}>{busy ? 'Saving…' : label}</button></fetcher.Form>
+    {children}<button type="submit" className="primary" aria-disabled={busy} disabled={busy}>{busy ? 'Saving…' : submit}</button></fetcher.Form>
   // On a Board card the form opens over the page, as the card's details do. A column fades its ends with a mask, and a mask hides whatever is drawn inside it.
   if (look === 'pop') return <><button type="button" className="say" popoverTarget={pop}>{label}</button><div className="card-pop say-pop" popover="auto" id={pop} role="dialog" aria-labelledby={pop + 'title'}>
-    <div className="detail-head"><h4 id={pop + 'title'}>{title}</h4><button type="button" className="detail-shut" popoverTarget={pop} popoverTargetAction="hide" aria-label="Close">×</button></div>{form}</div></>
+    <div className="detail-head"><h4 id={pop + 'title'}>{title}</h4><button type="button" className="detail-shut" popoverTarget={pop} popoverTargetAction="hide" aria-label="Close">×</button></div>{form}{sent && !busy && fetcher.data?.error && <p className="apart say-wrong">{fetcher.data.error}</p>}</div></>
   return <details className={'decision-form ' + look + (intent === 'reached' && look === 'button' ? ' primary' : '')}><summary>{label}</summary>{form}</details>
 }
 

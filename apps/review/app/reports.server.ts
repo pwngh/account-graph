@@ -13,12 +13,21 @@ const missing = () => new Response('These details have changed. Open the report 
 const identity = (...values: unknown[]) => createHash('sha256').update(JSON.stringify(values)).digest('base64url').slice(0, 24)
 
 export function loadReport(request: Request, kind: ReportKind, which?: string, selected?: string) {
-  return withGraph(request, async session => {
+  return withGraph(request, async (session, graph) => {
     const report = await inZone(await reviewerZone(request), () => prepareReport(kind, which, new URL(request.url).searchParams, (path, query) => reviewGet(request, session, path, query), selected, graphTime()))
     // A card read by itself names nobody. A page names everyone it lists.
-    return selected === undefined ? { ...report, called: await reviewCalled(request, session, listed(report)) } : report
+    if (selected !== undefined) return report
+    const called = await reviewCalled(request, session, listed(report))
+    if (report.kind !== 'journey' || !report.which || !report.journey?.entries.some((entry: Row) => entry.kind === 'call')) return { ...report, called }
+    // The records a call in this history can be named for: this one, where the firm made it, and whoever holds the number read for it.
+    const records = new Set<string>(madeByGraph(report.which) ? [] : [report.which])
+    const phone = called[report.which]?.phone
+    if (phone) for (const id of (await graph.lookup({ kind: 'find', text: phone }, { signal: request.signal }).catch(() => ({ subjects: [] as string[] }))).subjects) if (!madeByGraph(id)) records.add(id)
+    return { ...report, records: [...records], called: { ...called, ...await reviewCalled(request, session, [...records].filter(id => !(id in called))) } }
   })
 }
+/** An ID the graph makes for a caller, a visitor or one call. It is nobody's record. */
+const madeByGraph = (subject: string) => /^(visitor|caller|call):/.test(subject)
 
 /** Everyone a report lists, to ask what each is called. */
 function listed(report: Row): string[] {
@@ -212,6 +221,12 @@ export async function retryConversion(request: Request) {
 /** What a reviewer can say of a call: two statements, and the two that take them back. */
 const SAYINGS = ['reached', 'not_lead', 'not_reached', 'lead'] as const
 type Saying = typeof SAYINGS[number]
+/**
+ * Who a call was with, as the graph names it. The graph also takes `excluded` and `unknown`, which leave the call in no history,
+ * so the app does not offer them until a call under its own ID can be opened.
+ */
+const PARTIES = ['self', 'representative'] as const
+type Party = typeof PARTIES[number]
 
 export async function sayOfCall(request: Request) {
   checkOrigin(request)
@@ -222,10 +237,41 @@ export async function sayOfCall(request: Request) {
     // The time is the form's own, from when the page was read, so the same form sent twice is one statement. A page left open for a day is read again first.
     const at = Number(field('at'))
     const now = graphTime()
-    if (!call || !key || key.length > 150 || !(SAYINGS as readonly string[]).includes(intent) || !Number.isSafeInteger(at) || at > now + 60_000 || at < now - 86_400_000) return data({ error: 'Reload the page and try again.' }, { status: 400 })
+    if (!call || !key || key.length > 150 || !(intent === 'party' || (SAYINGS as readonly string[]).includes(intent)) || !Number.isSafeInteger(at) || at > now + 60_000 || at < now - 86_400_000) return data({ error: 'Reload the page and try again.' }, { status: 400 })
     // One page read can say this of several calls, so the call is part of the key. A call's ID may be long, and a key may not.
     const said = key + '/' + createHash('sha256').update(call).digest('hex').slice(0, 16)
     const by = session.name
+    const done = (saved: string) => {
+      if (field('_enhanced') === '1') return { saved }
+      const url = new URL(request.url)
+      // Without a script the page is read again, at the same days and filter, with the next call open.
+      url.searchParams.delete('pick')
+      return redirect(url.pathname.replace(/\.data$/, '') + url.search, 303)
+    }
+    if (intent === 'party') {
+      // Which record the call was with. The record is the one chosen from the list, or the one whose ID was typed, and never a default.
+      const [role, picked, typed] = [field('role'), field('subject'), field('other')]
+      const wrong = (error: string) => data({ error }, { status: 400 })
+      if (!(PARTIES as readonly string[]).includes(role)) return wrong('Choose who was on the call, then save again.')
+      if (!picked && !typed) return wrong('Choose a record, or give its ID, then save again.')
+      // A typed ID is the choice where the list was left as the page had it. A record chosen from the list and another typed are two choices.
+      if (picked && typed && picked !== typed && picked !== field('was')) return wrong('Choose a record from the list or give an ID, not both.')
+      const subject = typed || picked
+      // A call named for an ID nobody has would be in no history at all.
+      if (subject.length > 300 || madeByGraph(subject) || !(await graph.lookup({ kind: 'find', text: subject }, { signal: request.signal })).subjects.includes(subject)) return wrong('No record has this ID. Check it and save again.')
+      // The statement that stands is read now, and must be the one the page showed. Then the graph takes this one only if that one still stands.
+      const stands = await graph.lookup({ kind: 'party', call }, { signal: request.signal }) as { key: string; role: string; subject?: string; by: string; at: number } | null
+      const changed = data({ error: 'Somebody said who this call was with after this page was read. Reload the page.' }, { status: 409 })
+      // The call moves to the history of the record it is named for, so the reviewer is taken there, to the call's row.
+      const moved = () => redirect(subjectPath(subject, 'journey') + '#call-' + encodeURIComponent(encodeURIComponent(call)), 303)
+      // The same form sent twice with the same choice is one statement, and the second is answered as the first was.
+      if (stands?.key === said + '/party' && stands.role === role && stands.subject === subject) return moved()
+      if ((stands ? [stands.by, stands.at, stands.role].join(' ') : '') !== field('seen')) return changed
+      const result = (await graph.record({ entries: [{ type: 'call_update', key: said + '/party', at, call, change: { kind: 'party', role: role as Party, subject, by, seen: stands?.key ?? null } }] }, { signal: request.signal })).results[0]!
+      if (!result.ok) return result.reason === 'STALE' ? changed : data({ error: result.reason === 'FORGOTTEN' ? 'This record was deleted since the call, so the call cannot be named for it.' : 'The graph refused this (' + result.reason + ').' }, { status: 409 })
+      if (result.value.stands === false) return changed
+      return moved()
+    }
     const of = { type: 'call', key: call } as const
     const [entry, saved] = ({
       reached: [{ type: 'call_update', key: said + '/reached', at, call, change: { kind: 'returned', reachedAt: at, by } }, 'Recorded: the caller was reached. Their missed calls no longer wait.'],
@@ -245,10 +291,6 @@ export async function sayOfCall(request: Request) {
     if (!result.ok) return data({ error: result.reason === 'UNKNOWN_REFERENCE' ? 'The graph no longer has this call. Reload the page.' : 'The graph refused this (' + result.reason + ').' }, { status: 409 })
     // The newest statement stands. One said from a page read before a newer one changes nothing, and the reviewer is told so.
     if ((result.value as { stands?: boolean }).stands === false) return data({ error: 'Something newer was said of this call after this page was read. Reload the page.' }, { status: 409 })
-    if (field('_enhanced') === '1') return { saved }
-    const url = new URL(request.url)
-    // Without a script the page is read again, at the same days and filter, with the next call open.
-    url.searchParams.delete('pick')
-    return redirect(url.pathname.replace(/\.data$/, '') + url.search, 303)
+    return done(saved)
   })
 }

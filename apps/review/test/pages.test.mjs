@@ -354,6 +354,68 @@ test('the history of a caller names the reviewer who reported them reached', asy
   assert.match(after, /Reported by dana, with no call/)
 })
 
+test('a reviewer says which record a call was with, and the call moves to the history of that record', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const { at } = await (await fetch(firm.graph + '/review/api/board?days=90', { headers: { authorization: 'Bearer demo' } })).json()
+  // A record with a phone number, and a call from that number. The call is in the history of the number, not of the record.
+  const written = await fetch(firm.graph + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ entries: [
+    { type: 'profile', key: 'with-profile', at: at - 5 * 3600_000, subject: 'contact:wren', facts: { phone: '+15550100071', name: { first: 'Wren', last: 'Vale' } } },
+    { type: 'profile', key: 'with-other', at: at - 4 * 3600_000, subject: 'contact:rowan', facts: { phone: '+15550100071', name: { first: 'Rowan', last: 'Vale' } } },
+    { type: 'call', key: 'with-1', at: at - 3 * 3600_000, direction: 'inbound', from: '+15550100071', to: '+15550100102', duration: 90, result: { answered: true } }] }) })
+  const results = (await written.json()).results
+  assert.ok(results.every(result => result.ok), JSON.stringify(results))
+  const [ofRecord, ofOther, ofNumber] = ['contact:wren', 'contact:rowan', results[2].value.subject].map(id => '/journey/' + encodeURIComponent(id))
+  const page = async path => (await (await fetch(firm.graph + path, { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
+  const post = (path, fields) => fetch(firm.graph + path, { method: 'POST', headers: { cookie, origin: firm.graph }, body: new URLSearchParams(fields), redirect: 'manual' })
+  const stands = async () => (await (await fetch(firm.graph + '/v1/lookup', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'party', call: 'with-1' }) })).json())
+  // The form on the call's row: its fields, the statement the page showed, the records it offers and the choices.
+  const form = async path => {
+    const [, label, hidden, body] = (await page(path)).match(/<button type="button" class="say" popoverTarget="[^"]+">((?:Say|Change) who it was)<\/button><div class="card-pop say-pop" popover="auto"[^>]*>[\s\S]*?<form\b[^>]*\baction="([^"]+)"[^>]*>((?:<input type="hidden"[^>]*\/>)+)<fieldset class="call-with"><legend>This call was with<\/legend>([\s\S]*?)<\/fieldset>/)?.filter((part, i) => i !== 2) ?? []
+    if (!label) return undefined
+    return { label, fields: Object.fromEntries([...hidden.matchAll(/name="([^"]+)" value="([^"]*)"/g)].map(([, name, value]) => [name, value])), records: [...body.matchAll(/<option value="([^"]+)"( selected="")?>([^<]*)</g)].map(([, id, picked, name]) => id + (picked ? '*' : '') + ' ' + name), roles: [...body.matchAll(/<input type="radio"[^>]*>/g)].map(([radio]) => radio.match(/value="([a-z]+)"/)[1] + (/ checked=""/.test(radio) ? '*' : '')) }
+  }
+  assert.equal(await form(ofRecord), undefined, 'the call is not in the history of the record yet')
+  const first = await form(ofNumber)
+  assert.deepEqual([first.label, first.records, first.roles, first.fields.intent, first.fields.call, first.fields.seen], ['Say who it was', ['contact:rowan Rowan Vale · contact:rowan', 'contact:wren Wren Vale · contact:wren'], ['self', 'representative'], 'party', 'with-1', ''])
+  // Nothing is chosen for the reviewer: the list begins on no record. A form with no role, no record, two records, an ID no record has, or an ID the graph made for a caller is refused.
+  assert.match(await page(ofNumber), /<select name="subject"><option value="" selected="">Choose a record<\/option>/)
+  const refused = async more => { const answer = await post(ofNumber, { ...first.fields, _enhanced: '1', ...more }); return [answer.status, (await answer.text()).match(/Choose who was on the call|Choose a record, or give its ID|not both|No record has this ID/)?.[0]] }
+  assert.deepEqual([await refused({ subject: 'contact:wren' }), await refused({ role: 'self' }), await refused({ role: 'self', subject: 'contact:wren', other: 'contact:rowan' }), await refused({ role: 'self', other: 'contact:nobody' }), await refused({ role: 'self', other: results[2].value.subject }), await stands()],
+    [[400, 'Choose who was on the call'], [400, 'Choose a record, or give its ID'], [400, 'not both'], [400, 'No record has this ID'], [400, 'No record has this ID'], null])
+
+  // The record holder. The call then belongs to that record alone, and the same form sent twice is one statement.
+  for (let twice = 0; twice < 2; twice++) {
+    const answer = await post(ofNumber, { ...first.fields, subject: 'contact:wren', role: 'self' })
+    assert.deepEqual([answer.status, answer.headers.get('location')], [303, ofRecord + '#call-with-1'], 'the reviewer is taken to the call in the history of the record')
+  }
+  const said = await stands()
+  assert.deepEqual([said.role, said.subject, said.by], ['self', 'contact:wren', 'dana'])
+  assert.equal(await form(ofNumber), undefined, 'the call has left the history of the number')
+  assert.match(await page(ofRecord), /Record holder confirmed by dana/)
+  // In the history of the record the form shows what stands and offers to take it back. The form of the page read before is refused.
+  const second = await form(ofRecord)
+  assert.deepEqual([second.label, second.records, second.roles, second.fields.seen], ['Change who it was', ['contact:wren* Wren Vale · contact:wren', 'contact:rowan Rowan Vale · contact:rowan'], ['self*', 'representative'], 'dana ' + said.at + ' self'])
+  const stale = await post(ofNumber, { ...first.fields, key: crypto.randomUUID(), subject: 'contact:wren', role: 'representative', _enhanced: '1' })
+  assert.equal(stale.status, 409)
+  assert.match(await stale.text(), /Somebody said who this call was with after this page was read/)
+  // So is the same form sent again with another record chosen, which would otherwise be answered as if it had moved the call.
+  const other = await post(ofNumber, { ...first.fields, subject: 'contact:rowan', role: 'self' })
+  assert.deepEqual([other.status, (await stands()).subject], [409, 'contact:wren'])
+  assert.equal((await stands()).role, 'self')
+
+  // Somebody speaking for them. Then the other record on that line, by its ID with the list left as it was, which takes the call into its history.
+  assert.equal((await post(ofRecord, { ...second.fields, subject: 'contact:wren', role: 'representative', _enhanced: '1' })).headers.get('location'), ofRecord + '#call-with-1')
+  const third = await form(ofRecord)
+  assert.deepEqual([(await stands()).role, third.roles], ['representative', ['self', 'representative*']])
+  assert.match(await page(ofRecord), /Representative confirmed by dana/)
+  assert.equal((await post(ofRecord, { ...third.fields, subject: 'contact:wren', other: 'contact:rowan', role: 'self' })).headers.get('location'), ofOther + '#call-with-1')
+  const moved = await stands()
+  assert.deepEqual([moved.role, moved.subject, await form(ofRecord), (await form(ofOther)).records], ['self', 'contact:rowan', undefined, ['contact:rowan* Rowan Vale · contact:rowan', 'contact:wren Wren Vale · contact:wren']])
+})
+
 test('a term has its definition beside it on every page, in the page from the start', async t => {
   const firm = await startFirm({}, { quick: true })
   t.after(() => firm.close())
