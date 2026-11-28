@@ -3,6 +3,7 @@ import { loadReport, retryConversion, sayOfCall } from '../reports.server'
 import { Answer, type ActionResult } from '../views/shared'
 import { readSubject } from '../navigation'
 import { Report } from '../views/reports'
+import { keptThroughOutage } from '../kept'
 
 export function loader({ request, url, params }: LoaderFunctionArgs) {
   const kind = url.pathname.split('/')[1].toLowerCase()
@@ -21,3 +22,6 @@ export async function action({ request, url }: ActionFunctionArgs) {
 export default function ReportPage() {
   return <><Answer result={useActionData<ActionResult>()}/><Report data={useLoaderData<typeof loader>()}/></>
 }
+
+// Read again while the graph is away, the page keeps what it showed.
+export const clientLoader = keptThroughOutage

@@ -431,6 +431,38 @@ test('a form sent while the graph is away is answered, so its page is not replac
   }
 })
 
+test('Chrome keeps a page that reads itself again while the graph does not answer, and says so', { skip: !process.env.CHROME && 'set CHROME to read a page again through an outage', timeout: 40000 }, async t => {
+  const { browse, until } = await import('../../../test/chrome.ts')
+  const { run, close: closeBrowser } = await browse(origin + path)
+  t.after(closeBrowser)
+  t.after(() => { failure = 0 })
+  await until('the sign-in form', () => run("Boolean(document.querySelector('input[name=token]'))").catch(() => false))
+  await run(`{
+    const input = document.querySelector('input[name=token]')
+    input.value = ${JSON.stringify(reviewer)}
+    input.form.requestSubmit()
+  }`)
+  await until('enhanced account', () => run("Boolean(document.querySelector('input[type=range]'))").catch(() => false))
+  const reads = () => requests.filter(call => call.path !== '/v1/events' && call.path !== '/review/api/pulse').length
+  await until('the stored zone', () => run("document.cookie.includes('review_zone=')").catch(() => false))
+  for (let seen = -1; seen !== reads();) { seen = reads(); await new Promise(resolve => setTimeout(resolve, 500)) }
+  // The page reads itself again, as it does on a change, and the graph does not answer. What it showed stays, with a note.
+  failure = 503
+  const before = reads()
+  await run('window.__reactRouterDataRouter.revalidate()')
+  const kept = await until('the note', () => run(`document.body.innerText.includes('The graph is not answering. This page shows what it last read.') && JSON.stringify([Boolean(document.querySelector('input[type=range]')), document.body.innerText.includes('could not be opened'), document.body.innerText.includes(${JSON.stringify(subject)})])`).catch(() => false))
+  assert.deepEqual(JSON.parse(kept), [true, false, true])
+  assert.ok(reads() > before, 'the page asked the graph')
+  // Once the graph answers, the next read clears the note.
+  failure = 0
+  await run('window.__reactRouterDataRouter.revalidate()')
+  await until('the note gone', () => run("!document.body.innerText.includes('The graph is not answering')").catch(() => false))
+  // A page this tab has not shown has nothing to keep, and says it cannot be opened.
+  failure = 503
+  await run("window.__reactRouterDataRouter.navigate('/decide')")
+  await until('the error page', () => run("document.body.innerText.includes('The page could not be opened')").catch(() => false))
+})
+
 test('Chrome keeps a form open with what was typed when the graph does not answer, and sends it once the graph is back', { skip: !process.env.CHROME && 'set CHROME to check a form through an outage', timeout: 40000 }, async t => {
   const { browse, until } = await import('../../../test/chrome.ts')
   const { run, close: closeBrowser } = await browse(origin + path)

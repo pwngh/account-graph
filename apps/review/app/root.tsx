@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useState } from 'react'
-import { Form, Link, Links, Outlet, Scripts, ScrollRestoration, isRouteErrorResponse, useLocation, useNavigation, useRouteError, useRevalidator, useRouteLoaderData, type LoaderFunctionArgs } from 'react-router'
+import { Form, Link, Links, Outlet, Scripts, ScrollRestoration, isRouteErrorResponse, useLocation, useMatches, useNavigation, useRouteError, useRevalidator, useRouteLoaderData, type LoaderFunctionArgs } from 'react-router'
+import { AWAY_NOTE, GRAPH_AWAY, GRAPH_BACK, remember } from './kept'
 import { current, reviewerZone } from './auth.server'
 import { runtime } from './runtime.server'
 import { ZoneContext } from './views/shared'
@@ -32,6 +33,16 @@ function Live({path}: {path: string}) {
     stream.addEventListener('unavailable', () => { stream.close(); interrupted() })
     return () => stream.close()
   }, [revalidate])
+  useEffect(() => {
+    // The note is taken away only where it is the one shown, so a note about the stream stays.
+    const clear = () => setStatus(said => said === AWAY_NOTE ? '' : said)
+    const away = () => setStatus(AWAY_NOTE)
+    window.addEventListener(GRAPH_AWAY, away)
+    window.addEventListener(GRAPH_BACK, clear)
+    return () => { window.removeEventListener(GRAPH_AWAY, away); window.removeEventListener(GRAPH_BACK, clear) }
+  }, [])
+  // Another page is read anew, so the note is not about it.
+  useEffect(() => setStatus(said => said === AWAY_NOTE ? '' : said), [path])
   return <span role="status">{status}</span>
 }
 
@@ -60,6 +71,10 @@ export function Layout({children}: {children: React.ReactNode}) {
     window.addEventListener('keydown', search)
     return () => window.removeEventListener('keydown', search)
   }, [])
+  // What the page shows is kept, so a read of it again while the graph is away can keep showing it.
+  const matches = useMatches()
+  const page = matches.at(-1)
+  useEffect(() => { if (navigation.state === 'idle' && page) remember(location.pathname + location.search, page.loaderData) }, [page, navigation.state, location.pathname, location.search])
   const {revalidate} = useRevalidator()
   useEffect(() => {
     // Times are written on the server. Tell it this browser's zone once, then read the page again in it.
