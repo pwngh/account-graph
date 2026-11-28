@@ -37,7 +37,7 @@ docker build -f apps/review/Dockerfile -t account-graph-review .
 
 > **The session secret in `compose.yaml` is public.** It begins with `change-me`, and the app refuses to start with it when `REVIEW_ORIGIN` names an address outside your own machine.
 
-To serve reviewers elsewhere, put a proxy with TLS in front. Set `REVIEW_ORIGIN` to the address reviewers open, change `REVIEW_SESSION_SECRET`, and forward to the app. Without `REVIEW_ORIGIN` the app compares a form's origin with the address the request came to, which a proxy that ends TLS changes, so sign-in is refused. Live updates are one long answer from `/events`, so the proxy must not buffer it:
+To serve reviewers elsewhere, put a proxy with TLS in front. Set `REVIEW_ORIGIN` to the address reviewers open, change `REVIEW_SESSION_SECRET`, set `REVIEW_TRUST_PROXY=true`, and forward to the app. Without `REVIEW_ORIGIN` the app compares a form's origin with the address the request came to, which a proxy that ends TLS changes, so sign-in is refused. Live updates are one long answer from `/events`, so the proxy must not buffer it:
 
 ```nginx
 server {
@@ -46,10 +46,12 @@ server {
   location / {
     proxy_pass http://127.0.0.1:3100;
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   }
   location /events {
     proxy_pass http://127.0.0.1:3100;
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_buffering off;
     proxy_read_timeout 1h;
   }
@@ -73,6 +75,7 @@ npm --prefix apps/review start
 | `REVIEW_GRAPH_URL` | Graph server origin, default `http://127.0.0.1:8080`. The Node process must be able to reach it. |
 | `REVIEW_SESSION_SECRET` | Secret for signing session IDs, at least 32 characters. Outside development the app requires it at startup. In development an omitted secret is generated for the process. |
 | `REVIEW_ORIGIN` | Public origin used to check form submissions and set secure cookies. Defaults to the request origin. Set this explicitly behind a reverse proxy. |
+| `REVIEW_TRUST_PROXY` | `true` when one proxy of your own stands in front, or the number of them, up to 10. The app then reads each sender's address from `x-forwarded-for`, counting that many entries from the end. Earlier entries are the sender's own words. Leave it out when the app is reached directly, or anybody could name any address. |
 | `REVIEW_EVENTS_TOKEN` | Server-only graph service token for the `events` call. Without it, pages open no event stream and say that live updates are off. Opening or reloading a page still reads the graph. |
 | `REVIEW_LEGACY_URL` | Address reviewers use to open the original screen, such as `https://graph.example.org/review`. Matches links to it, for the records its queue leaves out. Without it, Matches names the original screen without a link. The graph's own address is never shown. |
 | `HOST`, `PORT` | Production listener address and port, default `127.0.0.1` and `3000`. |
@@ -81,7 +84,7 @@ npm --prefix apps/review start
 
 ## Sign-in and updates
 
-Open `/signin` and enter the token issued to your reviewer name. An address gets ten attempts in fifteen minutes, and a successful sign-in clears its count. Behind a reverse proxy every reviewer shares the proxy's address. The server checks it at `/review/api/me` and keeps it in process memory. The browser gets a signed, eight-hour session ID in an HttpOnly, SameSite=Strict cookie. The cookie is Secure except with HTTP on loopback. Sign out to revoke the session for all tabs that share it. A graph authorization failure also ends the session. The `/stage` page exists only when the firm demo starts the app. It signs a visitor in as the demo reviewer without a token, so it is never served by an app started with `npm start`. Restarting the process clears sessions. Run a single app process or route a session’s requests to the same instance.
+Open `/signin` and enter the token issued to your reviewer name. An address gets ten attempts in fifteen minutes, and a successful sign-in clears its count. Behind a reverse proxy every request comes from the proxy's address, so ten wrong tokens from anybody would lock out every reviewer. Set `REVIEW_TRUST_PROXY` and each sender is counted by their own address. The server checks it at `/review/api/me` and keeps it in process memory. The browser gets a signed, eight-hour session ID in an HttpOnly, SameSite=Strict cookie. The cookie is Secure except with HTTP on loopback. Sign out to revoke the session for all tabs that share it. A graph authorization failure also ends the session. The `/stage` page exists only when the firm demo starts the app. It signs a visitor in as the demo reviewer without a token, so it is never served by an app started with `npm start`. Restarting the process clears sessions. Run a single app process or route a session’s requests to the same instance.
 
 With JavaScript, one event stream stays open as the reviewer moves between reports. One follower per process reads the graph with the events token for every open tab. It starts with the first stream and stops when the last one closes. It follows the graph cursor and checks the write count because some ordinary observations produce no public event. If the graph refuses the events token, the streams end and the page says live updates were interrupted. The reviewer stays signed in. It catches up on history at a fresh connection and asks for one refresh of the open view. A reconnect carries the browser’s last event ID. Stopping the server ends each stream without a sign-out event, and the browser reconnects to the next process. Pages and forms work after an ordinary reload if streaming is unavailable.
 

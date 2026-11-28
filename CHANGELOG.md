@@ -201,6 +201,7 @@
 
 ### Reviewer screen
 
+- `REVIEW_TRUST_PROXY` has the review app read each sender's address from `x-forwarded-for`, so behind a proxy ten wrong tokens lock out one address and not every reviewer.
 - A `profile`'s date of birth and address are kept as written on its record, and shown on the account page only. `POST /review/api/called` with `every: true` adds `dob` and `address`.
 - Search finds a person by any part of their name. `lookup` `find` answers `by: "name"` for it, once the text is no ID and no ad click.
 - The account page lists every number and email read for its person, the newest first. `POST /review/api/called` takes `every: true` for up to 10 IDs and adds `phones` and `emails`.

@@ -1,3 +1,4 @@
+import { isIP } from 'node:net'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomBytes } from 'node:crypto'
 
@@ -19,6 +20,24 @@ interface Settings {
   secret?: string
   origin?: string
   legacyUrl?: string
+  /** How many proxies of your own stand in front: `true` for one, or a number. Each appends the address it took the request from. */
+  trustProxy?: boolean | number | string
+}
+
+/**
+ * An address written one way, so one sender is one sender: without a port or brackets, in lower case, and an IPv4 address
+ * inside an IPv6 one as itself. What is not an address is nothing.
+ */
+function plainAddress(written: string | undefined): string | undefined {
+  let address = (written ?? '').trim().toLowerCase()
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(address)
+  if (bracketed) address = bracketed[1]!
+  else if (/^\d+\.\d+\.\d+\.\d+:\d+$/.test(address)) address = address.slice(0, address.lastIndexOf(':'))
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(address)
+  if (mapped) address = mapped[1]!
+  if (isIP(address) === 0) return undefined
+  // An IPv6 address has many spellings. The URL parser writes each the one short way.
+  return isIP(address) === 6 ? new URL(`http://[${address}]`).hostname.slice(1, -1) : address
 }
 
 export function configure(settings: Settings = {}) {
@@ -35,7 +54,18 @@ export function configure(settings: Settings = {}) {
   // The graph's address can be internal. Link to the original screen only where the operator says reviewers can reach it.
   const legacyUrl = settings.stage ? '/legacy' : (settings.legacyUrl ?? process.env.REVIEW_LEGACY_URL) || undefined
   if (legacyUrl && !legacyUrl.startsWith('/') && !/^https?:$/.test(new URL(legacyUrl).protocol)) throw new Error('Set REVIEW_LEGACY_URL to an http or https address')
-  return { graphUrl, stage: settings.stage, origin, secret, eventsToken, legacy: legacyUrl || undefined, sessions: new Map<string, Reviewer>(), attempts: new Map<string, { count: number, since: number }>(), reportZone: undefined as string | undefined, stopped: new AbortController() }
+  // Behind a proxy every request comes from the proxy's address. With this set, the sender's own address is read from what the proxy wrote.
+  const trusted = settings.trustProxy ?? process.env.REVIEW_TRUST_PROXY ?? ''
+  const proxies = trusted === true || trusted === 'true' ? 1 : trusted === false || trusted === '' || trusted === 'false' ? 0 : Number(trusted)
+  if (!(Number.isInteger(proxies) && proxies >= 0 && proxies <= 10)) throw new Error('Set REVIEW_TRUST_PROXY to true, or to the number of proxies in front, up to 10')
+  /** Whose request this is: the address the connection came from, or the one your outermost proxy took it from. Earlier entries are the sender's own words. */
+  const addressOf = (forwarded: string | string[] | undefined, socket: string | undefined): string | undefined => {
+    if (proxies === 0) return socket
+    // Every entry keeps its place, an empty one too, so a gap cannot move an entry the sender wrote into a proxy's place.
+    const said = (Array.isArray(forwarded) ? forwarded.join(',') : forwarded ?? '').split(',')
+    return plainAddress(said.at(-proxies)) ?? socket
+  }
+  return { addressOf, graphUrl, stage: settings.stage, origin, secret, eventsToken, legacy: legacyUrl || undefined, sessions: new Map<string, Reviewer>(), attempts: new Map<string, { count: number, since: number }>(), reportZone: undefined as string | undefined, stopped: new AbortController() }
 }
 type Runtime = ReturnType<typeof configure>
 const scope = new AsyncLocalStorage<Runtime>()

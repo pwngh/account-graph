@@ -10,6 +10,8 @@ export async function reviewListener(settings = {}) {
   const config = configure(settings)
   const router = createRequestListener({build: config.origin ? {...build, allowedActionOrigins: [new URL(config.origin).host]} : build, mode: 'production'})
   const listener = (request, response) => {
+    // Node drops the headers past its limit without a word, and a proxy's own entry could be among them. Such a request is refused whole.
+    if (request.rawHeaders.length / 2 >= (request.socket.server?.maxHeadersCount || 2000)) return response.writeHead(431, {'content-type': 'text/plain'}).end('This request has too many headers.')
     response.setHeader('cache-control', 'no-store')
     response.setHeader('x-content-type-options', 'nosniff')
     if (request.method === 'POST') {
@@ -21,8 +23,9 @@ export async function reviewListener(settings = {}) {
       readFile(new URL('./build/client/assets/' + asset[1], import.meta.url)).then(body => {
         response.writeHead(200, {'content-type': {js:'text/javascript',css:'text/css',woff2:'font/woff2'}[asset[2]], 'cache-control':'public, max-age=31536000, immutable'}).end(request.method === 'HEAD' ? undefined : body)
       }, () => response.writeHead(404).end())
-    } else serveWith(config, () => router(request,response), request.socket.remoteAddress)
+    } else serveWith(config, () => router(request,response), config.addressOf(request.headers['x-forwarded-for'], request.socket.remoteAddress))
   }
+  listener.config = config
   listener.stop = () => { config.stopped.abort(); for (const session of config.sessions.values()) session.controller.abort(); config.sessions.clear() }
   return listener
 }
