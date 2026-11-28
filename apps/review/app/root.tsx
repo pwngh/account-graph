@@ -6,7 +6,8 @@ import { runtime } from './runtime.server'
 import { ZoneContext } from './views/shared'
 import { ViewMark, type ViewName } from './views/marks'
 import { affectsPage, oldBookmark, subjectAddress, subjectPath } from './navigation'
-import original from '../../../src/edge/review/style.css?url'
+// The original screen's stylesheet, which the app is drawn with. The app's own additions follow it.
+import original from './original.css?url'
 import additions from './style.css?url'
 export const links = () => [{rel: 'icon', type: 'image/svg+xml', href: '/favicon.ico'}, {rel: 'stylesheet', href: original}, {rel: 'stylesheet', href: additions}]
 export async function loader({request}: LoaderFunctionArgs) { return {name: (await current(request))?.name, legacy: runtime().legacy, live: Boolean(runtime().eventsToken), zone: await reviewerZone(request)} }
