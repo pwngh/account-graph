@@ -249,7 +249,13 @@ test('Matches skips pairs for this visit, restores them, and lists what the revi
   const joined = await fetch(address(upstream) + '/review/api/join', { method: 'POST', headers: { authorization: 'Bearer review-fixture', 'content-type': 'application/json' }, body: JSON.stringify({ a: c, b: d, by: 'dana', seen: await head('review-fixture') }) })
   assert.equal(joined.status, 200, await joined.clone().text())
   assert.match(await page('/decide'), /<h2>This session<\/h2>/)
+  // Dana's own decision on the pair named in the address is not news to Dana.
+  const named = '/decide?' + new URLSearchParams({ pair: c + '\n' + d })
+  assert.doesNotMatch(await page(named), /class="banner" role="status"/)
   const separated = await fetch(address(upstream) + '/review/api/separate', { method: 'POST', headers: { authorization: 'Bearer lee-fixture', 'content-type': 'application/json' }, body: JSON.stringify({ a: c, b: d, by: 'lee', seen: await head('lee-fixture') }) })
   assert.equal(separated.status, 200, await separated.clone().text())
   assert.doesNotMatch(await page('/decide'), /<h2>This session<\/h2>/)
+  // Open on that pair, Dana is told who decided it since, in either order of the two.
+  assert.match(await page(named), /<p class="banner" role="status"><b>lee<\/b> separated <bdi[^>]*>[^<]+<\/bdi> and <bdi[^>]*>[^<]+<\/bdi> <time/)
+  assert.match(await page('/decide?' + new URLSearchParams({ pair: d + '\n' + c })), /<b>lee<\/b> separated/)
 })
