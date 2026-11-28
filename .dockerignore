@@ -5,5 +5,12 @@ dist
 test
 tools
 examples
+!examples/firm
+apps/review/node_modules
+apps/review/build
+apps/review/test
+probe
 *.md
-.env
+# No file of settings or credentials goes into a build, wherever it lies.
+**/.env*
+**/.npmrc

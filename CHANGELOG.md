@@ -149,6 +149,9 @@
 
 ### Edge and operations
 
+- The review app has an image, `apps/review/Dockerfile`, and `compose.yaml` starts it on port 3100 (`REVIEW_PORT`), published on this machine only (`REVIEW_BIND`).
+- `node tools/stack-check.ts` signs in to a running stack as a reviewer and opens each page. CI runs it on the composed stack.
+- The review app refuses a `REVIEW_SESSION_SECRET` that begins with `change-me` when `REVIEW_ORIGIN` is outside your own machine, and treats an empty `REVIEW_ORIGIN` as not set.
 - A new PostgreSQL database is made in one step, from `src/store/schema.ts`. Breaking: a database made by a version before 0.1.0 is refused with `CONFIG.MISMATCH`; use a new database or schema.
 - A `profile` reads its policy from memory instead of the database. One profile sends 19 statements to PostgreSQL where it sent 28.
 - Breaking: `IDENTIFIER_SECRET` is required to start, and `identifierSecret` is required with `databaseUrl`. A memory graph given none makes its own.
