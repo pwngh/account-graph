@@ -15,6 +15,7 @@
  *
  * docs/operations.md lists every variable.
  */
+import { testReceiverAddress } from './client/providers.ts'
 import { readFileSync, realpathSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -148,6 +149,7 @@ export function readEnvironment(env: Env) {
     return problems.length > 0 ? undefined : value
   }
   const policy = policyGiven()
+  if (env.ADS_TEST_RECEIVER && !testReceiverAddress(env.ADS_TEST_RECEIVER)) wrong.push('ADS_TEST_RECEIVER must be an address on this machine, such as http://127.0.0.1:9000')
   for (const name of ['MICROSOFT_SANDBOX', 'META_CLIENT_USER_AGENT', 'GOOGLE_ADS_COSTS']) {
     if (env[name] && !['true', 'false'].includes(env[name]!)) wrong.push(`${name} must be true or false`)
   }
@@ -181,6 +183,7 @@ export function readEnvironment(env: Env) {
     outboxDelay: number('OUTBOX_DELAY_MS', 0),
     pauseAfterFailures: number('PAUSE_AFTER_FAILURES', 0),
     forgetAds: env.FORGET_ADS === 'true',
+    adsTestReceiver: env.ADS_TEST_RECEIVER || undefined,
     linkSecret: env.LINK_SECRET || undefined,
     identifierSecret: need('IDENTIFIER_SECRET'),
     alertWebhook: env.ALERT_WEBHOOK || undefined,
@@ -370,7 +373,7 @@ export function configFrom(env: Env): { graph: LocalOptions; edge: EdgeOptions; 
       ...(config.poolNumbers.length > 0 && { pool: { numbers: config.poolNumbers, minutes: config.poolMinutes, graceMinutes: config.poolGrace, requireTapAfterReassignment: config.poolRequireTapAfterReassignment } }),
     },
     ads: {
-      retractOnForget: config.forgetAds, delayMs: config.outboxDelay, pauseAfterFailures: config.pauseAfterFailures,
+      retractOnForget: config.forgetAds, delayMs: config.outboxDelay, ...(config.adsTestReceiver && { testReceiver: config.adsTestReceiver }), pauseAfterFailures: config.pauseAfterFailures,
       ...(google && { google }),
       ...(config.meta && { meta: { pixelId: config.meta.pixelId, accessToken: config.meta.accessToken, siteUrl: config.meta.url, clientUserAgent: config.meta.clientUserAgent, ...(config.meta.testEventCode && { testEventCode: config.meta.testEventCode }) } }),
       ...(config.tiktok && { tiktok: { pixelCode: config.tiktok.pixelCode, accessToken: config.tiktok.accessToken, siteUrl: config.tiktok.url, ...(config.tiktok.testEventCode && { testEventCode: config.tiktok.testEventCode }) } }),
