@@ -17,6 +17,8 @@ services:
 
   graph:
     build: .
+    # The server stops within ten seconds of being asked to.
+    stop_grace_period: 15s
     depends_on:
       postgres:
         condition: service_healthy

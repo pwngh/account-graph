@@ -41,7 +41,8 @@ export function createAddressVerifier(options: SmartyOptions): AddressVerifier {
     url.searchParams.set('candidates', '1')
     if (options.license) url.searchParams.set('license', options.license)
     const response = await fetcher(url.href, { headers: { authorization, accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
-    if (!response.ok) throw new Error(`Smarty rejected the address check with ${response.status}: ${(await response.text()).slice(0, 200)}`)
+    // What Smarty says back can quote the address, so only its status is kept.
+    if (!response.ok) throw new Error(`Smarty rejected the address check with ${response.status}`)
     const answer = (await response.json()) as unknown
     const found = Array.isArray(answer) ? answer[0] : undefined
     if (!found?.delivery_point_barcode) return undefined
