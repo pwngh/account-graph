@@ -97,11 +97,13 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
         return { entry, mark: entry.at > 0 ? add('chart.mark', id, { ...facts, entry }) : undefined, call, wait }
       })
       // The chart can show the last month, week or day of the journey, as the original screen's zoom does. The list below it is whole.
-      const zoom = query.get('zoom') ?? ''
-      const span = ZOOMS[zoom as keyof typeof ZOOMS]
-      if (span) qs.set('zoom', zoom)
       const dated = (entries as Row[]).filter(e => e.at > 0)
       const last = dated.at(-1)?.at ?? 0
+      // Only a zoom that leaves something out is one. Any other value is the whole chart.
+      const asked = query.get('zoom') ?? ''
+      const zoom = Object.hasOwn(ZOOMS, asked) && (dated[0]?.at ?? last) < last - ZOOMS[asked as keyof typeof ZOOMS] ? asked as keyof typeof ZOOMS : undefined
+      const span = zoom ? ZOOMS[zoom] : 0
+      if (zoom) qs.set('zoom', zoom)
       const positive = span ? dated.filter(e => e.at >= last - span) : dated
       report.zoom = { at: span ? zoom : 'All', from: span ? last - span : 0, spans: Object.keys(ZOOMS).filter(name => (dated[0]?.at ?? last) < last - ZOOMS[name as keyof typeof ZOOMS]) }
       const low = positive[0]?.at ?? 0

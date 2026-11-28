@@ -382,8 +382,8 @@ test('the Journey chart zooms to the last month, week or day, and the list stays
   assert.equal(visits(await page('?zoom=Day')), 1)
   // The list below is every event, whatever the chart shows.
   for (const i of [0, 1, 2, 3]) assert.match(week, new RegExp('Zoom ' + i))
-  // A zoom that is not one is the whole chart.
-  assert.deepEqual(zooms(await page('?zoom=Year')), ['All*', 'Month', 'Week', 'Day'])
+  // A zoom that is not one, or names a property every object has, is the whole chart.
+  for (const asked of ['Year', 'constructor']) assert.deepEqual([zooms(await page('?zoom=' + asked)), visits(await page('?zoom=' + asked))], [['All*', 'Month', 'Week', 'Day'], 4])
 })
 
 test('a reviewer says which record a call was with, and the call moves to the history of that record', async t => {
