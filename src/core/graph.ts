@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { malformed, refused } from '../contract/fault.ts'
 import { later, newest, worthOf } from './said.ts'
+import { called, madeByGraph } from './details.ts'
+import type { Called } from './details.ts'
 import { brokenAt, seal } from './audit.ts'
 import { board } from './board.ts'
 import type { BoardColumn, BoardPlace } from './board.ts'
@@ -187,6 +189,8 @@ export interface Graph {
   pay(payment: Payment): Promise<{ duplicate: boolean; value?: number }>
   /** Several people at once, as a list shows them, in the order given. */
   people(subjects: readonly Subject[], options?: { at?: number }): Promise<Person[]>
+  /** What to call each of these subjects, from the name, phone and email kept of the records in their group. One nothing is kept of is left out. */
+  called(subjects: readonly Subject[]): Promise<Record<Subject, Called>>
   /** Takes a recorded outcome out of the report because it turned out not to have happened. Resolves to false for an unknown id. */
   withdraw(transactionId: string): Promise<boolean>
   /**
@@ -1908,6 +1912,28 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           await revalue(tx, worth, undefined, 'payment')
         }
         return { duplicate: false, value: worth.value }
+      })
+    },
+
+    called(subjects) {
+      return store.read(async (tx) => {
+        const asked = unique(subjects)
+        const labels = await tx.labelsOf(asked)
+        const groups = new Map<Subject, Subject[]>()
+        for (const [member, label] of await tx.membersOf(unique([...labels.values()].map((label) => label.component)))) {
+          const group = groups.get(label.cluster)
+          if (group) group.push(member)
+          else groups.set(label.cluster, [member])
+        }
+        // A group far larger than a person is a fault in the matching. Fifty of it are enough to name one, your own records before those the graph made.
+        for (const [cluster, group] of groups) groups.set(cluster, [...group.filter((each) => !madeByGraph(each)).sort(), ...group.filter(madeByGraph).sort()].slice(0, 50))
+        const members = (subject: Subject) => groups.get(labels.get(subject)?.cluster ?? '') ?? [subject]
+        const kept = await tx.detailsOf(unique([...asked, ...asked.flatMap(members)]))
+        // Made from entries, so an ID such as `__proto__` is a name like any other.
+        return Object.fromEntries(asked.flatMap((subject) => {
+          const name = called(subject, members(subject), kept)
+          return Object.keys(name).length > 0 ? [[subject, name] as const] : []
+        }))
       })
     },
 
