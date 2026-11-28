@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ticksOf } from '../app/views/report-words.js'
+import { linkedBy, seenAs, ticksOf, tieWords } from '../app/views/report-words.js'
 import { csvCell } from '../app/csv.ts'
 import { startFirm } from '../../../examples/firm/firm.ts'
 import { readFileSync } from 'node:fs'
+
+test('why two records are linked is said in words, and a code that has none is shown as it is', () => {
+  assert.deepEqual(['email:abc', 'review:join-3', 'dial:CA77', 'passkey:k1'].map(linkedBy), ['Same email address', 'Joined by staff', 'Tapped the number on the site just before the call', 'passkey'])
+  assert.deepEqual(['called:abc', 'phone:abc', 'passkey:k1'].map(seenAs), ['Name on the record', 'Phone number', 'passkey:k1'])
+  // Under a name on a Journey the reasons are part of one line, so each begins small.
+  assert.equal(tieWords({ how: 'linked', score: 0.98, via: [], kinds: ['dial', 'device', 'passkey'] }, 'contact:1'), 'High confidence · 98% · tapped the number on the site just before the call, same browser or app, passkey')
+})
 
 test('the lines of the Journey chart fall on whole hours of the reviewer zone and name each day once', () => {
   const ticks = ticksOf(Date.UTC(2026, 10, 15, 23, 10), Date.UTC(2026, 10, 17, 0, 24), 'America/Chicago')
@@ -56,7 +63,7 @@ test('Matches has the queue beside the strongest pair, the two records side by s
   assert.match(html, new RegExp('<div class="versus-who">.*?title="' + a + '[" ].*?<div class="versus-who">.*?title="' + b + '[" ]'))
   for (const name of ['Identifiers', 'Events', 'Active', 'Linked IDs', 'Separated from']) assert.ok(html.includes('<div class="versus-name" role="rowheader">' + name + '</div>'), name)
   assert.match(html, /<p class="pair-effect" role="status">(After joining: \d+ (person|people) \(.+ IDs?\)|Joining changes no groups\.)<\/p>/)
-  assert.match(html, /<div class="pair-why"><p class="inbox-age"><span class="term">Evidence<button[^]*?<\/p><div class="reason"><b>\w+<\/b> \d+% · \d+ IDs · /)
+  assert.match(html, /<div class="pair-why"><p class="inbox-age"><span class="term">Evidence<button[^]*?<\/p><div class="reason"><b title="\w+">[A-Z][a-z][^<]+<\/b> \d+% · \d+ IDs · /)
   assert.match(html, /<summary aria-keyshortcuts="j">Join<kbd>J<\/kbd><\/summary>/)
   // The page holds the identifiers of the open pair, for Ignore, and of no other pair.
   const whole = await (await fetch(firm.graph + '/decide', { headers: { cookie } })).text()
@@ -450,6 +457,11 @@ test('a join a reviewer made is undone from the account page, and the two are un
   const after = await forms()
   const row = after.filter(form => form.other === 'contact:birch').map(form => form.intent).sort()
   assert.deepEqual([row, linked(after)], [['separate', 'unjoin'], ['separate']])
+  // Why each is linked is said in words, with the graph's code in the title. So is what was seen of the record.
+  const account = (await (await fetch(firm.graph + path, { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
+  for (const said of ['<b title="review">Joined by staff</b>', '<b title="email">Same email address</b>']) assert.ok(account.includes(said), said)
+  assert.match(account, /<td title="email:[0-9a-f]{64}">Email address<\/td>/)
+  assert.match(account, /<td title="review:join-\d+">Joined by staff<\/td>/)
   assert.equal((await post({ ...after.find(form => form.intent === 'unjoin'), reason: 'Joined the wrong Birch' })).status, 303)
   const last = await forms()
   assert.deepEqual([await members(), last.filter(form => form.other === 'contact:birch'), linked(last)], [['contact:ash', 'contact:cedar'], [], ['separate']])

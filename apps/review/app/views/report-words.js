@@ -11,8 +11,30 @@ export function tieWords(tie, subject) {
   if (!tie || tie.how === 'self') return ''
   const steps = tie.via.filter((each) => each !== subject)
   const chain = steps.length > 0 ? ` via ${steps.map(idText).join(' → ')}` : ''
-  return `${tie.how === 'cluster' ? 'Same person' : 'High confidence'}${tie.score === null ? '' : ` · ${percent(tie.score)}`}${tie.kinds.length > 0 ? ` · ${tie.kinds.join(', ')}` : ''}${chain}`
+  return `${tie.how === 'cluster' ? 'Same person' : 'High confidence'}${tie.score === null ? '' : ` · ${percent(tie.score)}`}${tie.kinds.length > 0 ? ` · ${tie.kinds.map(within).join(', ')}` : ''}${chain}`
 }
+/**
+ * Why two records are linked, in the words staff use, by the code the graph keeps before the colon of an identifier.
+ * Only the codes staff meet have words. Any other is shown as the code it is.
+ */
+const LINKED = {
+  review: 'Joined by staff', email: 'Same email address', phone: 'Same phone number', voip: 'Same internet phone number', device: 'Same browser or app',
+  ip: 'Same internet address', address: 'Same postal address', dial: 'Tapped the number on the site just before the call', lease: 'Called a tracking number shown to this one visitor',
+  text: 'Gave the code the site showed this one visitor', link: 'Opened a link sent to this person', carry: 'Came from another of your sites in the same browser',
+  behalf: 'Speaks for this person', named: 'Same name with the same phone or email',
+}
+/** What was seen of a record, for a list of its sightings. */
+const SEEN = {
+  review: 'Joined by staff', email: 'Email address', phone: 'Phone number', voip: 'Internet phone number', device: 'Browser or app', ip: 'Internet address',
+  address: 'Postal address', called: 'Name on the record', birth: 'Date of birth', dial: 'Tapped the number before a call', lease: 'Tracking number shown before a call',
+  text: 'Code the site showed', link: 'Link opened in a browser', place: 'Place of the visit',
+}
+const kindOf = identifier => identifier.slice(0, Math.max(0, identifier.indexOf(':'))) || identifier
+export const linkedBy = identifier => LINKED[kindOf(identifier)] ?? kindOf(identifier)
+export const seenAs = identifier => SEEN[kindOf(identifier)] ?? identifier
+/** The same, inside a sentence. A code that has no words stays as it is. */
+const within = kind => LINKED[kind] ? LINKED[kind][0].toLowerCase() + LINKED[kind].slice(1) : kind
+
 export function inShort(entry) {
   switch (entry.kind) {
     case 'visit': return visitWords(entry)
