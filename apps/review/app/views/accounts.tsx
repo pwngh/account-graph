@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Form, Link, useLocation, useSearchParams } from 'react-router'
+import { Form, Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { subjectPath } from '../navigation'
 import { amount, Author, Badge, type Called, CalledContext, Compare, DecisionForm, knownOf, Reasons, type Reason, DecisionScope, PageHead, percent, Scroll, shownPhone, Subject, Table, Tiles, Time, type WriteContext, CallerId } from './shared'
 import { ICONS, nameOf, PERSON, typeOf, type ClusterLayout } from './cluster-layout.js'
@@ -50,6 +50,12 @@ export function ClusterGraph({ layout }: { layout: ClusterLayout }) {
   const back = useRef<Element | null>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
   const drag = useRef<{ x: number, y: number, dx: number, dy: number, scale: number } | null>(null)
+  // A node dragged to where it reads best stays there until Reset. A press that moved it is not also a click.
+  const [moved, setMoved] = useState<Record<string, { x: number, y: number }>>({})
+  const carry = useRef<{ id: string, x: number, y: number, ox: number, oy: number, scale: number, far: boolean } | null>(null)
+  const stage = useRef<SVGSVGElement>(null)
+  const navigate = useNavigate()
+  const spot = (id: string) => moved[id] ?? layout.nodes.find(each => each.id === id)!
   const [left, top, width, height] = layout.viewBox.split(' ').map(Number)
   const zoom = (factor: number) => setCamera(view => ({ ...view, zoom: Math.min(8, Math.max(.5, view.zoom * factor)) }))
   const viewBox = [left + width / 2 - width / (2 * camera.zoom) + camera.dx, top + height / 2 - height / (2 * camera.zoom) + camera.dy, width / camera.zoom, height / camera.zoom].join(' ')
@@ -60,11 +66,23 @@ export function ClusterGraph({ layout }: { layout: ClusterLayout }) {
   }
   useEffect(() => { if (selected) closeButton.current?.focus({preventScroll:true}) }, [selected])
   useEffect(() => setReady(true), [])
+  // Ctrl or ⌘ with the wheel, or a pinch, zooms as on the original screen. The page scrolls otherwise.
+  useEffect(() => {
+    const svg = stage.current
+    if (!svg) return
+    const wheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return
+      event.preventDefault()
+      zoom(event.deltaY < 0 ? 1.15 : 1 / 1.15)
+    }
+    svg.addEventListener('wheel', wheel, { passive: false })
+    return () => svg.removeEventListener('wheel', wheel)
+  }, [])
   const kinds = { joined: 'Same person', related: 'Related', apart: 'Separated' }
   const visible = layout.paths.filter(edge => !off.includes(edge.kind) && (edge.kind === 'apart' || (edge.score ?? 0) * 100 >= score))
   return <><div className="graph" ref={diagram} onKeyDown={event => {
     if (event.key === 'Escape' && node) { event.preventDefault(); close() }
-  }}><div className="stage"><svg viewBox={viewBox} role="group" aria-label="Cluster graph" tabIndex={ready ? 0 : undefined}
+  }}><div className="stage"><svg ref={stage} viewBox={viewBox} role="group" aria-label="Cluster graph" tabIndex={ready ? 0 : undefined}
     onKeyDown={event => {
       if (event.target !== event.currentTarget) return
       const moves: Record<string, [number,number]> = { ArrowLeft: [-1,0], ArrowRight: [1,0], ArrowUp: [0,-1], ArrowDown: [0,1] }
@@ -86,14 +104,36 @@ export function ClusterGraph({ layout }: { layout: ClusterLayout }) {
     }}
     onLostPointerCapture={() => { drag.current = null }}><g>
     <g>{layout.hulls.map((d, i) => <path className="mine" key={i} d={d} strokeWidth={28}/>)}</g>
-    <g>{visible.map(edge => <g key={JSON.stringify([edge.a, edge.b])} className={'edge ' + edge.kind}><title>{edge.a + ' and ' + edge.b + ' · ' + edge.label}</title><path className="line" d={edge.d} strokeWidth={1 + 2 * (edge.score ?? 0)}/></g>)}</g>
-    <g>{visible.length <= 9 && visible.map(edge => <g className={'tag worded ' + edge.kind} key={JSON.stringify([edge.a, edge.b])} transform={'translate(' + edge.x + ' ' + edge.y + ')'}><rect x={-4 * edge.label.length - 4} y="-10" width={8 * edge.label.length + 8} height="20" rx="10"/><text textAnchor="middle" y="4">{edge.label}</text></g>)}</g>
-    <g>{layout.nodes.map(node => <a key={node.id} className={'node ' + node.role} href={subjectPath(node.id)} onClick={event => {
-      if (!ready || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-      event.preventDefault()
+    <g>{visible.map(edge => <g key={JSON.stringify([edge.a, edge.b])} className={'edge ' + edge.kind}><title>{edge.a + ' and ' + edge.b + ' · ' + edge.label}</title><path className="line" d={moved[edge.a] || moved[edge.b] ? 'M' + spot(edge.a).x + ' ' + spot(edge.a).y + 'L' + spot(edge.b).x + ' ' + spot(edge.b).y : edge.d} strokeWidth={1 + 2 * (edge.score ?? 0)}/></g>)}</g>
+    <g>{visible.length <= 9 && visible.map(edge => <g className={'tag worded ' + edge.kind} key={JSON.stringify([edge.a, edge.b])} transform={'translate(' + (moved[edge.a] || moved[edge.b] ? (spot(edge.a).x + spot(edge.b).x) / 2 + ' ' + (spot(edge.a).y + spot(edge.b).y) / 2 : edge.x + ' ' + edge.y) + ')'}><rect x={-4 * edge.label.length - 4} y="-10" width={8 * edge.label.length + 8} height="20" rx="10"/><text textAnchor="middle" y="4">{edge.label}</text></g>)}</g>
+    <g>{layout.nodes.map(node => <a key={node.id} className={'node ' + node.role} href={subjectPath(node.id)}
+      onPointerDown={event => {
+        if (!ready || event.button !== 0) return
+        const scale = stage.current?.getScreenCTM()?.a
+        if (!scale) return
+        event.stopPropagation()
+        const from = spot(node.id)
+        carry.current = { id: node.id, x: event.clientX, y: event.clientY, ox: from.x, oy: from.y, scale, far: false }
+        event.currentTarget.setPointerCapture(event.pointerId)
+      }}
+      onPointerMove={event => {
+        const held = carry.current
+        if (!held || held.id !== node.id) return
+        const [dx, dy] = [(event.clientX - held.x) / held.scale, (event.clientY - held.y) / held.scale]
+        if (!held.far && Math.hypot(dx, dy) * held.scale < 4) return
+        held.far = true
+        setMoved(spots => ({ ...spots, [node.id]: { x: held.ox + dx, y: held.oy + dy } }))
+      }}
+      onDoubleClick={event => { event.preventDefault(); navigate(subjectPath(node.id)) }}
+      onClick={event => {
+        // The click that ends a drag is the drag's.
+        if (carry.current?.far) { event.preventDefault(); carry.current = null; return }
+        carry.current = null
+        if (!ready || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
       back.current = event.currentTarget
       setSelected(node.id)
-    }} aria-label={node.id + ', ' + ({ me: 'this subject', member: 'same person', apart: 'kept apart', related: 'related' }[node.role] || node.role)}><g transform={'translate(' + node.x + ' ' + node.y + ')'}><title>{node.id}</title><circle className="halo" r={node.r + 7}/><circle className="disc" r={node.r}/><path className={ICONS[typeOf(node.id)] ? 'icon line' : 'icon'} d={ICONS[typeOf(node.id)] || PERSON} transform={'scale(' + node.r / 15 + ')'}/>{node.role === 'apart' && <path className="no" d={'M' + -node.r * .71 + ' ' + node.r * .71 + 'L' + node.r * .71 + ' ' + -node.r * .71}/>}<text className="name" textAnchor="middle" x={node.tx} y={node.ty - 2}>{nameOf(node.id)}</text><text className="type" textAnchor="middle" x={node.tx} y={node.ty + 13}>{typeOf(node.id)}</text></g></a>)}</g>
+    }} aria-label={node.id + ', ' + ({ me: 'this subject', member: 'same person', apart: 'kept apart', related: 'related' }[node.role] || node.role)}><g transform={'translate(' + spot(node.id).x + ' ' + spot(node.id).y + ')'}><title>{node.id}</title><circle className="halo" r={node.r + 7}/><circle className="disc" r={node.r}/><path className={ICONS[typeOf(node.id)] ? 'icon line' : 'icon'} d={ICONS[typeOf(node.id)] || PERSON} transform={'scale(' + node.r / 15 + ')'}/>{node.role === 'apart' && <path className="no" d={'M' + -node.r * .71 + ' ' + node.r * .71 + 'L' + node.r * .71 + ' ' + -node.r * .71}/>}<text className="name" textAnchor="middle" x={node.tx} y={node.ty - 2}>{nameOf(node.id)}</text><text className="type" textAnchor="middle" x={node.tx} y={node.ty + 13}>{typeOf(node.id)}</text></g></a>)}</g>
   </g></svg>{node && <aside className="card" aria-label={node.id}><button ref={closeButton} className="shut" aria-label="Close" type="button" onClick={close}>×</button><b className="title">{node.id}</b><p>{{ me: 'Selected ID', member: 'Same person', related: 'Related', apart: 'Separated' }[node.role] || 'Indirect'}</p>
     {layout.paths.filter(line => line.a === node.id || line.b === node.id).map(line => <div key={JSON.stringify([line.a,line.b])} className="reason"><b>{line.a === node.id ? line.b : line.a}</b> · {line.label}</div>)}
     <div className="row"><Link className="button primary" to={subjectPath(node.id)}>Open</Link><Link className="button" to={subjectPath(node.id) + '#links'}>Show links</Link></div></aside>}</div><div className="bar"><div className="keys">{Object.entries(kinds).map(([kind, name]) => {
@@ -101,6 +141,7 @@ export function ClusterGraph({ layout }: { layout: ClusterLayout }) {
     return count > 0 && (ready ? <button type="button" className={kind} key={kind} aria-pressed={!off.includes(kind)} onClick={() => setOff(off.includes(kind) ? off.filter(k => k !== kind) : [...off, kind])}><svg viewBox="0 0 22 8" aria-hidden="true" focusable="false"><line x1="2" y1="4" x2="20" y2="4"/></svg>{name}<span className="count">{count}</span></button> : <span key={kind}>{name} {count} </span>)
   })}{ready && <label className="least"><input aria-label="Minimum score, in percent" type="range" min="0" max="100" step="5" value={score} onChange={event => setScore(Number(event.target.value))}/><span>{score ? 'Score ≥ ' + score + '%' : 'All scores'}</span></label>}</div>{ready && <div className="tools"><button type="button" aria-label="Zoom in" onClick={() => zoom(1.25)}>+</button><button type="button" aria-label="Zoom out" onClick={() => zoom(.8)}>−</button><button type="button" aria-label="Reset the layout" onClick={() => {
     setCamera({ zoom: 1, dx: 0, dy: 0 })
+    setMoved({})
     setOff([])
     setScore(0)
     setSelected('')

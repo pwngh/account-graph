@@ -431,6 +431,37 @@ test('a form sent while the graph is away is answered, so its page is not replac
   }
 })
 
+test('Chrome drags a node of the cluster graph, zooms with Ctrl and the wheel, and opens a node on a double press', { skip: !process.env.CHROME && 'set CHROME to drag the cluster graph', timeout: 40000 }, async t => {
+  const { browse, until } = await import('../../../test/chrome.ts')
+  const b = await browse(origin + path)
+  t.after(b.close)
+  await until('the sign-in form', () => b.run("Boolean(document.querySelector('input[name=token]'))").catch(() => false))
+  await b.run(`{ const input = document.querySelector('input[name=token]'); input.value = ${JSON.stringify(reviewer)}; input.form.requestSubmit() }`)
+  await until('the graph ready', () => b.run("document.querySelector('.graph svg')?.getAttribute('tabindex') === '0'").catch(() => false))
+  await b.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false })
+  const node = `[...document.querySelectorAll('.graph a.node')].find(a => a.getAttribute('aria-label').startsWith(${JSON.stringify(other)}))`
+  const place = async () => JSON.parse(await b.run(`(() => { const a = ${node}; a.scrollIntoView({ block: 'center' }); const box = a.querySelector('.disc').getBoundingClientRect(); return JSON.stringify({ x: box.x + box.width / 2, y: box.y + box.height / 2, at: a.firstElementChild.getAttribute('transform') }) })()`))
+  const mouse = (type, x, y, more = {}) => b.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...more })
+  const before = await place()
+  await mouse('mousePressed', before.x, before.y)
+  for (const step of [10, 30, 60]) await mouse('mouseMoved', before.x + step, before.y + step / 2)
+  await mouse('mouseReleased', before.x + 60, before.y + 30)
+  const after = await place()
+  assert.notEqual(after.at, before.at, 'the node moved')
+  assert.equal(await b.run("Boolean(document.querySelector('.graph aside.card'))"), false, 'a drag opens no card')
+  // Ctrl and the wheel zoom the graph.
+  const view = () => b.run("document.querySelector('.graph svg').getAttribute('viewBox')")
+  const wide = await view()
+  await b.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: after.x, y: after.y, deltaX: 0, deltaY: -120, modifiers: 2 })
+  await until('the zoom', async () => (await view()) !== wide)
+  // A double press opens the record.
+  await mouse('mousePressed', after.x, after.y, { clickCount: 1 })
+  await mouse('mouseReleased', after.x, after.y, { clickCount: 1 })
+  await mouse('mousePressed', after.x, after.y, { clickCount: 2 })
+  await mouse('mouseReleased', after.x, after.y, { clickCount: 2 })
+  await until('the record opened', () => b.run(`location.pathname === ${JSON.stringify('/accounts/' + encodeURIComponent(other))}`).catch(() => false))
+})
+
 test('Chrome keeps a form open with what was typed when the graph does not answer, and sends it once the graph is back', { skip: !process.env.CHROME && 'set CHROME to check a form through an outage', timeout: 40000 }, async t => {
   const { browse, until } = await import('../../../test/chrome.ts')
   const { run, close: closeBrowser } = await browse(origin + path)
