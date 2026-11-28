@@ -49,13 +49,14 @@ export function ClusterGraph({ layout }: { layout: ClusterLayout }) {
   const diagram = useRef<HTMLDivElement>(null)
   const back = useRef<Element | null>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
-  const drag = useRef<{ x: number, y: number, dx: number, dy: number, scale: number } | null>(null)
+  const drag = useRef<{ x: number, y: number, dx: number, dy: number, scale: number, pointer: number } | null>(null)
   // A node dragged to where it reads best stays there until Reset. A press that moved it is not also a click.
   const [moved, setMoved] = useState<Record<string, { x: number, y: number }>>({})
   const carry = useRef<{ id: string, x: number, y: number, ox: number, oy: number, scale: number, far: boolean } | null>(null)
   const stage = useRef<SVGSVGElement>(null)
   const navigate = useNavigate()
-  const spot = (id: string) => moved[id] ?? layout.nodes.find(each => each.id === id)!
+  const spot = (id: string) => (Object.hasOwn(moved, id) ? moved[id] : undefined) ?? layout.nodes.find(each => each.id === id)!
+  const isMoved = (id: string) => Object.hasOwn(moved, id)
   const [left, top, width, height] = layout.viewBox.split(' ').map(Number)
   const zoom = (factor: number) => setCamera(view => ({ ...view, zoom: Math.min(8, Math.max(.5, view.zoom * factor)) }))
   const viewBox = [left + width / 2 - width / (2 * camera.zoom) + camera.dx, top + height / 2 - height / (2 * camera.zoom) + camera.dy, width / camera.zoom, height / camera.zoom].join(' ')
@@ -95,17 +96,19 @@ export function ClusterGraph({ layout }: { layout: ClusterLayout }) {
       if (event.button !== 0 || (event.target as Element).closest('a')) return
       const scale = event.currentTarget.getScreenCTM()?.a
       if (!scale) return
-      drag.current = { x: event.clientX, y: event.clientY, dx: camera.dx, dy: camera.dy, scale }
+      drag.current = { x: event.clientX, y: event.clientY, dx: camera.dx, dy: camera.dy, scale, pointer: event.pointerId }
       event.currentTarget.setPointerCapture(event.pointerId)
     }}
     onPointerMove={event => {
       const start = drag.current
-      if (start) setCamera(view => ({ ...view, dx: start.dx - (event.clientX - start.x) / start.scale, dy: start.dy - (event.clientY - start.y) / start.scale }))
+      // Only the pointer that began the pan moves it, so a node dragged by another pointer does not also pan.
+      if (start && start.pointer === event.pointerId) setCamera(view => ({ ...view, dx: start.dx - (event.clientX - start.x) / start.scale, dy: start.dy - (event.clientY - start.y) / start.scale }))
     }}
     onLostPointerCapture={() => { drag.current = null }}><g>
-    <g>{layout.hulls.map((d, i) => <path className="mine" key={i} d={d} strokeWidth={28}/>)}</g>
-    <g>{visible.map(edge => <g key={JSON.stringify([edge.a, edge.b])} className={'edge ' + edge.kind}><title>{edge.a + ' and ' + edge.b + ' · ' + edge.label}</title><path className="line" d={moved[edge.a] || moved[edge.b] ? 'M' + spot(edge.a).x + ' ' + spot(edge.a).y + 'L' + spot(edge.b).x + ' ' + spot(edge.b).y : edge.d} strokeWidth={1 + 2 * (edge.score ?? 0)}/></g>)}</g>
-    <g>{visible.length <= 9 && visible.map(edge => <g className={'tag worded ' + edge.kind} key={JSON.stringify([edge.a, edge.b])} transform={'translate(' + (moved[edge.a] || moved[edge.b] ? (spot(edge.a).x + spot(edge.b).x) / 2 + ' ' + (spot(edge.a).y + spot(edge.b).y) / 2 : edge.x + ' ' + edge.y) + ')'}><rect x={-4 * edge.label.length - 4} y="-10" width={8 * edge.label.length + 8} height="20" rx="10"/><text textAnchor="middle" y="4">{edge.label}</text></g>)}</g>
+    {/* The shading of a group is drawn where its members were placed, so it goes once one of them is moved. */}
+    <g>{Object.keys(moved).length === 0 && layout.hulls.map((d, i) => <path className="mine" key={i} d={d} strokeWidth={28}/>)}</g>
+    <g>{visible.map(edge => <g key={JSON.stringify([edge.a, edge.b])} className={'edge ' + edge.kind}><title>{edge.a + ' and ' + edge.b + ' · ' + edge.label}</title><path className="line" d={isMoved(edge.a) || isMoved(edge.b) ? 'M' + spot(edge.a).x + ' ' + spot(edge.a).y + 'L' + spot(edge.b).x + ' ' + spot(edge.b).y : edge.d} strokeWidth={1 + 2 * (edge.score ?? 0)}/></g>)}</g>
+    <g>{visible.length <= 9 && visible.map(edge => <g className={'tag worded ' + edge.kind} key={JSON.stringify([edge.a, edge.b])} transform={'translate(' + (isMoved(edge.a) || isMoved(edge.b) ? (spot(edge.a).x + spot(edge.b).x) / 2 + ' ' + (spot(edge.a).y + spot(edge.b).y) / 2 : edge.x + ' ' + edge.y) + ')'}><rect x={-4 * edge.label.length - 4} y="-10" width={8 * edge.label.length + 8} height="20" rx="10"/><text textAnchor="middle" y="4">{edge.label}</text></g>)}</g>
     <g>{layout.nodes.map(node => <a key={node.id} className={'node ' + node.role} href={subjectPath(node.id)}
       onPointerDown={event => {
         if (!ready || event.button !== 0) return
@@ -124,10 +127,16 @@ export function ClusterGraph({ layout }: { layout: ClusterLayout }) {
         held.far = true
         setMoved(spots => ({ ...spots, [node.id]: { x: held.ox + dx, y: held.oy + dy } }))
       }}
-      onDoubleClick={event => { event.preventDefault(); navigate(subjectPath(node.id)) }}
+      onPointerCancel={() => { carry.current = null }}
+      onDoubleClick={event => {
+        // With a key held, the browser does what it does with a link.
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        navigate(subjectPath(node.id))
+      }}
       onClick={event => {
-        // The click that ends a drag is the drag's.
-        if (carry.current?.far) { event.preventDefault(); carry.current = null; return }
+        // The click that ends a drag is the drag's. Enter on a focused node is no drag's.
+        if (carry.current?.far && event.detail > 0) { event.preventDefault(); carry.current = null; return }
         carry.current = null
         if (!ready || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
         event.preventDefault()
