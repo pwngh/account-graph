@@ -43,7 +43,8 @@ export function createAddressVerifier(options: SmartyOptions): AddressVerifier {
     const response = await fetcher(url.href, { headers: { authorization, accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
     // What Smarty says back can quote the address, so only its status is kept.
     if (!response.ok) {
-      await response.body?.cancel().catch(() => {})
+      // Let go of the connection without waiting for whatever is left of the answer.
+      void response.body?.cancel().catch(() => {})
       throw new Error(`Smarty rejected the address check with ${response.status}`)
     }
     const answer = (await response.json()) as unknown
