@@ -100,7 +100,14 @@ a.sort:hover { color: var(--ink); }
 .say { height: auto; min-height: 0; line-height: 1.7; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--faint); font: inherit; font-size: var(--small); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .say:hover { color: var(--ink); }
 .what > .say { margin-left: 8px; }
+.call-with { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; }
+.call-with legend { padding: 0; margin-bottom: 6px; font-weight: 600; }
+.call-with label { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
+.call-with input[type=radio] { min-height: 0; width: 14px; height: 14px; margin: 0; padding: 0; accent-color: var(--ink); }
+.call-with .pick { grid-template-columns: minmax(0, 1fr); gap: 3px; color: var(--faint); font-size: var(--small); }
+.call-with .pick :is(select, input) { width: 100%; }
 .say-pop form { display: grid; gap: 10px; }
 .said:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; border-radius: 4px; }
 .say-pop p { margin: 0; }
+.say-pop .say-wrong { margin-top: 10px; }
 .say-pop button { justify-self: start; }

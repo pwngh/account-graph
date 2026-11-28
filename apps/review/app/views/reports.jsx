@@ -124,8 +124,31 @@ function Board({ data }) {
 }
 
 const kinds = Object.keys(WHAT)
-function Story({ entry, icon, at }) {
-  return <>{told(entry, icon).map((part,i) => <Fragment key={i}>{part}</Fragment>)}{at != null && <TakeBack entry={entry} at={at}/>}</>
+function Story({ entry, icon, at, records }) {
+  return <>{told(entry, icon).map((part,i) => <Fragment key={i}>{part}</Fragment>)}{at != null && <TakeBack entry={entry} at={at}/>}{at != null && records && <CallWith entry={entry} at={at} records={records}/>}</>
+}
+/**
+ * Two people can use one line. A reviewer says which record a call was with, or that somebody spoke for that record's person.
+ * The records offered are this history's own, where the firm made it, and those that hold the caller's number. Any other is named by its ID.
+ * The form carries the statement the page showed, and the server takes the new one only while that one still stands.
+ */
+function CallWith({ entry, at, records }) {
+  const snapshot = useContext(reportSnapshot)
+  const named = useNamed()
+  if (entry.kind !== 'call') return null
+  const party = entry.call.party
+  // The record that stands is always among the choices. With none standing nothing is chosen for the reviewer.
+  const options = [...new Set([party?.subject, ...records].filter(Boolean))]
+  return <SayOfCall look="pop" title={<>Call, <Time at={entry.at} short/></>} intent="party" call={entry.call.id} formKey={snapshot} at={at} label={party ? 'Change who it was' : 'Say who it was'} submit="Save">
+    <input type="hidden" name="seen" value={party ? [party.by, party.at, party.role].join(' ') : ''}/><input type="hidden" name="was" value={party?.subject ?? ''}/>
+    <fieldset className="call-with"><legend>This call was with</legend>
+      {options.length > 0 && <label className="pick">Record<select name="subject" defaultValue={party?.subject ?? ''}>{!party && <option value="">Choose a record</option>}{options.map(id => <option key={id} value={id}>{named(id) === id ? id : named(id) + ' · ' + id}</option>)}</select></label>}
+      <label className="pick">{options.length > 0 ? 'Or another record, by its ID' : 'Record ID'}<input name="other" autoComplete="off" spellCheck="false"/></label>
+      <label><input type="radio" name="role" value="self" required defaultChecked={party?.role === 'self'}/><span>They were on the call</span></label>
+      <label><input type="radio" name="role" value="representative" defaultChecked={party?.role === 'representative'}/><span>Somebody spoke for them</span></label>
+    </fieldset>
+    <p>A call that is named belongs to that record alone, with its outcome and its value, and moves to that record's history. No new conversion is sent to an ad platform for it. It is recorded under your name.</p>
+  </SayOfCall>
 }
 /**
  * What a reviewer said of a call can be taken back from the call's row: that it was not a lead, or that the caller was reached.
@@ -201,7 +224,7 @@ function Journey({ data }) {
     <Tiles items={[[ 'Events', amount(data.events.length) + (journey.next === null ? '' : '+')], [['IDs', 'journeyIds'], amount(Object.keys(journey.subjects).length)], dates.length > 0 && ['First event', <Time at={dates[0]} short/>], dates.length > 0 && ['Last event', <Time at={dates.at(-1)} short/>, dates.at(-1) > dates[0] && lasted(dates.at(-1) - dates[0]) + ' later'] ]}/>{journey.more > 0 && <p className="meta">{amount(journey.more)} more IDs are not shown.</p>}
     <Chart events={visible} groups={data.groups} cards={cards}/></section><section><h2>Timeline</h2><Answer result={said.data}/>
     {enhanced && <div className="row filters" role="group" aria-label="Show">{kinds.filter(kind => data.events.some(e => e.entry.kind === kind)).map(kind => <label key={kind} className={kind}><input type="checkbox" checked={!hidden.includes(kind)} onChange={() => setHidden(hidden.includes(kind) ? hidden.filter(k => k !== kind) : [...hidden,kind])}/><Glyph kind={kind}/>{WHAT[kind]}<span className="count">{amount(data.events.filter(e => e.entry.kind === kind).length)}</span></label>)}</div>}
-    {days.size === 0 && <p className="muted">All event types are hidden.</p>}<div className="wide timeline"><ol className="journey">{[...days].map(([day, events]) => <li className="day" key={day}><h3>{day}</h3><ol>{events.map(({entry, mark, call, wait}, i) => <li className="timeline-entry" key={mark ?? i} id={call ? 'call-' + encodeURIComponent(entry.call.id) : undefined}><span className="num">{entry.at > 0 ? <time dateTime={new Date(entry.at).toISOString()} title={stamp(entry.at, zone)}>{hourOf(entry.at, zone)}</time> : <span className="muted">No data</span>}</span><span className={'chip kind ' + entry.kind}><Glyph kind={looksLike(entry)}/>{WHAT[entry.kind]}</span><div className="what"><Story entry={entry} icon={call && <Detail card={cards[call]}/>} at={data.at}/></div><div className="why"><Subject id={entry.subject}/>{mark && <Detail card={cards[mark]} id={mark} title={WHAT[entry.kind] + ' details'}/>}{wait && <Detail card={cards[wait]} id={wait} title={cards[wait]?.title}/>}<span className="reason">{tieWords(journey.subjects[entry.subject],which)}</span></div></li>)}</ol></li>)}</ol></div>{journey.next != null && <Link className="button" to={data.canonical + '?before=' + journey.next}>Show earlier</Link>}</section></>
+    {days.size === 0 && <p className="muted">All event types are hidden.</p>}<div className="wide timeline"><ol className="journey">{[...days].map(([day, events]) => <li className="day" key={day}><h3>{day}</h3><ol>{events.map(({entry, mark, call, wait}, i) => <li className="timeline-entry" key={mark ?? i} id={call ? 'call-' + encodeURIComponent(entry.call.id) : undefined}><span className="num">{entry.at > 0 ? <time dateTime={new Date(entry.at).toISOString()} title={stamp(entry.at, zone)}>{hourOf(entry.at, zone)}</time> : <span className="muted">No data</span>}</span><span className={'chip kind ' + entry.kind}><Glyph kind={looksLike(entry)}/>{WHAT[entry.kind]}</span><div className="what"><Story entry={entry} icon={call && <Detail card={cards[call]}/>} at={data.at} records={data.records}/></div><div className="why"><Subject id={entry.subject}/>{mark && <Detail card={cards[mark]} id={mark} title={WHAT[entry.kind] + ' details'}/>}{wait && <Detail card={cards[wait]} id={wait} title={cards[wait]?.title}/>}<span className="reason">{tieWords(journey.subjects[entry.subject],which)}</span></div></li>)}</ol></li>)}</ol></div>{journey.next != null && <Link className="button" to={data.canonical + '?before=' + journey.next}>Show earlier</Link>}</section></>
 }
 
 const measures = [['calls','All calls'],['answered','Answered'],['missed','Missed'],['voicemail','Voicemail'],['unknown','Unknown'],['waiting','Waiting for result'],['returned','Returned']]
