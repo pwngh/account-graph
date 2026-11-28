@@ -50,9 +50,10 @@ export async function tokenRoutes(local: AccountGraph) {
           else assert.equal(status, refused, name + ' ' + key)
         }
       }
-      for (const path of ['/health', '/review', '/collect.js', '/fingerprint.js']) assert.equal((await ask(key, path, 'GET')).status, 200, path)
+      for (const path of ['/health', '/collect.js', '/fingerprint.js']) assert.equal((await ask(key, path, 'GET')).status, 200, path)
       for (const path of ['/collect', '/carry', '/event', '/text-code', '/number', '/calls/twilio', '/texts/twilio']) assert.equal((await ask(key, path)).status, 403, path)
       for (const path of ['/metrics', '/stats', '/observe', '/v1/other']) assert.equal((await ask(key, path)).status, 404, path)
+      assert.equal((await ask(key, '/review', 'GET')).status, 404)
       assert.equal((await ask(key, '/v1/record', 'GET')).status, 405)
       const fields = { at, key: 'entry-' + n }
       const entries: RecordEntry[] = [

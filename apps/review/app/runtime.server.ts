@@ -19,7 +19,6 @@ interface Settings {
   eventsToken?: string
   secret?: string
   origin?: string
-  legacyUrl?: string
   /** Where a record of the firm's is in the firm's own system, by the kind its ID begins with: `{"contact":"https://crm.example.org/contacts/{id}"}`. As JSON text or as an object. */
   recordLinks?: string | Record<string, string>
   /** How many proxies of your own stand in front: `true` for one, or a number. Each appends the address it took the request from. */
@@ -53,9 +52,6 @@ export function configure(settings: Settings = {}) {
   // The secret in compose.yaml is in the repository for anyone to read, so it is only for trying the app out on your own machine.
   if (secret.startsWith('change-me') && origin && !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[^/]+\.localhost)(:\d+)?$/.test(origin)) throw new Error(`Change REVIEW_SESSION_SECRET before serving reviewers at ${origin}`)
   const eventsToken = settings.eventsToken ?? process.env.REVIEW_EVENTS_TOKEN
-  // The graph's address can be internal. Link to the original screen only where the operator says reviewers can reach it.
-  const legacyUrl = settings.stage ? '/legacy' : (settings.legacyUrl ?? process.env.REVIEW_LEGACY_URL) || undefined
-  if (legacyUrl && !legacyUrl.startsWith('/') && !/^https?:$/.test(new URL(legacyUrl).protocol)) throw new Error('Set REVIEW_LEGACY_URL to an http or https address')
   // A record's page links to the same record in the firm's own system, where the firm says how its addresses are made.
   // Each pattern is an https address with {id} where the rest of the ID goes, so a pattern cannot be turned into a link of another kind.
   let patterns: Record<string, string> = {}
@@ -87,7 +83,7 @@ export function configure(settings: Settings = {}) {
     const said = (Array.isArray(forwarded) ? forwarded.join(',') : forwarded ?? '').split(',')
     return plainAddress(said.at(-proxies)) ?? socket
   }
-  return { addressOf, recordLink, graphUrl, stage: settings.stage, origin, secret, eventsToken, legacy: legacyUrl || undefined, sessions: new Map<string, Reviewer>(), attempts: new Map<string, { count: number, since: number }>(), reportZone: undefined as string | undefined, stopped: new AbortController() }
+  return { addressOf, recordLink, graphUrl, stage: settings.stage, origin, secret, eventsToken, sessions: new Map<string, Reviewer>(), attempts: new Map<string, { count: number, since: number }>(), reportZone: undefined as string | undefined, stopped: new AbortController() }
 }
 type Runtime = ReturnType<typeof configure>
 const scope = new AsyncLocalStorage<Runtime>()

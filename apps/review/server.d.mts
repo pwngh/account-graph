@@ -5,7 +5,6 @@ interface Settings {
   graphUrl?: string
   eventsToken?: string
   secret?: string
-  legacyUrl?: string
   stage?: Stage
   /** How many proxies of your own stand in front: `true` for one, or a number. */
   trustProxy?: boolean | number | string

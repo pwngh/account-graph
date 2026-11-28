@@ -374,7 +374,7 @@ if (!url) {
       assert.ok(lines.includes('collect accepts https://site.example'))
       assert.deepEqual(await (await fetch(`${base}/health`)).json(), { ok: true })
       assert.equal((await fetch(`${base}/collect.js`)).status, 200)
-      assert.equal((await fetch(`${base}/review`)).status, 200)
+      assert.equal((await fetch(`${base}/review`)).status, 404)
 
       const visit = await fetch(`${base}/collect`, { method: 'POST', headers: { origin: 'https://site.example' }, body: JSON.stringify({ device: 'd-1', touch: { gclid: 'G1' } }) })
       assert.equal(visit.status, 204)

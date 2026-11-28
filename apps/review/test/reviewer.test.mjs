@@ -311,10 +311,10 @@ test('an account page links to the same record in the system of the firm, where 
   for (const settings of [{}, { recordLinks: { contact: 'https://crm.example.org/contacts/{id}' } }]) assert.doesNotMatch(await page(settings), /Open in /)
 })
 
-test('the original screen is linked only at REVIEW_LEGACY_URL, never at the graph address', async () => {
+test('no page links to the original screen or to the graph address', async () => {
   const { reviewServer } = await import('../server.mjs')
-  const pages = async settings => {
-    const standalone = await reviewServer({ port: 0, host: '127.0.0.1', ...settings })
+  const pages = async () => {
+    const standalone = await reviewServer({ port: 0, host: '127.0.0.1' })
     try {
       const url = address(standalone)
       const headers = { cookie: cookieFrom(await fetch(url + '/signin', post({ token: reviewer }, undefined, url))) }
@@ -323,18 +323,11 @@ test('the original screen is linked only at REVIEW_LEGACY_URL, never at the grap
       await close(standalone)
     }
   }
-  const unset = await pages({})
-  assert.ok(!unset.includes(process.env.REVIEW_GRAPH_URL), 'the graph address is not in the page')
-  assert.doesNotMatch(unset, /href="[^"]*#\/(health|channels|decide)"/)
-  // Health and Channels are whole in the app. Only Matches names the original screen, for the records its queue leaves out.
-  assert.match(unset, /Check older records on the original reviewer screen\./)
-  assert.doesNotMatch(unset, /Open the full|has the full/)
-  for (const title of ['Health', 'Channels', 'Matches']) assert.match(unset, new RegExp('<h2 class="page-title"><svg[^>]*>.*?</svg>' + title + '</h2>'))
-  const set = await pages({ legacyUrl: 'https://graph.example.org/review' })
-  assert.ok(set.includes('<a href="https://graph.example.org/review#/decide">Check older records on the original reviewer screen</a>'))
-  assert.doesNotMatch(set, /#\/(health|channels)"/)
-  assert.ok(!set.includes(process.env.REVIEW_GRAPH_URL))
-  await assert.rejects(reviewServer({ port: 0, host: '127.0.0.1', legacyUrl: 'javascript:alert(1)' }).then(async server => { await close(server); return server }), /REVIEW_LEGACY_URL/)
+  const shown = await pages()
+  assert.ok(!shown.includes(process.env.REVIEW_GRAPH_URL), 'the graph address is not in the page')
+  assert.doesNotMatch(shown, /href="[^"]*(#\/|\/legacy\b|\/review\b)/)
+  assert.doesNotMatch(shown, /original reviewer screen|Open the full|has the full/)
+  for (const title of ['Health', 'Channels', 'Matches']) assert.match(shown, new RegExp('<h2 class="page-title"><svg[^>]*>.*?</svg>' + title + '</h2>'))
 })
 
 test('pasted and linked subjects reopen the same record with their ID preserved', async () => {

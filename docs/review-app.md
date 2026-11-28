@@ -78,7 +78,6 @@ npm --prefix apps/review start
 | `REVIEW_TRUST_PROXY` | `true` when one proxy of your own stands in front, or the number of them, up to 10. The app then reads each sender's address from `x-forwarded-for`, counting that many entries from the end. Earlier entries are the sender's own words. Leave it out when the app is reached directly, or anybody could name any address. |
 | `REVIEW_EVENTS_TOKEN` | Server-only graph token for the `events` call. A [named token](operations.md#tokens) whose `calls` are `{"events": true}` is enough, and is all the app should hold. Compose makes one, `review-app`, with this token. If you set `SERVICE_TOKENS` yourself, keep that entry in your list, or pages stop updating by themselves. Without it, pages open no event stream and say that live updates are off. Opening or reloading a page still reads the graph. |
 | `REVIEW_RECORD_LINKS` | Where a record is in your own system, as JSON by the kind its ID begins with, such as `{"contact":"https://crm.example.org/contacts/{id}"}`. `{id}` is the rest of the ID. An account page then has a link there. Each address must be `https`. |
-| `REVIEW_LEGACY_URL` | Address reviewers use to open the original screen, such as `https://graph.example.org/review`. Matches links to it, for the records its queue leaves out. Without it, Matches names the original screen without a link. The graph's own address is never shown. |
 | `HOST`, `PORT` | Production listener address and port, default `127.0.0.1` and `3000`. |
 
 `npm start` runs `server.mjs`, a small Node HTTP server around the request handler from `@react-router/node`. It serves the built assets and checks the Origin of every form post.
@@ -93,7 +92,7 @@ A page that reads itself again, after a change or on its first load, keeps what 
 
 ## Times
 
-The server writes every time on the page. On the first load with JavaScript, the browser stores its time zone in the `review_zone` cookie and reads the page again, so times appear in the reviewer's zone, with its abbreviation. Before that, and with JavaScript off, times are in the report's zone, the graph's `timeZone`, or UTC if the graph cannot say. Report periods such as Board and Calls dates stay in the report's zone, as on the original screen.
+The server writes every time on the page. On the first load with JavaScript, the browser stores its time zone in the `review_zone` cookie and reads the page again, so times appear in the reviewer's zone, with its abbreviation. Before that, and with JavaScript off, times are in the report's zone, the graph's `timeZone`, or UTC if the graph cannot say. Report periods such as Board and Calls dates stay in the report's zone.
 
 ## Views
 
@@ -103,13 +102,13 @@ The server writes every time on the page. On the first load with JavaScript, the
 | `/journey/:subject` | Timeline and chart for the person. A call shown as reported returned, or as not a lead, has Take back. A call's row has a form for which record it was with, as [Recording who was on one call](calls.md#recording-who-was-on-one-call) describes. |
 | `/board/:days` | Missed calls and people by their furthest step. A card in Missed calls has the same Reached them and Not a lead as Calls. A column shows fifty people, and its foot reads it on. |
 | `/calls` | Missed calls, call outcomes, coverage and supporting detail. On the open missed call a reviewer records Reached them or Not a lead, signed with their name. The graph server must be one that takes these from a reviewer. |
-| `/decide` | The queue of pending matches beside the open pair: the two records side by side, the evidence, what joining would do, and Join, Separate and Skip with the J, K and S keys. `/decide?pair=` opens one pair. It says when pairs among older sightings are not in the queue, and links to the original screen, whose Check older records reaches them. |
+| `/decide` | The queue of pending matches beside the open pair: the two records side by side, the evidence, what joining would do, and Join, Separate and Skip with the J, K and S keys. `/decide?pair=` opens one pair. It says when pairs among older sightings are not in the queue. The `full` mode of [`/review/api/undecided`](operations.md#reviewer-screen) reaches them. |
 | `/channels` | What each campaign cost and brought in for a period: six totals with the change from the days before, the campaigns ranked by a measure, the table with a breakdown and a cost per chosen step, platform-reported conversions, time to convert, value changes and what followed calls. `/channels/csv` gives the table as a file. |
 | `/health` | What needs someone, first. Then each feed with a card, the jobs, what waits to be sent, rejected conversions with Retry, the matching rules, the audit hash and conflicting decisions. |
 
-Each page has its guide beside the title: a few sentences about what the page is for, each with a picture. With JavaScript off the guide opens as the list of its sentences. The guides are the existing screen's, and a test holds the two together.
+Each page has its guide beside the title: a few sentences about what the page is for, each with a picture. With JavaScript off the guide opens as the list of its sentences. The guides are the original screen's.
 
-The existing screen remains at `/review` on the graph server and at `/legacy` in the firm demo. It uses its own sign-in. The app links to it only at `REVIEW_LEGACY_URL`, or at `/legacy` in the demo. Opening an old `/review#/…` bookmark on the new app converts the fragment to a path when JavaScript runs. Call date ranges and links to a call on a journey keep their targets. Channels bookmarks keep their days, breakdown and steps. With scripts off the browser sends only `/review`. Use the Accounts link and navigation.
+The graph server no longer serves a screen at `/review`. Opening an old `/review#/…` bookmark on the new app converts the fragment to a path when JavaScript runs. Call date ranges and links to a call on a journey keep their targets. Channels bookmarks keep their days, breakdown and steps. With scripts off the browser sends only `/review`. Use the Accounts link and navigation.
 
 ## Tests
 

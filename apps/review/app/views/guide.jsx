@@ -1,5 +1,5 @@
 // The guide of each view: a few sentences, each with a picture that moves into the next.
-// The words, the pictures and the drawing are the original screen's (src/edge/review/help.js), and a test holds the two together.
+// The words, the pictures and the drawing are the original screen's, now kept here.
 import { useEffect, useId, useRef, useState } from 'react'
 import { ICONS, PERSON } from './cluster-layout.js'
 import { GLYPHS, VIEW_ICONS, ViewMark } from './marks'

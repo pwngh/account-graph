@@ -517,7 +517,7 @@ A form's consent to texts belongs there too: the wording shown, when, and by who
 
 ## Calls view
 
-Open `/review#/calls`. The view is read-only and covers the days you pick, in the server's time zone.
+Open **Calls** in the [review app](review-app.md). The page covers the days you pick, in the server's time zone.
 
 | Section | Shows |
 | --- | --- |
