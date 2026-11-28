@@ -22,19 +22,21 @@ function pageOf(profile: KnownProfile, wanted: number, narrowed: Narrowed = {}):
   const { links: allLinks, separated: allSeparated, verdicts, edges, apart, cluster, dates, history: allHistory, ...rest } = profile
   // A link is in one of four groups, as the table shows it.
   const statusOf = (link: KnownProfile['links'][number]) => link.level !== 'same' ? 'Related' : cluster.members.includes(link.subject) ? 'Same person' : 'High confidence'
-  const rows = [...allLinks.map(link => ({ id: link.subject, status: [statusOf(link)], kind: kindsOf(link.reasons), type: [typeOf(link.subject)] })), ...allSeparated.map(id => ({ id, status: ['Separated'], kind: [] as string[], type: [typeOf(id)] }))]
+  const rows = [...allLinks.map(link => ({ link, id: link.subject, status: [statusOf(link)], kind: kindsOf(link.reasons), type: [typeOf(link.subject)] })), ...allSeparated.map(id => ({ link: undefined, id, status: ['Separated'], kind: [] as string[], type: [typeOf(id)] }))]
   // Words are looked for in what a row shows: its ID, its status and the kinds of what it shares.
   const has = (words: string | undefined, ...texts: string[]) => !words || texts.join(' ').toLowerCase().includes(words.toLowerCase())
-  const keeps = (row: { id: string } & Record<'status' | 'kind' | 'type', string[]>) => (['status', 'kind', 'type'] as const).every(name => !narrowed[name] || row[name].includes(narrowed[name])) && has(narrowed.words, row.id, ...row.status, ...row.kind)
-  const kept = new Set(rows.filter(keeps).map(row => row.id))
-  const links = allLinks.filter(link => kept.has(link.subject))
-  const separated = allSeparated.filter(id => kept.has(id))
+  /** Whether a row holds every value chosen, but one column's, so that column's counts say what choosing each of its values would show. */
+  const keeps = (row: (typeof rows)[number], but?: 'status' | 'kind' | 'type') => (['status', 'kind', 'type'] as const).every(name => name === but || !narrowed[name] || row[name].includes(narrowed[name])) && has(narrowed.words, row.id, ...row.status, ...row.kind)
+  const shownRows = rows.filter(row => keeps(row))
+  const links = shownRows.flatMap(row => row.link ? [row.link] : [])
+  const separated = shownRows.flatMap(row => row.link ? [] : [row.id])
   const sightings = allHistory.map(row => ({ row, event: row.event ? [row.event] : [], seen: [typeOf(row.identifier)] }))
-  const history = sightings.filter(each => (!narrowed.event || each.event.includes(narrowed.event)) && (!narrowed.seen || each.seen.includes(narrowed.seen)) && has(narrowed.saw, each.row.event ?? '', each.row.identifier)).map(each => each.row)
+  const seenKeeps = (each: (typeof sightings)[number], but?: 'event' | 'seen') => (['event', 'seen'] as const).every(name => name === but || !narrowed[name] || each[name].includes(narrowed[name])) && has(narrowed.saw, each.row.event ?? '', each.row.identifier)
+  const history = sightings.filter(each => seenKeeps(each)).map(each => each.row)
   const filters = {
-    links: { Status: tally(rows.map(row => row.status)), Identifier: tally(rows.map(row => row.kind)), Type: tally(rows.map(row => row.type)) },
-    sightings: { Event: tally(sightings.map(each => each.event)), Identifier: tally(sightings.map(each => each.seen)) },
-    shown: links.length + separated.length, seen: history.length, total: allHistory.length,
+    links: { Status: tally(rows.filter(row => keeps(row, 'status')).map(row => row.status)), Identifier: tally(rows.filter(row => keeps(row, 'kind')).map(row => row.kind)), Type: tally(rows.filter(row => keeps(row, 'type')).map(row => row.type)) },
+    sightings: { Event: tally(sightings.filter(each => seenKeeps(each, 'event')).map(each => each.event)), Identifier: tally(sightings.filter(each => seenKeeps(each, 'seen')).map(each => each.seen)) },
+    shown: links.length + separated.length, seen: history.length, total: allHistory.length, lastSeen: allHistory.reduce((top, row) => Math.max(top, row.at), 0),
   }
   const size = links.length + separated.length
   const start = Math.min(Math.max(0, Math.ceil(size / 50) - 1), wanted) * 50
@@ -63,7 +65,7 @@ export function loadAccounts(request: Request, subject?: string) {
     const selected = subject ?? clusters[0]?.id
     const profile = selected ? await get('subject', {subject: selected}) : undefined
     const wanted = Math.max(0, Math.floor(Number(query.get('links')) || 0))
-    const narrowed = Object.fromEntries((['status', 'kind', 'type', 'words', 'event', 'seen', 'saw'] as const).flatMap(name => { const value = query.get(name); return value && value.length <= 100 ? [[name, value]] : [] })) as Narrowed
+    const narrowed = Object.fromEntries((['status', 'kind', 'type', 'words', 'event', 'seen', 'saw'] as const).flatMap(name => { const value = query.get(name); return value ? [[name, value.slice(0, 100)]] : [] })) as Narrowed
     const page = !subject ? undefined : profile?.known ? pageOf(profile, wanted, narrowed) : profile
     const called = await reviewCalled(request, session, [subject, ...clusters.map((cluster: {id: string}) => cluster.id), ...recent.flatMap((row: {subject: string, to?: string}) => [row.subject, row.to]), ...(page?.known ? [...page.links.map((link: {subject: string}) => link.subject), ...page.separated, ...(page.flows ?? []).map((flow: {subject: string}) => flow.subject), ...(page.rings ?? []).flatMap((ring: {subjects: string[]}) => ring.subjects)] : [])])
     // The account that is open lists every number and email of its person, not only the newest.

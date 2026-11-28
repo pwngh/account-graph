@@ -347,7 +347,7 @@ test('the Links and Sightings tables are grouped and narrowed by the values of t
   account.history = Array.from({ length: 10 }, (_, i) => ({ at: observed - i * 60_000, event: i < 4 ? 'visit' : 'signup', identifier: (i % 2 ? 'email:' : 'device:') + i }))
   const cookie = await signin()
   const read = async query => (await (await fetch(origin + path + query, { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
-  const groups = page => [...page.matchAll(/<tr class="fold"><th scope="rowgroup" colSpan="5"><button type="button" aria-expanded="true"><i class="chevron"[^>]*><\/i><i class="dot (\w+)"[^>]*><\/i>([^<]+)<span class="count">(\d+)<\/span><span class="meta">([^<]*)<\/span>/g)].map(([, tone, name, count, range]) => [name, tone, Number(count), range])
+  const groups = page => [...page.matchAll(/<tr class="fold"><th scope="rowgroup" colSpan="5"><button type="button" aria-expanded="true"[^>]*><i class="chevron"[^>]*><\/i><i class="dot (\w+)"[^>]*><\/i>([^<]+)<span class="count">(\d+)<\/span><span class="meta">([^<]*)<\/span>/g)].map(([, tone, name, count, range]) => [name, tone, Number(count), range])
   const all = await read('')
   assert.deepEqual(groups(all), [['Same person', 'same', 1, '97%'], ['High confidence', 'same', 2, '93% – 95%'], ['Related', 'related', 3, '52% – 61%'], ['Separated', 'apart', 1, '']])
   // The menu lists each column's values with how many rows have them, the most first, as links that keep the page's other values.
@@ -361,6 +361,16 @@ test('the Links and Sightings tables are grouped and narrowed by the values of t
   assert.match(related, /<span class="meta" role="status">3 of 7<\/span>/)
   assert.match(related, /<a[^>]*class="filter-chip button"[^>]*href="\/accounts\/account%3A42#links"[^>]*><span>Status<\/span>Related<i aria-hidden="true">×<\/i><\/a>|<a[^>]*href="\/accounts\/account%3A42#links"[^>]*class="filter-chip button"/)
   assert.deepEqual(groups(await read('?status=Related&kind=phone')).map(([name, , count]) => [name, count]), [['Related', 2]])
+  // Each column's counts say what choosing a value shows, with the others chosen kept.
+  const narrowedMenu = related.match(/<div class="filter-menu" id="filter-links" popover="auto">([\s\S]*?)<\/div><\/div>/)[1]
+  assert.match(narrowedMenu, /<span>phone<\/span><span class="count">2<\/span>/)
+  assert.doesNotMatch(narrowedMenu, /<span>email<\/span>/)
+  // A filter that leaves too few rows for the bar still shows it, so it can be taken away. The fold buttons wait for scripts.
+  assert.match(await read('?kind=ip'), /class="filter-chip button"/)
+  assert.match(all, /<button type="button" aria-expanded="true" disabled=""/)
+  // Sightings narrowed keep the Links page and the time last seen.
+  const seen = await read('?links=0&event=signup')
+  assert.match(seen, /href="[^"]*links=0[^"]*#sightings"/)
   assert.deepEqual(groups(await read('?type=lead')).map(([name, , count]) => [name, count]), [['High confidence', 1], ['Related', 2]])
   // The tiles still count every link.
   assert.match(related, /6 links/)
