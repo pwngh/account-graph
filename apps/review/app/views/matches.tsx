@@ -9,7 +9,7 @@ export interface Pair { a: string, b: string, score: number, level: 'same' | 're
 /** What is known of one of the two, as the comparison shows it. */
 export interface Side { subject: string, kinds: string[], events: string[], first?: number, last?: number, sightings: number, members: number, separated: number }
 export interface MatchesModel {
-  view: 'decide', legacy?: string, context: WriteContext
+  view: 'decide', context: WriteContext
   queue: { pairs: Pair[], total: number, seen: number, more?: boolean, next?: string | null, window?: { kind: string, older?: boolean, oldest?: number, first?: string | null, last?: string | null } }
   /** Where a check of every record is, where the page is one. */
   older?: string
