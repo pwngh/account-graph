@@ -45,7 +45,8 @@ export async function tokenRoutes(local: AccountGraph) {
       for (const [method, names] of [['GET', reviewReads], ['POST', reviewWrites]] as const) {
         for (const name of names) {
           const { status } = await ask(key, '/review/api/' + name, method)
-          if (root || reviewer) assert.ok(![401, 403].includes(status), name + ' ' + key)
+          // A named service that may read events may also ask whether anything has changed. That is the one route of the screen it opens.
+          if (root || reviewer || (full && method === 'GET' && name === 'pulse')) assert.ok(![401, 403].includes(status), name + ' ' + key)
           else assert.equal(status, refused, name + ' ' + key)
         }
       }

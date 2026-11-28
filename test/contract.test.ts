@@ -284,6 +284,31 @@ everywhere('what somebody wrote is kept as a copy to read back, cut where it is 
   return [first, long, after, pruned]
 })
 
+test('a named service that may read events may ask whether anything changed, and nothing else of the screen', async () => {
+  const tokens = [{ name: 'review-app', token: 'events-token-of-thirty-two-chars!!', calls: { events: true } }, { name: 'intake', token: 'record-token-of-thirty-two-chars!!', calls: { record: true } }] as const
+  const graph = accountGraph({ memory: true, ...shared })
+  const server = createServer(createEdge(graph, { token: 'service', origins: [], serviceTokens: tokens })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const close = async () => { server.closeAllConnections(); server.close(); await graph.close() }
+  const get = async (path: string, token: string) => (await fetch(`${base}/review/api${path}`, { headers: { authorization: `Bearer ${token}` } })).status
+  try {
+    await graph.record({ entries: [{ type: 'profile', key: 'one', at: AT, subject: 'contact:one', facts: { email: 'one@example.org' } }] as any })
+    assert.equal(await get('/pulse', tokens[0]!.token), 200)
+    for (const path of ['/clusters', '/recent', '/subject?subject=contact:one', '/board?days=90', '/ops']) assert.equal(await get(path, tokens[0]!.token), 403, path)
+    // A service with no events is told no, of the pulse too.
+    assert.equal(await get('/pulse', tokens[1]!.token), 403)
+    // And it follows the events themselves with the same token.
+    const follower = accountGraph({ url: base, token: tokens[0]!.token })
+    const page = await follower.events({ after: null, limit: 10 })
+    assert.equal(page.ok, true)
+    await assert.rejects(follower.lookup({ kind: 'find', text: 'contact:one' }), (error) => hasCode(error, FAULT_CODES.AUTH.FORBIDDEN))
+    await follower.close()
+  } finally {
+    await close()
+  }
+})
+
 test('a reviewer screen asks what to call the people it lists, in a body and only with a reviewer or the service token', async () => {
   const { graph, base, close } = await http({ serviceTokens: [{ name: 'intake', token: 'limited-token-of-thirty-two-chars!', calls: { record: true } }] })
   const ask = async (body: unknown, token = 'reviewer') => {

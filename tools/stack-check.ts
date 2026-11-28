@@ -66,6 +66,28 @@ try {
     check(`${path} opens for the reviewer, as itself`, opened.status === 200 && opens(opened.text, view), `${opened.status} ${opened.location}`)
   }
 
+  // An open page follows changes. A new stream is told to read the page again, which the app can say only once the graph has let its token in.
+  // The stream stays open, so it is read until that message comes or fifteen seconds pass.
+  const told = new AbortController()
+  // A whole message, as a browser needs it: its name, its data and the empty line that ends it.
+  const change = /(^|\n)event: change\ndata: [^\n]+\n\n/
+  const stream = await fetch(app + '/events', { headers: { cookie: entered.cookies, accept: 'text/event-stream' }, signal: AbortSignal.any([deadline, told.signal, AbortSignal.timeout(15_000)]) })
+  let said = ''
+  if (stream.status === 200 && stream.body) {
+    const reader = stream.body.getReader()
+    try {
+      while (!change.test(said)) {
+        const { value, done: ended } = await reader.read()
+        if (ended) break
+        said += new TextDecoder().decode(value)
+      }
+    } catch {
+      // The time ran out with no such message. What was said until then is in the report below.
+    }
+    told.abort()
+  }
+  check('an open page is told of changes', stream.status === 200 && (stream.headers.get('content-type') ?? '').startsWith('text/event-stream') && change.test(said), `${stream.status} ${stream.headers.get('content-type')} ${said}`)
+
   const closed = await ask(app + '/accounts')
   check('a page does not open without signing in', sentToSignin(closed), `${closed.status} ${closed.location}`)
 
