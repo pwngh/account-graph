@@ -3,6 +3,7 @@ import { affectedMisses, callTraces, creditSubject, ownerOf, partyOf, reopenWait
 import { randomUUID } from 'node:crypto'
 import { malformed } from '../contract/fault.ts'
 import { createMemoryOps } from './ops.ts'
+import { countedAsPeople, mostOfOneType } from './policy.ts'
 import { KeptMap, KeptSet, begin, createJournal, end, undo } from './journal.ts'
 import { createMemoryOutbox } from './outbox.ts'
 import type { OutboxStore } from './outbox.ts'
@@ -213,6 +214,15 @@ export function createMemoryStore() {
       fanout += former.size
     }
     return fanout
+  }
+
+  /** Of a phone number, the most records of one type that hold it, where that is fewer than all who do. Those that withheld call evidence count. */
+  function peopleOf(identifier: Identifier, fanout: number): { people?: number } {
+    if (fanout < 2 || !countedAsPeople(identifier)) return {}
+    const subjects = new Set(byIdentifier.get(identifier)?.keys())
+    for (const key of (withheld.size ? reservedByIdentifier.get(identifier) : undefined) ?? []) subjects.add(withheld.get(key)!.subject)
+    const people = mostOfOneType(subjects)
+    return people < fanout ? { people } : {}
   }
 
   function valuesFor<T>(map: Map<Subject, Map<Identifier, T>>, subject: Subject) {
@@ -674,7 +684,7 @@ export function createMemoryStore() {
     },
 
     async *sharing(caps) {
-      const pairs = new Map<string, { a: Edge; b: Edge; fanout: number }[]>()
+      const pairs = new Map<string, { a: Edge; b: Edge; fanout: number; people?: number }[]>()
       // An identifier one record holds joins nothing, so its fanout is not counted.
       for (const [identifier, holders] of byIdentifier) {
         if (ignored.has(identifier) || holders.size < 2) continue
@@ -682,6 +692,7 @@ export function createMemoryStore() {
         if (!Object.hasOwn(caps, kind)) throw malformed(`Identifier "${identifier}" has a kind that is missing from the policy`)
         const fanout = fanoutOf(identifier)
         if (fanout > caps[kind]!) continue
+        const people = peopleOf(identifier, fanout)
         const edges = [...holders.values()].map(copy)
         for (let i = 0; i < edges.length; i++) {
           const x = edges[i]!
@@ -690,8 +701,8 @@ export function createMemoryStore() {
             const [a, b] = x.subject < y.subject ? [x, y] : [y, x]
             const key = `${a.subject}\u0000${b.subject}`
             const shared = pairs.get(key)
-            if (shared) shared.push({ a, b, fanout })
-            else pairs.set(key, [{ a, b, fanout }])
+            if (shared) shared.push({ a, b, fanout, ...people })
+            else pairs.set(key, [{ a, b, fanout, ...people }])
           }
         }
       }
@@ -706,7 +717,7 @@ export function createMemoryStore() {
       const out = new Map<Identifier, IdentifierState>()
       for (const identifier of identifiers) {
         const fanout = fanoutOf(identifier)
-        if (fanout > 0 || ignored.has(identifier)) out.set(identifier, { fanout, ignored: ignored.has(identifier) })
+        if (fanout > 0 || ignored.has(identifier)) out.set(identifier, { fanout, ignored: ignored.has(identifier), ...peopleOf(identifier, fanout) })
       }
       return out
     },

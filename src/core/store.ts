@@ -148,7 +148,7 @@ export interface Tx {
    * identifiers that can link: not muted, and held by no more than their kind's cap. A pair that shares one identifier,
    * of a kind not in `alone`, may be left out. Throws where an identifier that could link has a kind `caps` does not name.
    */
-  sharing(caps: Readonly<Record<string, number>>, alone: readonly string[]): AsyncIterable<{ a: Edge; b: Edge; fanout: number }[][]>
+  sharing(caps: Readonly<Record<string, number>>, alone: readonly string[]): AsyncIterable<{ a: Edge; b: Edge; fanout: number; people?: number }[][]>
   /** Every subject, in batches: where it sits, and whether it holds any identifier. */
   everyone(): AsyncIterable<{ subject: Subject; labels: Labels | undefined; held: boolean }[]>
   states(identifiers: readonly Identifier[]): Promise<Map<Identifier, IdentifierState>>

@@ -129,6 +129,14 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     where not exists (select from ${t('edge')} e where e.subject = w.subject and e.identifier = w.identifier) group by w.identifier
   ), states as (select wanted.id, coalesce(i.fanout, 0) + coalesce(former.extra, 0) as fanout, coalesce(i.ignored, false) as ignored
     from wanted left join ${t('identifier')} i using (id) left join former using (id))`
+  // Of a phone number, the most records of one type that hold it, with those that withheld call evidence. One person's caller, lead and contact records are one of each.
+  // Where no call has withheld evidence, only the edges are read.
+  const peopleOf = (row: string, former: boolean) => `case when ${row}.fanout >= 2 and (${row}.id like 'phone:%' or ${row}.id like 'voip:%') then (
+    select max(n) from (select count(distinct h.subject)::int as n from (
+      select subject from ${t('edge')} where identifier = ${row}.id${former ? ` union all select subject from ${t('call_evidence')} where identifier = ${row}.id` : ''}
+    ) h group by split_part(h.subject, ':', 1)) of_type) end`
+  /** A state as the graph reads it. `people` is left out where it is as many as hold the number. */
+  const stateOf = (row: { fanout: number; ignored?: boolean; people?: number | null }): IdentifierState => ({ fanout: row.fanout, ignored: row.ignored ?? false, ...(row.people != null && row.people < row.fanout && { people: row.people }) })
   type Folded = Edge & { profile?: FactProfile | undefined }
   const edgeKey = (row: Edge) => row.subject + '\u0000' + row.identifier
   const latest = (a?: FactProfile, b?: FactProfile) => !a || b && later(b, a) > 0 ? b : a
@@ -604,16 +612,18 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
     async *sharing(caps, alone) {
       const kinds = Object.keys(caps)
-      const table = t(await snapshot.absent() ? 'identifier' : 'match_identifier')
+      const former = !await snapshot.absent()
+      const table = t(former ? 'match_identifier' : 'identifier')
       const { rows: unnamed } = await db.query(`select id from ${table} where fanout >= 2 and not ignored and split_part(id, ':', 1) <> all($1::text[]) limit 1`, [kinds])
       if (unnamed.length > 0) throw malformed(`Identifier "${unnamed[0].id}" has a kind that is missing from the policy`)
       const rows = cursor(
         db,
         page,
-        `select x.subject as a, y.subject as b, array_agg(x.identifier) as identifiers, array_agg(i.fanout) as fanouts,
+        `select x.subject as a, y.subject as b, array_agg(x.identifier) as identifiers, array_agg(i.fanout) as fanouts, array_agg(p.people) as peoples,
            array_agg(array[x.first_at, x.last_at, x.sightings, y.first_at, y.last_at, y.sightings]) as times
          from ${table} i
          join unnest($1::text[], $2::bigint[]) as rule (kind, cap) on rule.kind = split_part(i.id, ':', 1) and i.fanout <= rule.cap
+         cross join lateral (select ${peopleOf('i', former)} as people) p
          join ${t('edge')} x on x.identifier = i.id
          join ${t('edge')} y on y.identifier = i.id and y.subject > x.subject
          where i.fanout >= 2 and not i.ignored
@@ -628,7 +638,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
             const pair = [{ subject: row.a, identifier, first, last, count }, { subject: row.b, identifier, first: otherFirst, last: otherLast, count: otherCount }] as [Edge, Edge]
             // The database orders text its own way. A pair is ordered as JavaScript orders it.
             if (pair[0].subject > pair[1].subject) pair.reverse()
-            return { a: pair[0], b: pair[1], fanout: row.fanouts[i] }
+            const { people } = stateOf({ fanout: row.fanouts[i], people: row.peoples[i] })
+            return { a: pair[0], b: pair[1], fanout: row.fanouts[i], ...(people !== undefined && { people }) }
           }),
         )
       }
@@ -650,11 +661,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       if (identifiers.length === 0) return out
       const { rows } = await db.query(
         await snapshot.absent()
-          ? `select id, fanout, ignored from ${t('identifier')} where id = any($1::text[]) and (fanout > 0 or ignored)`
-          : `${scopedStates('select distinct unnest($1::text[]) as id')} select id, fanout, ignored from states where fanout > 0 or ignored`,
+          ? `select id, fanout, ignored, ${peopleOf(t('identifier'), false)} as people from ${t('identifier')} where id = any($1::text[]) and (fanout > 0 or ignored)`
+          : `${scopedStates('select distinct unnest($1::text[]) as id')} select id, fanout, ignored, ${peopleOf('states', true)} as people from states where fanout > 0 or ignored`,
         [identifiers],
       )
-      for (const row of rows) out.set(row.id, { fanout: row.fanout, ignored: row.ignored })
+      for (const row of rows) out.set(row.id, stateOf(row))
       return out
     },
 
@@ -674,11 +685,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       }
       const { rows } = await db.query(
         await snapshot.absent()
-          ? `select id, fanout from ${t('identifier')} where fanout > 1 and not ignored and id in (select identifier from ${t('edge')} where subject = any($1::text[]))`
-          : `${scopedStates(`select distinct identifier as id from ${t('edge')} where subject = any($1::text[])`)} select id, fanout from states where fanout > 1 and not ignored`,
+          ? `select id, fanout, ${peopleOf(t('identifier'), false)} as people from ${t('identifier')} where fanout > 1 and not ignored and id in (select identifier from ${t('edge')} where subject = any($1::text[]))`
+          : `${scopedStates(`select distinct identifier as id from ${t('edge')} where subject = any($1::text[])`)} select id, fanout, ${peopleOf('states', true)} as people from states where fanout > 1 and not ignored`,
         [subjects],
       )
-      return new Map(rows.map((row) => [row.id, { fanout: row.fanout, ignored: false }]))
+      return new Map(rows.map((row) => [row.id, stateOf(row)]))
     },
 
     async labelsOf(subjects) {

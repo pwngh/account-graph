@@ -45,7 +45,7 @@ function fixture() {
     if (sql.startsWith('select * from stub.edge where subject')) return [...ids].map(edge)
     if (sql.startsWith('select * from stub.edge where identifier')) return ids.has(email) ? joined.map(edge) : []
     if (sql.startsWith('select id, fanout, ignored')) return [...ids].map(id => ({ id, fanout: id === email ? 2 : 1, ignored: false }))
-    if (sql.startsWith('select id, fanout from') && joined.some(id => ids.has(id))) return [{ id: email, fanout: 2 }]
+    if (sql.startsWith('select id, fanout, case') && joined.some(id => ids.has(id))) return [{ id: email, fanout: 2 }]
     if (sql.startsWith('select writes from')) return [{ writes: 1 }]
     return []
   }
