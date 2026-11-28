@@ -100,6 +100,13 @@ test('a named service that may find is not answered a search by name', async () 
   for (const exact of [{ by: 'email', subjects: ['contact:one'] }, { by: 'subject', subjects: ['contact:one'] }]) assert.deepEqual(await asked(exact), exact)
 })
 
+test('a named service reads what people wrote only where it lists messages', async () => {
+  const ask = (lookup: true | string[]) => limitedCall({ role: 'limited', name: 'intake', calls: { lookup } } as any, 'lookup', { kind: 'messages', subject: 'contact:one' }, async () => ({ messages: [] }))
+  assert.deepEqual(await ask(['messages']), { messages: [] })
+  // A grant of every lookup was made before there were messages to read, and does not reach them.
+  for (const lookup of [true, ['find', 'journey']] as const) await assert.rejects(ask(lookup as true | string[]), { code: 'AUTH.FORBIDDEN' })
+})
+
 test('the bearer scheme is read in any case and with any spacing, as HTTP allows', () => {
   const owner = credentials('s'.repeat(32), { ann: 'r'.repeat(32) })
   for (const header of [`Bearer ${'s'.repeat(32)}`, `bearer ${'s'.repeat(32)}`, `BEARER ${'s'.repeat(32)}`, `Bearer  ${'s'.repeat(32)}`, `Bearer\t${'s'.repeat(32)}`]) assert.deepEqual(owner(header), { role: 'service' }, header)

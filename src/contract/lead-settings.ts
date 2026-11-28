@@ -85,7 +85,7 @@ export function leadProblems(leads: unknown, otherSecrets: readonly string[] = [
     if (kind === 'payment' ? !(Array.isArray(conversions) && conversions.length >= 1 && conversions.length <= 20 && conversions.every(keyPrefix)) : conversions !== undefined) wrong.push(`${where}.conversions must list 1 to 20 conversion key prefixes for a payment source`)
     else if (Array.isArray(conversions) && conversions.some(each => BUILT_IN_CONVERSIONS.has(firstPart(each)) || each.toLowerCase() === 'lead')) wrong.push(`${where}.conversions must not name the graph's own call, text or page conversions, or every lead source's`)
     if (kind === 'payment' ? !(typeof maxAmount === 'number' && maxAmount > 0 && maxAmount <= 1e10) : maxAmount !== undefined) wrong.push(`${where}.maxAmount must be a positive amount up to 1e10 for a payment source`)
-    const fields = kind === 'payment' ? ['id', 'at', 'amount', 'currency', 'conversion'] : ['id', 'at', 'subject', 'first', 'last', 'email', 'phone', 'device']
+    const fields = kind === 'payment' ? ['id', 'at', 'amount', 'currency', 'conversion'] : ['id', 'at', 'subject', 'first', 'last', 'email', 'phone', 'device', 'message']
     if (!object(mapping) || !only(mapping, fields) || !Object.hasOwn(mapping, 'id') || !Object.values(mapping).every(validPath)) wrong.push(`${where}.mapping requires id and literal field paths for its kind`)
     else if (kind === 'payment' && !(Object.hasOwn(mapping, 'amount') && Object.hasOwn(mapping, 'conversion'))) wrong.push(`${where}.mapping requires amount and conversion for a payment`)
   }

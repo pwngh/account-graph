@@ -37,6 +37,8 @@ export interface SixOptions {
   hours?: Hours
   timeZone?: string
   returnHours?: number
+  /** How many days what somebody wrote is kept and read back. 30 when left out. */
+  messageDays?: number
 }
 
 /** What a call is asked with: until when it may take, and by whom, where that is known. */
@@ -76,6 +78,9 @@ interface Checked {
   address: VerifiedAddress | undefined
   addressFailed: boolean
 }
+
+/** How much of what somebody wrote is kept, in characters. */
+const KEPT_WORDS = 4000
 
 export function createSix(engine: Engine, options: SixOptions) {
   const { receipts } = options
@@ -239,6 +244,18 @@ export function createSix(engine: Engine, options: SixOptions) {
       return { shown: [] }
     }
   }
+  /** Keeps what somebody wrote, as a copy to read back. What is longer than is kept is cut, and says so. */
+  async function keepWords(tx: Tx, from: 'lead' | 'text', entry: { key: string; at: number }, subject: Subject, said: string | undefined, author?: Subject): Promise<void> {
+    const text = said?.trim()
+    if (!text) return
+    // A character of two code units is kept whole or not at all.
+    const kept = text.length > KEPT_WORDS ? text.slice(0, /[\ud800-\udbff]/.test(text[KEPT_WORDS - 1]!) ? KEPT_WORDS - 1 : KEPT_WORDS) : text
+    // What has passed its time goes as new words come, so nothing waits on a worker.
+    await tx.pruneWords(keptSince())
+    await tx.keepWords({ from, id: entry.key, subject, at: entry.at, recorded: now(), text: kept, cut: kept.length < text.length, ...(author !== undefined && { author }) })
+  }
+  /** The time before which what somebody wrote is no longer kept or read. */
+  const keptSince = () => Math.floor(now() - (options.messageDays ?? 30) * 86_400_000)
   /** Keeps the other side's number of a call or a text, on the record the graph made of that number, where that record holds it. */
   async function keepNumber(tx: Tx, theirs: string | undefined): Promise<void> {
     const { line, shown } = shownNumber(theirs)
@@ -259,6 +276,8 @@ export function createSix(engine: Engine, options: SixOptions) {
         if (found.identifiers.length === 0 && !entry.speaker) throw Object.assign(malformed('No fact could be used'), { refusal: { reason: 'NO_FACT_USED', notes: found.notes } })
         const { notes, speakers } = await service.identify({ subject: entry.subject, ...entry.facts, at: entry.at, ...(entry.event && { event: entry.event }), ...(entry.speaker && { speaker: entry.speaker }) }, entry.key)
         const stands = entry.createdAt === undefined || await inside.tx.setCreatedAt(entry.subject, entry.createdAt, entry.at, entry.key)
+        // Where one person spoke for them, the words are that person's, and go when either is forgotten.
+        await keepWords(inside.tx, 'lead', entry, entry.subject, entry.message, speakers.length === 1 ? speakers[0] : undefined)
         // What they are called. The name is kept of the record, as given. A number and an email are kept once, beside their hash,
         // in the normalized form the hash was made of, so nothing of one holder's spelling is left for another.
         // What somebody else said of themselves, as a speaker, is not this record's.
@@ -362,6 +381,9 @@ export function createSix(engine: Engine, options: SixOptions) {
         const { type: _, key, ...rest } = entry
         const recorded = await recordText(graph, { id: key, ...rest }, service.textOptions())
         await keepNumber(inside.tx, entry.direction === 'inbound' ? entry.from : entry.to)
+        // What they wrote to you is kept. What you wrote to them is yours already.
+        // A text reported again keeps what was kept the first time, or nothing where that has gone.
+        if (!again && entry.direction === 'inbound') await keepWords(inside.tx, 'text', entry, recorded.subject, entry.text)
         return { value: { subject: recorded.subject, flags: recorded.flags, counted: recorded.counted, ...(recorded.visitor && { visitor: recorded.visitor }), ...(recorded.optOutAdded && { optOutAdded: true }) }, subjects: [recorded.subject], existed: recorded.duplicate }
       }
       case 'consent': {
@@ -686,6 +708,8 @@ export function createSix(engine: Engine, options: SixOptions) {
         const counterparties = (request.tiedOnly ? await graph.collusion(request.subject) : await graph.flows(request.subject)).map(tied)
         return { counterparties, rings: await graph.rings(request.subject) }
       }
+      case 'messages':
+        return { messages: await graph.words(request.subject, keptSince()) }
     }
   }
 

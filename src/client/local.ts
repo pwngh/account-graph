@@ -54,6 +54,7 @@ export function localProblems(options: LocalOptions): string[] {
     if (typeof options.identifierSecret !== 'string') wrong.push('`identifierSecret` is required with a database: a secret of 32 characters or more, kept as long as the database')
   }
   for (const name of ['identifierSecret', 'linkSecret'] as const) if (options[name] !== undefined && (typeof options[name] !== 'string' || options[name].length < 32)) wrong.push(`\`${name}\` must be at least 32 characters`)
+  if (options.messageDays !== undefined && !(typeof options.messageDays === 'number' && options.messageDays >= 0 && options.messageDays <= 3650)) wrong.push('`messageDays` must be a number from 0 to 3,650')
   if (options.timeoutMs !== undefined && !(Number.isInteger(options.timeoutMs) && options.timeoutMs >= 1 && options.timeoutMs <= 1_000_000_000)) wrong.push('`timeoutMs` must be an integer from 1 to 1,000,000,000')
   if (options.timeZone !== undefined) {
     try {
@@ -172,7 +173,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
       outbox: store.outbox, lateHours: lateHours ?? 6, reviewPending: reviewPending ?? 0, pauseAfterFailures: options.ads?.pauseAfterFailures ?? 0, timeZone: options.timeZone ?? 'UTC', now, emit, ...(options.fetch && { fetch: options.fetch }), onError: (error) => log(`alert: ${String((error as Error)?.message ?? error)}`),
     })
     tell = jobs => ops.failed(jobs, store).catch(error => log(String(error)))
-    const six = createSix(engine, { receipts, returnHours: options.phones?.returnHours ?? 24, ...(options.linkSecret && { linkSecret: options.linkSecret }), ...(hours && { hours }), ...(options.timeZone && { timeZone: options.timeZone }) })
+    const six = createSix(engine, { receipts, returnHours: options.phones?.returnHours ?? 24, ...(options.messageDays !== undefined && { messageDays: options.messageDays }), ...(options.linkSecret && { linkSecret: options.linkSecret }), ...(hours && { hours }), ...(options.timeZone && { timeZone: options.timeZone }) })
     workers = createWorkers(engine, ops, options, log)
     // From here on, and not from the first time it is posted to.
     if (options.webhook) await store.write(async (tx) => {

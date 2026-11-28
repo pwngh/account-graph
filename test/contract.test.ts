@@ -201,6 +201,55 @@ everywhere('a record keeps its name, a number and an email are kept beside their
   return [first, found, joined, later, every, after, again]
 })
 
+everywhere('what somebody wrote is kept as a copy to read back, cut where it is long, and goes with the person or with time', async ({ graph, local }) => {
+  const { engine } = await internalsOf(local)!()
+  const caller = `caller:${hashPhone('+15558675301')}`
+  const lead = { type: 'profile', key: 'lead-1', at: AT, subject: 'contact:one', facts: { phone: '5558675301' }, message: '  I need a quote for a fence.  ' }
+  const sent = await graph.record({ entries: [
+    lead,
+    { type: 'profile', key: 'lead-2', at: AT + 1, subject: 'contact:two', facts: { email: 'two@example.org' }, message: 'x'.repeat(4100) },
+    { type: 'profile', key: 'lead-3', at: AT + 1, subject: 'contact:three', facts: { email: 'three@example.org' } },
+    { type: 'text', key: 'T1', at: AT + 2, direction: 'inbound', from: '+15558675301', to: '5551230001', text: 'Are you open Saturday?' },
+    // What you wrote to them is yours already, and is not kept.
+    { type: 'text', key: 'T2', at: AT + 3, direction: 'outbound', from: '5551230001', to: '+15558675301', text: 'Yes, 9 to 1.' },
+  ] as any })
+  assert.deepEqual(sent.results.map((each) => each.ok), [true, true, true, true, true])
+  const wrote = async (subject: string) => (await graph.lookup({ kind: 'messages', subject })).messages
+  await graph.decide({ key: 'join', at: AT + 4, by: 'dana', action: 'merge', pairs: [{ a: caller, b: 'contact:one' }] })
+  // A person's form message and the texts of the caller joined to them, the newest first.
+  const first = await wrote('contact:one')
+  assert.deepEqual(first, [
+    { from: 'text', id: 'T1', subject: caller, at: AT + 2, text: 'Are you open Saturday?', cut: false },
+    { from: 'lead', id: 'lead-1', subject: 'contact:one', at: AT, text: 'I need a quote for a fence.', cut: false },
+  ])
+  const long = await wrote('contact:two')
+  assert.deepEqual([long.length, long[0]!.text.length, long[0]!.cut], [1, 4000, true])
+  assert.deepEqual(await wrote('contact:three'), [])
+  // The words are no part of what makes an entry the same one, so no mark of them is kept with its receipt. Sent again with other words,
+  // the entry is a duplicate and the first words stand. So do a text's.
+  const again = (await graph.record({ entries: [{ ...lead, message: 'Something else.' }, { type: 'text', key: 'T1', at: AT + 2, direction: 'inbound', from: '+15558675301', to: '5551230001', text: 'Other words.' }] as any })).results
+  assert.deepEqual(again.map((each) => each.ok && each.value.duplicate), [true, true])
+  assert.deepEqual(await wrote('contact:one'), first)
+  // Where one person spoke for another, the words are theirs too, and go when the record of either is forgotten.
+  const spoke = await graph.record({ entries: [
+    { type: 'profile', key: 'lead-4', at: AT + 1, subject: 'contact:child', facts: { email: 'child@example.org' }, speaker: { phone: '5558675311' }, message: 'My son needs an appointment.' },
+  ] as any })
+  assert.deepEqual(spoke.results.map((each) => each.ok), [true])
+  assert.deepEqual((await wrote('contact:child')).map((kept) => kept.text), ['My son needs an appointment.'])
+  await graph.forget({ key: 'forget-parent', at: AT + 5, by: 'dana', subjects: [`caller:${hashPhone('+15558675311')}`], platforms: 'report' })
+  assert.deepEqual(await wrote('contact:child'), [])
+  // Nothing of it reaches what matching reads, or the events.
+  assert.ok(!JSON.stringify([await engine.graph.history('contact:one'), await graph.events({ after: null, limit: 500 })]).includes('fence'))
+  // Forgotten, a person's words go with them. The caller's stay with the caller.
+  await graph.forget({ key: 'forget-one', at: AT + 5, by: 'dana', subjects: ['contact:one'], platforms: 'report' })
+  const after = [await wrote('contact:one'), await wrote(caller)]
+  assert.deepEqual(after.map((each) => each.map((kept) => kept.id)), [[], ['T1']])
+  // And with time, whatever was recorded before the day that is asked goes.
+  const pruned = [await engine.graph.pruneWords(NOW - 1), await engine.graph.pruneWords(NOW + 1), (await wrote(caller)).length, (await wrote('contact:two')).length]
+  assert.deepEqual(pruned, [0, 2, 0, 0])
+  return [first, long, after, pruned]
+})
+
 test('a reviewer screen asks what to call the people it lists, in a body and only with a reviewer or the service token', async () => {
   const { graph, base, close } = await http({ serviceTokens: [{ name: 'intake', token: 'limited-token-of-thirty-two-chars!', calls: { record: true } }] })
   const ask = async (body: unknown, token = 'reviewer') => {

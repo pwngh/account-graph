@@ -759,6 +759,10 @@
                     {
                       "title": "transfers",
                       "$ref": "#/components/schemas/LookupTransfersValue"
+                    },
+                    {
+                      "title": "messages",
+                      "$ref": "#/components/schemas/LookupMessagesValue"
                     }
                   ]
                 },
@@ -2693,6 +2697,10 @@
           "event": {
             "type": "string"
           },
+          "message": {
+            "type": "string",
+            "description": "What they wrote, such as the message of a form. Kept for a while as a copy to read back with `lookup` `messages`, and never read by matching. Up to 4,000 characters are kept."
+          },
           "speaker": {
             "$ref": "#/components/schemas/Speaker",
             "description": "Somebody else who told this, such as a parent: their own browser, number or email. What is theirs is not written on the subject, and neither is joined to the other."
@@ -3562,7 +3570,7 @@
           },
           "text": {
             "type": "string",
-            "description": "Read for a code and for STOP. Never kept."
+            "description": "Read for a code and for STOP. An inbound text's words are also kept for a while as a copy to read back with `lookup` `messages`. Up to 4,000 characters are kept."
           },
           "code": {
             "type": "string"
@@ -6404,6 +6412,27 @@
               "subject"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "messages"
+              },
+              "subject": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^\\S(?:[\\s\\S]*\\S)?$",
+                "description": "At most 512 UTF-8 bytes, with no surrounding whitespace."
+              }
+            },
+            "required": [
+              "kind",
+              "subject"
+            ],
+            "additionalProperties": false
           }
         ]
       },
@@ -6438,6 +6467,10 @@
           },
           "transfers": {
             "$ref": "#/components/schemas/LookupTransfersValue"
+          },
+          "messages": {
+            "$ref": "#/components/schemas/LookupMessagesValue",
+            "description": "What the person wrote, the newest first, at most 100: form messages and inbound texts of the records in their group."
           }
         },
         "required": [
@@ -6449,7 +6482,8 @@
           "conflicts",
           "party",
           "record",
-          "transfers"
+          "transfers",
+          "messages"
         ],
         "additionalProperties": false
       },
@@ -9071,6 +9105,10 @@
               "device": {
                 "type": "string"
               },
+              "message": {
+                "type": "string",
+                "description": "What they wrote in the form."
+              },
               "amount": {
                 "type": "string"
               },
@@ -9732,6 +9770,54 @@
         "required": [
           "counterparties",
           "rings"
+        ],
+        "additionalProperties": false
+      },
+      "LookupMessagesValue": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "enum": [
+                    "lead",
+                    "text"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "subject": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "number"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "cut": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "from",
+                "id",
+                "subject",
+                "at",
+                "text",
+                "cut"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "messages"
         ],
         "additionalProperties": false
       },

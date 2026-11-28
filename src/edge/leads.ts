@@ -160,7 +160,11 @@ function mapLead(name: string, source: LeadSource, get: (path: string) => unknow
     // With updates, each set of details is a profile of its own, so an update adds facts and a retry is a duplicate.
     // Without them, the ID names one profile, and other details under it are refused, because whoever can choose an ID could otherwise add to another person's lead.
     const details = source.updates ? createHmac('sha256', source.secret).update(`${id}\u0000${canonical(facts)}`).digest('base64url').slice(0, 22) : id
-    if (Object.keys(facts).length) entries.push({ type: 'profile', key: `lead:${name}:${details}`, at, subject, facts }, { type: 'conversion', key, at, subject, stage: source.stage ?? 'inquiry' })
+    // What they wrote in the form, where the mapping names it. It is kept as a copy to read back, and matches nothing.
+    // A visitor who could name the record could write on somebody else's, so it is kept only on the record the vendor's ID makes, or where the source's subjects are trusted.
+    const wrote = empty(given) || source.trustSubjects ? read('message') : undefined
+    const message = typeof wrote === 'string' && wrote.trim() ? wrote.trim().slice(0, 20_000) : undefined
+    if (Object.keys(facts).length) entries.push({ type: 'profile', key: `lead:${name}:${details}`, at, subject, facts, ...(message && { message }) }, { type: 'conversion', key, at, subject, stage: source.stage ?? 'inquiry' })
   }
   return entries
 }

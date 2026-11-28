@@ -720,7 +720,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
         const reviewer = owner.name
         // What a reviewer may record is what they say themselves about a call or a lead, each entry signed with their own name.
         const says = name === 'record' && Array.isArray(body?.entries) && body.entries.length > 0 && body.entries.every((entry: any) => statementBy(entry) === reviewer)
-        const opens = says || name === 'report' || (((name === 'decide' && body?.action !== 'withdraw') || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find' || body?.kind === 'party'))
+        const opens = says || name === 'report' || (((name === 'decide' && body?.action !== 'withdraw') || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find' || body?.kind === 'party' || body?.kind === 'messages'))
         if (!opens) throw fault(FAULT_CODES.AUTH.FORBIDDEN, name === 'decide' || name === 'forget' ? '`by` must match the owner of the token' : 'The token does not open this call')
       }
       const run = (input: unknown) => core.v1!(name as CallName, input, gone.signal)

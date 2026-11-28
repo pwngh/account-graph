@@ -6,7 +6,7 @@ import type { Said, SaidOf, Topic } from './said.ts'
 import type { Details } from './details.ts'
 import { byKey } from './said.ts'
 import type { Job, OutboxStore } from './outbox.ts'
-import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Payment, Sighting, Subject, Touch } from '../contract/types.ts'
+import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, KeptWords, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Payment, Sighting, Subject, Touch } from '../contract/types.ts'
 
 export type AddedSightings = Map<Identifier, number> & { restored?: Set<Subject> }
 
@@ -124,6 +124,12 @@ export interface Tx {
   setDetails(subject: Subject, details: Details, at: number, key: string): Promise<void>
   /** Keeps a phone number or an email beside its hash, for people to read. Only an identifier this subject holds takes one, and it goes when the last holder does. */
   setShown(subject: Subject, shown: ReadonlyMap<Identifier, string>): Promise<void>
+  /** Keeps what somebody wrote, as a copy to read back. The first kept under an entry's key stands. `author` is whoever spoke for the subject, and their words go when either is forgotten. */
+  keepWords(words: KeptWords & { recorded: number; author?: Subject }): Promise<void>
+  /** What these exact subjects wrote and was recorded since a time, the newest first. */
+  wordsOf(subjects: readonly Subject[], limit: number, since: number): Promise<KeptWords[]>
+  /** Deletes what was recorded before a time. Answers how many. */
+  pruneWords(before: number): Promise<number>
   /** Every number and email kept for each of these exact subjects to read, with when the subject was last seen with it. Newest first. */
   contactsOf(subjects: readonly Subject[]): Promise<Map<Subject, { field: 'phone' | 'email'; value: string; last: number }[]>>
   /** Records whose kept name contains this text, whatever the case, in ID order. Each store folds case by its own rules, which differ for a few letters outside ASCII. */

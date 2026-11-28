@@ -68,3 +68,5 @@ summary:focus-visible, a:focus-visible, button:focus-visible, input:focus-visibl
   #stage-desk.on { position: static; width: 100% }
 }
 .manual { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.55 }
+/* What somebody wrote keeps its own lines, and breaks a long word before it leaves the table. */
+.wrote { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 16rem; }

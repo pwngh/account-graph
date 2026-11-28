@@ -48,6 +48,8 @@ export interface ProfileEntry extends Keyed<'profile'> {
   /** At least one, unless somebody speaks for them. */
   readonly facts: Facts
   readonly event?: string
+  /** What they wrote, such as the message of a form. Kept for a while as a copy to read back with `lookup` `messages`, and never read by matching. Up to 4,000 characters are kept. */
+  readonly message?: string
   /** Somebody else who told this, such as a parent: their own browser, number or email. What is theirs is not written on the subject, and neither is joined to the other. */
   readonly speaker?: Speaker
 }
@@ -185,7 +187,7 @@ export interface TextEntry extends Keyed<'text'> {
   readonly direction: 'inbound' | 'outbound'
   readonly from: string
   readonly to: string
-  /** Read for a code and for STOP. Never kept. */
+  /** Read for a code and for STOP. An inbound text's words are also kept for a while as a copy to read back with `lookup` `messages`. Up to 4,000 characters are kept. */
   readonly text?: string
   readonly code?: string
   readonly tags?: Readonly<Record<string, string>>
@@ -341,6 +343,7 @@ export type LookupRequest =
   | { readonly kind: 'conflicts'; /** 1 to 50. */ readonly subjects: readonly string[] }
   | { readonly kind: 'record'; readonly type: 'conversion' | 'call' | 'text'; readonly key: string; readonly at: At }
   | { readonly kind: 'transfers'; readonly subject: string; readonly tiedOnly?: boolean }
+  | { readonly kind: 'messages'; readonly subject: string }
 
 export interface LookupValue {
   /** `decisions` is the newest decision, read in the same snapshot. Pass it as `seen`. */
@@ -354,6 +357,8 @@ export interface LookupValue {
   party: ((PartyStatement | { readonly role: 'excluded'; readonly by: string; readonly at: number }) & { readonly key: string }) | null
   record: RecordView | null
   transfers: { readonly counterparties: readonly Tied[]; readonly rings: readonly Ring[] }
+  /** What the person wrote, the newest first, at most 100: form messages and inbound texts of the records in their group. */
+  messages: { readonly messages: readonly { readonly from: 'lead' | 'text'; readonly id: string; readonly subject: string; readonly at: number; readonly text: string; readonly cut: boolean }[] }
 }
 /** Why is said by kind. No identifier leaves the graph, because most are hashes of an email or a phone. */
 export interface Match {
@@ -550,6 +555,8 @@ export interface LocalSettings extends Common {
   readonly policy?: PolicyOptions
   readonly linkSecret?: string
   readonly timeZone?: string
+  /** How many days a form's message and an inbound text's words are kept, counted from when they were recorded. 30 when left out. */
+  readonly messageDays?: number
   readonly openHours?: OpenHours
   /** The numbers you set yourself to meet, shown on the reviewer screen as set by you. Off by default. */
   readonly targets?: { readonly answered?: number; readonly returned?: number; readonly callbackHours?: number; readonly costPerOutcome?: number; readonly roas?: number }
@@ -621,6 +628,8 @@ export interface LeadSource {
     readonly email?: string
     readonly phone?: string
     readonly device?: string
+    /** What they wrote in the form. */
+    readonly message?: string
     readonly amount?: string
     readonly currency?: string
     readonly conversion?: string

@@ -59,6 +59,7 @@ class _Keyed(TypedDict):
 class _ProfileEntryOptions(TypedDict, total=False):
     createdAt: At
     event: str
+    message: str
     speaker: Speaker
 
 
@@ -754,7 +755,12 @@ class TransfersRequest(_TransfersRequestOptions):
     subject: str
 
 
-LookupRequest = Union[PersonRequest, JourneyRequest, FindRequest, MatchRequest, CallerRequest, PartyRequest, ConflictsRequest, RecordLookupRequest, TransfersRequest]
+class MessagesRequest(TypedDict):
+    kind: Literal["messages"]
+    subject: str
+
+
+LookupRequest = Union[PersonRequest, JourneyRequest, FindRequest, MatchRequest, CallerRequest, PartyRequest, ConflictsRequest, RecordLookupRequest, TransfersRequest, MessagesRequest]
 
 
 class CampaignCredit(TypedDict):
@@ -1036,7 +1042,15 @@ class TransfersValue(TypedDict):
     rings: list[Ring]
 
 
-LookupValue = Union[PersonValue, JourneyPage, FindValue, MatchValue, CallerValue, PartyValue, ConflictsValue, RecordView, TransfersValue, None]
+# `from` is a Python keyword, so this one is written as a mapping of its fields.
+KeptMessage = TypedDict("KeptMessage", {"from": Literal["lead", "text"], "id": str, "subject": str, "at": At, "text": str, "cut": bool})
+
+
+class MessagesValue(TypedDict):
+    messages: list[KeptMessage]
+
+
+LookupValue = Union[PersonValue, JourneyPage, FindValue, MatchValue, CallerValue, PartyValue, ConflictsValue, RecordView, TransfersValue, MessagesValue, None]
 
 
 # Each report kind determines the value inside its asOf envelope.

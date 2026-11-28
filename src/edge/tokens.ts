@@ -16,7 +16,7 @@ type Kinds = {
 const KINDS = {
   record: { profile: true, arrival: true, cost: true, conversion: true, restatement: true, payment: true, call: true, call_update: true, text: true, consent: true, link: true, transfer: true },
   decide: { merge: true, unmerge: true, split: true, unsplit: true, mute: true, unmute: true, withdraw: true },
-  lookup: { person: true, journey: true, find: true, match: true, caller: true, party: true, conflicts: true, record: true, transfers: true },
+  lookup: { person: true, journey: true, find: true, match: true, caller: true, party: true, conflicts: true, record: true, transfers: true, messages: true },
   report: { campaigns: true, pipeline: true, calls: true, callbacks: true, texts: true, after_calls: true, deliveries: true },
 } satisfies { [C in keyof Kinds]: Record<Kinds[C], true> }
 
@@ -130,6 +130,8 @@ export async function limitedCall(owner: Extract<Owner, { role: 'limited' }>, na
     }, dispatch)
   }
   if (kinds !== true && !kinds.includes(name === 'decide' ? body?.action : body?.kind)) throw forbidden()
+  // What people wrote is read only by a service that lists `messages`. A grant of every lookup, made before there were any, does not reach it.
+  if (name === 'lookup' && body?.kind === 'messages' && kinds === true) throw forbidden()
   if ((name === 'decide' || name === 'forget') && body?.by !== author) throw fault(FAULT_CODES.AUTH.FORBIDDEN, '`by` must match the service token owner')
   const said = await dispatch(body)
   // People are searched by name for a reviewer and the service only. A named service's `find` stays the exact lookups it was given.

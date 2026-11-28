@@ -56,7 +56,7 @@ import type {
   Identifier, IdentifierState,
   Journey,
   KeptCall,
-  KeptText,
+  KeptText, KeptWords,
   OpenText,
   SentLink,
   Labels,
@@ -189,6 +189,10 @@ export interface Graph {
   pay(payment: Payment): Promise<{ duplicate: boolean; value?: number }>
   /** Several people at once, as a list shows them, in the order given. */
   people(subjects: readonly Subject[], options?: { at?: number }): Promise<Person[]>
+  /** What the person wrote, the newest first, at most 100: the form messages and inbound texts of up to 50 records of their group, your own first. */
+  words(subject: Subject, since?: number): Promise<KeptWords[]>
+  /** Deletes the words recorded before a time. Answers how many. */
+  pruneWords(before: number): Promise<number>
   /** What to call each of these subjects, from the name, phone and email kept of the records in their group. One nothing is kept of is left out. */
   called(subjects: readonly Subject[], every?: boolean): Promise<Record<Subject, Called>>
   /** Takes a recorded outcome out of the report because it turned out not to have happened. Resolves to false for an unknown id. */
@@ -2914,6 +2918,19 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
     clicked(id, limit = 20) {
       return store.read((tx) => tx.clicked(id, limit))
+    },
+
+    words(subject, since = 0) {
+      return store.read(async (tx) => {
+        const label = (await tx.labelsOf([subject])).get(subject)
+        const group = label ? [...await tx.membersOf([label.component])].filter(([, each]) => each.cluster === label.cluster).map(([member]) => member) : [subject]
+        const members = [subject, ...group.filter((each) => each !== subject && !madeByGraph(each)).sort(), ...group.filter((each) => each !== subject && madeByGraph(each)).sort()].slice(0, 50)
+        return tx.wordsOf(members, 100, Math.floor(since))
+      })
+    },
+
+    pruneWords(before) {
+      return store.write((tx) => tx.pruneWords(Math.floor(before)))
     },
 
     named(text, limit = 20) {

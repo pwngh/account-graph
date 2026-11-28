@@ -16,7 +16,7 @@ import type { Said, SaidOf, Topic } from './said.ts'
 import { byKey, later, newest } from './said.ts'
 import type { AddedSightings, CallEvidence, CallLineKind, Store, SubjectDates, TextNumber, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
-import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
+import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, KeptWords, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
 
 /**
  * Keeps the graph in process memory, for tests, demos, and small graphs.
@@ -66,6 +66,8 @@ export function createMemoryStore() {
   const callLines = new KeptMap<string, Subject>(journal)
   const lineKinds = new KeptMap<string, CallLineKind>(journal)
   const texts = new KeptMap<string, KeptText>(journal)
+  // What somebody wrote, by where it came from and the key of its entry.
+  const words = new KeptMap<string, KeptWords & { recorded: number; author?: Subject }>(journal)
   const textStops = new KeptMap<Subject, Map<Subject, FactStamp & { through?: FactStamp }>>(journal)
   const phoneProfiles = new KeptMap<Subject, Map<Identifier, Map<string, FactStamp>>>(journal)
   const sent = new KeptMap<string, SentLink>(journal)
@@ -374,6 +376,7 @@ export function createMemoryStore() {
       sightings.delete(subject)
       created.delete(subject)
       details.delete(subject)
+      for (const [id, kept] of words) if (kept.subject === subject || kept.author === subject) words.delete(id)
       touches.delete(subject)
       for (const [id, outcome] of outcomes) {
         if (outcome.subject !== subject) continue
@@ -502,6 +505,26 @@ export function createMemoryStore() {
 
     async setShown(subject, given) {
       for (const [identifier, value] of given) if (bySubject.get(subject)?.has(identifier)) shown.set(identifier, value)
+    },
+
+    async keepWords(kept) {
+      const id = kept.from + '\u0000' + kept.id
+      if (!words.has(id)) words.set(id, { ...kept })
+    },
+
+    async wordsOf(subjects, limit, since) {
+      const wanted = new Set(subjects)
+      return [...words.values()].filter((kept) => wanted.has(kept.subject) && kept.recorded >= since).sort((a, b) => b.at - a.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) || (a.from < b.from ? -1 : 1))
+        .slice(0, limit).map(({ recorded: _, author: __, ...kept }) => kept)
+    },
+
+    async pruneWords(before) {
+      let gone = 0
+      for (const [id, kept] of words) if (kept.recorded < before) {
+        words.delete(id)
+        gone++
+      }
+      return gone
     },
 
     async contactsOf(subjects) {
@@ -1548,7 +1571,7 @@ export function createMemoryStore() {
   }
 
   /** Every collection, copied together, so what two of them share stays shared. */
-  const collections = { bySubject, byIdentifier, profiles, hidden, withdrawals, factStatements, ignored, labels, byComponent, byCluster, sightings, created, details, shown, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, reservedBySubject, reservedByIdentifier, callLines, lineKinds, texts, textStops, phoneProfiles, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
+  const collections = { bySubject, byIdentifier, profiles, hidden, withdrawals, factStatements, ignored, labels, byComponent, byCluster, sightings, created, details, shown, words, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, reservedBySubject, reservedByIdentifier, callLines, lineKinds, texts, textStops, phoneProfiles, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
   const snapshot = () => structuredClone({ ...collections, lastEvent, epoch, writes, built, jobs: outbox.jobs, ops: ops.kept })
 
   let tail: Promise<unknown> = Promise.resolve()

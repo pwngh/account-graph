@@ -36,7 +36,7 @@ Send a token in the `authorization` header as `Bearer …`.
 | `record` | Every entry | A batch made up only of the reviewer's own statements about a call or a lead, each signed with the reviewer's name: who a call was with, that a caller was reached or was not, and that a call or a text is or is not from a lead | Listed entry types. Party statements require the service's own signature, and any other signed statement may carry no other name. |
 | `decide` | Any action and author | Own signature for merge, unmerge, split, unsplit, mute and unmute | Listed actions and own signature |
 | `forget` | Any author | Own signature, including platform retraction | Explicit grant and own signature |
-| `lookup` | Every kind | `journey`, `find` and `party`. An excluded party's subject is hidden. | Listed kinds |
+| `lookup` | Every kind | `journey`, `find`, `party` and `messages`. An excluded party's subject is hidden. | Listed kinds |
 | `report` | Every kind | Every kind, including deliveries | Listed kinds |
 | `events` | Yes | No | Explicit grant |
 
@@ -95,7 +95,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 
 | Type | Fields | Answers |
 | --- | --- | --- |
-| `profile` | `subject`, `facts`, `event?`, `speaker?`, `createdAt?` | `changes`, `notes`. See [identify](identify.md). |
+| `profile` | `subject`, `facts`, `event?`, `message?`, `speaker?`, `createdAt?` | `changes`, `notes`. See [identify](identify.md). `message` is what they wrote, kept as a [copy to read back](privacy.md). |
 | `arrival` | `subject`, `source?`, `medium?`, `campaign?`, `campaignId?`, `adGroupId?`, `adId?`, `term?`, `content?`, `landing?`, `referrer?`, `clicks?`, `custom?` | `subject` |
 | `cost` | `rows`, 1 to 5,000: `day`, `source`, `amount`, `currency`, `campaignId?`, `campaign?`, `clicks?`, `impressions?`, `conversions?`, `conversionValue?` | `written`, `older`: rows written, and rows a newer reading already had |
 | `conversion` | `subject`, `stage`, `value?`, `currency?`, `actions?`, `channel?`, `userAgent?`, `email?`, `phone?`, `consent?`, `tags?` | `value`, `currency`, `deliveries` |
@@ -361,6 +361,7 @@ POST /v1/lookup
 | `conflicts` | `subjects`, 1 to 50 | `conflicts`: who of them is [kept apart](matching.md#asking-about-conflicts) |
 | `record` | `type`, `key`, `at` | One conversion, call or text, or `null` |
 | `transfers` | `subject`, `tiedOnly?` | `counterparties`, `rings` |
+| `messages` | `subject` | `messages`: what the person wrote and is still kept, the newest first, at most 100. Each has `from` (`lead` or `text`), `id`, `subject`, `at`, `text` and `cut`. A named service token reads it only where its `lookup` lists `messages`. |
 
 A person lookup shows `possible` only when no arrival earns credit. For example, correcting a call can remove its credited tap and leave an independent visit at 0.59. That visit now appears as a suggestion with its existing score. It earns no campaign credit.
 

@@ -23,7 +23,7 @@ Suppose the test post to `/leads/chat` has content type `application/json` and t
 }
 ```
 
-Configure the source to read the first contact. A dot moves down one field and a numeric index picks one item, starting at zero. Both `contacts.0.reply_to` and `contacts[0].reply_to` select the same field. Map `device` when the service returns the visitor's hidden `ag_device` field. The graph drops the unmapped conversation and other extra fields before recording, and does not log their contents. See [Passing the browser ID to a chat service](identify.md#chat).
+Configure the source to read the first contact. A dot moves down one field and a numeric index picks one item, starting at zero. Both `contacts.0.reply_to` and `contacts[0].reply_to` select the same field. Map `device` when the service returns the visitor's hidden `ag_device` field. Map `message` to what the person wrote, and the graph keeps it as a [copy to read back](privacy.md) for `MESSAGE_DAYS` days. Where the mapping also names the `subject`, the message is kept only with `trustSubjects`, so a visitor who can name a record cannot write on somebody else's. The graph drops the unmapped conversation and other extra fields before recording, and does not log their contents. See [Passing the browser ID to a chat service](identify.md#chat).
 
 <!-- schema config -->
 ```json
