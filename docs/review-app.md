@@ -96,7 +96,7 @@ The server writes every time on the page. On the first load with JavaScript, the
 
 | Address | Contents |
 | --- | --- |
-| `/accounts`, `/accounts/:subject` | Accounts overview, cluster diagram, links, record dates, evidence and reviewer actions. |
+| `/accounts`, `/accounts/:subject` | Accounts overview, cluster diagram, links, record dates, evidence and reviewer actions. A link a reviewer joined has Undo join, which takes the join back without saying the two are different people. |
 | `/journey/:subject` | Timeline and chart for the person. A call shown as reported returned, or as not a lead, has Take back. A call's row has a form for which record it was with, as [Recording who was on one call](calls.md#recording-who-was-on-one-call) describes. |
 | `/board/:days` | Missed calls and people by their furthest step. A card in Missed calls has the same Reached them and Not a lead as Calls. |
 | `/calls` | Missed calls, call outcomes, coverage and supporting detail. On the open missed call a reviewer records Reached them or Not a lead, signed with their name. The graph server must be one that takes these from a reviewer. |

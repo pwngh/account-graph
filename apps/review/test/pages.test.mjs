@@ -416,6 +416,44 @@ test('a reviewer says which record a call was with, and the call moves to the hi
   assert.deepEqual([moved.role, moved.subject, await form(ofRecord), (await form(ofOther)).records], ['self', 'contact:rowan', undefined, ['contact:rowan* Rowan Vale · contact:rowan', 'contact:wren Wren Vale · contact:wren']])
 })
 
+test('a join a reviewer made is undone from the account page, and the two are undecided again', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const { at } = await (await fetch(firm.graph + '/review/api/board?days=90', { headers: { authorization: 'Bearer demo' } })).json()
+  // Two records that share nothing.
+  const written = await fetch(firm.graph + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ entries: [
+    { type: 'profile', key: 'join-ash', at: at - 5 * 3600_000, subject: 'contact:ash', facts: { email: 'ash@example.org' } },
+    { type: 'profile', key: 'join-birch', at: at - 4 * 3600_000, subject: 'contact:birch', facts: { email: 'birch@example.org' } },
+    // A third that the graph itself links to the first, by a shared email.
+    { type: 'profile', key: 'join-cedar', at: at - 3 * 3600_000, subject: 'contact:cedar', facts: { email: 'ash@example.org' } }] }) })
+  assert.ok((await written.json()).results.every(result => result.ok))
+  const path = '/accounts/' + encodeURIComponent('contact:ash')
+  const members = async () => (await (await fetch(firm.graph + '/review/api/subject?subject=contact%3Aash', { headers: { authorization: 'Bearer demo' } })).json()).cluster.members.sort()
+  // Every decision form on the page, by what it does and to whom.
+  const forms = async () => [...(await (await fetch(firm.graph + path, { headers: { cookie } })).text()).matchAll(/<form\b[^>]*>[\s\S]*?<\/form>/g)].map(([form]) => Object.fromEntries([...form.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"\/>/g)].map(([, name, value]) => [name, value]))).filter(fields => fields.intent)
+  const post = fields => fetch(firm.graph + path, { method: 'POST', headers: { cookie, origin: firm.graph }, body: new URLSearchParams(fields), redirect: 'manual' })
+  const before = await forms()
+  // A link the graph made from evidence can be separated. Nobody joined it, so there is no join to undo.
+  const linked = forms => forms.filter(form => form.other === 'contact:cedar').map(form => form.intent)
+  assert.deepEqual([await members(), linked(before), before.some(form => form.intent === 'unjoin')], [['contact:ash', 'contact:cedar'], ['separate'], false])
+  const join = before.find(form => form.intent === 'join' && !form.other)
+  assert.ok(join, 'the page has a form that joins another ID')
+  // A typo is refused, and nothing is joined.
+  const typo = await post({ ...join, other: 'contact:brich' })
+  assert.deepEqual([typo.status, await members()], [400, ['contact:ash', 'contact:cedar']])
+  assert.equal((await post({ ...join, other: 'contact:birch', reason: 'Same person at intake' })).status, 303)
+  assert.deepEqual(await members(), ['contact:ash', 'contact:birch', 'contact:cedar'])
+  // The joined row offers to separate the two, and to take the join back. Taking it back leaves no decision between them.
+  const after = await forms()
+  const row = after.filter(form => form.other === 'contact:birch').map(form => form.intent).sort()
+  assert.deepEqual([row, linked(after)], [['separate', 'unjoin'], ['separate']])
+  assert.equal((await post({ ...after.find(form => form.intent === 'unjoin'), reason: 'Joined the wrong Birch' })).status, 303)
+  const last = await forms()
+  assert.deepEqual([await members(), last.filter(form => form.other === 'contact:birch'), linked(last)], [['contact:ash', 'contact:cedar'], [], ['separate']])
+})
+
 test('a term has its definition beside it on every page, in the page from the start', async t => {
   const firm = await startFirm({}, { quick: true })
   t.after(() => firm.close())

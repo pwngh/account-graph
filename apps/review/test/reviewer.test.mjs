@@ -46,7 +46,8 @@ async function handler(req, res) {
   if (revoked || authorization !== 'Bearer ' + reviewer) return send(401, { error: 'The token was not accepted' })
   switch (url.pathname) {
     case '/review/api/me': return send(200, { reviewer: 'dana', retraction: { targets: [], always: false }, targets: {}, limits: { returnHours: null, openHours: false } })
-    case '/review/api/subject': return send(200, url.searchParams.get('subject') === subject ? account : { known: false, subject: url.searchParams.get('subject') })
+    // The graph has the account these tests open, and the records they join it to. It knows nothing of any other ID.
+    case '/review/api/subject': return send(200, url.searchParams.get('subject') === subject ? account : { known: ['contact:73', 'contact:another', 'contact:browser-native'].includes(url.searchParams.get('subject')), subject: url.searchParams.get('subject') })
     case '/review/api/journey': return send(200, { entries: [], subjects: {}, next: null, more: 0 })
     case '/review/api/clusters': return send(200, [{ id: subject, size: account.cluster.members.length, oversized: false }])
     case '/review/api/recent': return send(200, [])
@@ -174,9 +175,9 @@ test('loaders and actions check the graph token and submit a decision as the sig
   const view = await invoke(accounts.loader, new Request(origin + path, { headers: { cookie } }), { subject })
   assert.match(JSON.stringify(view), /First <visit>/)
   assert.ok(requests.some(call => call.path === '/review/api/subject' && call.query.get('subject') === subject))
-  const form = { intent: 'join', subject, other, reason: 'Confirmed by reviewer', key: crypto.randomUUID(), at: String(observed), seen: '0' }
+  const form = { intent: 'join', subject, other: 'contact:73', reason: 'Confirmed by reviewer', key: crypto.randomUUID(), at: String(observed), seen: '0' }
   await invoke(accounts.action, new Request(origin + path, post(form, cookie)), { subject })
-  assert.deepEqual(decisions.get(form.key)?.pairs, [{ a: subject, b: other }])
+  assert.deepEqual(decisions.get(form.key)?.pairs, [{ a: subject, b: 'contact:73' }])
   assert.equal(decisions.get(form.key)?.by, 'dana')
 })
 
@@ -247,6 +248,14 @@ test('a plain HTML client signs in, reads an account, posts its form twice and s
   const rejected = await fetch(action, post(invalid, cookie))
   assert.equal(rejected.status, 400)
   assert.match((await rejected.text()).replace(/<script\b[^>]*>[^]*?<\/script>/gi, ''), /Choose two different IDs/)
+  // An ID no record has is refused before anything is decided, and the page names the ID that was typed.
+  const typo = new URLSearchParams(fields)
+  typo.set('other', 'contact:37')
+  const decided = requests.filter(call => call.path === '/v1/decide').length
+  const unknown = await fetch(action, post(typo, cookie))
+  assert.equal(unknown.status, 400)
+  assert.match((await unknown.text()).replace(/<script\b[^>]*>[^]*?<\/script>/gi, ''), /No record has the ID contact:37\./)
+  assert.equal(requests.filter(call => call.path === '/v1/decide').length, decided)
   for (const address of [action, origin + '/accounts/' + subject]) {
     const response = await fetch(address, post(fields, cookie))
     assert.equal(response.status, 303, 'a native submission redirects to its current account')

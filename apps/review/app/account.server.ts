@@ -79,6 +79,8 @@ export async function changeAccounts(request: Request, subject?: string, fields?
     } else {
       const actions = { join: 'merge', separate: 'split', rejoin: 'unsplit', unjoin: 'unmerge' } as const
       if (!Object.hasOwn(actions, intent) || !who || !field('other') || who === field('other')) return invalid('Choose two different IDs.')
+      // A join with an ID nobody has would tie this person to nothing, and show as done. The other three name a pair the page already listed.
+      if (intent === 'join' && !(await reviewGet(request, session, 'subject', { subject: field('other') })).known) return invalid('No record has the ID ' + field('other') + '. Check it and try again.')
       answer = await graph.decide({ ...common, action: actions[intent as keyof typeof actions], pairs: [{ a: who, b: field('other') }] }, options)
     }
     if (!answer.ok) return data({ error: answer.reason === 'STALE' ? 'A newer decision was made. Review the updated evidence before trying again.' : 'The graph refused this change (' + answer.reason + ').' }, {status: 409})

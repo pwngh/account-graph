@@ -198,7 +198,7 @@ export function DecisionScope({ children }: { children: ReactNode }) {
 }
 
 export interface WriteContext { key: string, at: number, seen: number }
-export type Intent = 'join' | 'separate' | 'rejoin' | 'mute' | 'restore' | 'forget'
+export type Intent = 'join' | 'unjoin' | 'separate' | 'rejoin' | 'mute' | 'restore' | 'forget'
 /** A decision, behind the control that opens its form. `look` is how the control is drawn: a button, or a quiet link inside a row. */
 export function DecisionForm({ context, intent, subject, other, identifier, targets, label, look = 'button', keys }: { context: WriteContext, intent: Intent, subject: string, other?: string, identifier?: string, targets?: string[], label?: string, look?: 'button' | 'link' | 'primary', keys?: string }) {
   const id = useId()
@@ -220,7 +220,7 @@ export function DecisionForm({ context, intent, subject, other, identifier, targ
     }
   }, [fetcher.data, fetcher.state])
   const busy = fetcher.state !== 'idle'
-  const button = { join: 'Join', separate: 'Separate', rejoin: 'Remove', mute: 'Ignore', restore: 'Restore', forget: 'Delete data' }[intent]
+  const button = { join: 'Join', unjoin: 'Undo join', separate: 'Separate', rejoin: 'Remove', mute: 'Ignore', restore: 'Restore', forget: 'Delete data' }[intent]
   return <details className={'decision-form ' + look + (intent === 'forget' ? ' danger' : '')} ref={details} onToggle={event => {
     // A live read may replace the audit head while the reviewer is writing a reason.
     setOpened(event.currentTarget.open ? context : null)
@@ -234,7 +234,7 @@ export function DecisionForm({ context, intent, subject, other, identifier, targ
     {scope?.enhanced && <input type="hidden" name="_enhanced" value="1"/>}
     {Object.entries({ intent, key: shown.key + id, seen: shown.seen, at: shown.at, subject, other, identifier }).map(([name, value]) => value != null && <input key={name} type="hidden" name={name} value={value}/>)}
     {intent === 'join' && !other && <label>Other ID <input name="other" placeholder="account:42" required maxLength={500}/></label>}
-    <p>{intent === 'forget' ? 'All data recorded for ' + subject + ' will be permanently deleted.' : intent === 'join' ? subject + ' and the other ID will be treated as one person.' : intent === 'separate' ? subject + ' and ' + other + ' will be treated as different people.' : intent === 'rejoin' ? subject + ' and ' + other + ' can be joined again.' : identifier}</p>
+    <p>{intent === 'forget' ? 'All data recorded for ' + subject + ' will be permanently deleted.' : intent === 'join' ? subject + ' and the other ID will be treated as one person.' : intent === 'unjoin' ? 'The decision that joined ' + subject + ' and ' + other + ' is taken back. They stay together only where other evidence links them.' : intent === 'separate' ? subject + ' and ' + other + ' will be treated as different people.' : intent === 'rejoin' ? subject + ' and ' + other + ' can be joined again.' : identifier}</p>
     <label>Reason <input name="reason" maxLength={1000}/></label>
     {intent === 'forget' && <>{!!targets?.length && <label><input type="checkbox" name="retract" value="yes"/> Ask {targets.join(', ')} to retract conversions</label>}<label><input type="checkbox" name="confirm" value="yes" required/> Permanently delete {subject}</label></>}
     <button type="submit" className={intent === 'forget' ? 'danger' : 'primary'} aria-disabled={busy} disabled={busy}>{busy ? 'Saving…' : button}</button>
