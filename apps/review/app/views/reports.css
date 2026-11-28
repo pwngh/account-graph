@@ -109,5 +109,7 @@ a.sort:hover { color: var(--ink); }
 .say-pop form { display: grid; gap: 10px; }
 .said:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; border-radius: 4px; }
 .say-pop p { margin: 0; }
+/* With no script the guide is its sentences in order. */
+.lesson-steps { display: grid; gap: 10px; margin: 0; padding: 4px 20px 20px 40px; font-size: 1rem; line-height: 1.45; }
 .say-pop .say-wrong { margin-top: 10px; }
 .say-pop button { justify-self: start; }

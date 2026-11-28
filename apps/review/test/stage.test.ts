@@ -125,7 +125,8 @@ async function reportText(client: ReturnType<typeof stageClient>, path: string) 
   const page = await client(path)
   assert.equal(page.status, 200, path)
   const html = byId((await page.text()).match(/<main\b[^>]*>([^]*?)<\/main>/)?.[1] ?? '')
-  return visibleText(withoutCards(html).replace(/<details\b[^>]*>[^]*?<\/details>/g, '').replace(/<\/?(?:h[1-6]|li|div|section|p|td|tr)\b[^>]*>/g, '\n')).replace(/\n+/g, '\n')
+  // A page's guide is shut until its button is pressed, as a form in a details is, so neither is what the page shows.
+  return visibleText(withoutCards(html).replace(/<dialog\b[^>]*>[^]*?<\/dialog>/g, '').replace(/<details\b[^>]*>[^]*?<\/details>/g, '').replace(/<\/?(?:h[1-6]|li|div|section|p|td|tr)\b[^>]*>/g, '\n')).replace(/\n+/g, '\n')
 }
 
 test('the browser helper preserves DevTools protocol and page errors and matches each pending reply', async () => {

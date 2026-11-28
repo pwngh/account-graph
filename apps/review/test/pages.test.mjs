@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { ticksOf } from '../app/views/report-words.js'
 import { csvCell } from '../app/csv.ts'
 import { startFirm } from '../../../examples/firm/firm.ts'
+import { readFileSync } from 'node:fs'
 
 test('the lines of the Journey chart fall on whole hours of the reviewer zone and name each day once', () => {
   const ticks = ticksOf(Date.UTC(2026, 10, 15, 23, 10), Date.UTC(2026, 10, 17, 0, 24), 'America/Chicago')
@@ -497,6 +498,43 @@ test('a long Board column is read on, fifty people at a time', async t => {
   // An address past the end says so and leads back. One that names no column is refused.
   assert.equal(column(await page('/board/90?column=0&from=500')).foot, 'None after 500 of ' + (people - 1) + ' · [Previous 50 /board/90?column=0&from=450#column-0]')
   assert.equal((await fetch(firm.graph + '/board/90?column=99&from=50', { headers: { cookie } })).status, 400)
+})
+
+test('the guide of each page is the original screen\'s, and opens from the page title with no script', async t => {
+  // The words, the pictures and the drawing are copied from the original screen. Whoever changes one changes the other.
+  const original = readFileSync(new URL('../../../src/edge/review/help.js', import.meta.url), 'utf8')
+  const copied = readFileSync(new URL('../app/views/guide.jsx', import.meta.url), 'utf8')
+  const part = (from, to) => original.slice(original.indexOf(from), original.indexOf(to, original.indexOf(from)) + to.length)
+  for (const [from, to] of [['const LESSON_ICONS = {', '\n}\n'], ['const GUIDES = {', '\n}\n'], ['function scene(lesson) {', '\n  return { root, show }\n}\n']]) {
+    const block = part(from, to)
+    assert.ok(block.length > 200 && copied.includes(block.replace(/^const /, 'export const ')), from)
+  }
+  const guides = new Function('GLYPHS', part('const GUIDES = {', '\n}\n').replace('const GUIDES =', 'return'))({})
+  // Every thing a guide draws has its drawing here: one of the guide's own, or the mark of a view. The two it borrows from the events are in the app's marks.
+  const icons = new Function('GLYPHS', part('const LESSON_ICONS = {', '\n}\n').replace('const LESSON_ICONS =', 'return'))({ value: 'value', result: 'result' })
+  const marks = readFileSync(new URL('../app/views/marks.tsx', import.meta.url), 'utf8')
+  const things = Object.values(guides).flatMap(guide => Object.values(guide.in).filter(([kind]) => kind === 'thing').map(([, what]) => what))
+  assert.deepEqual(things.filter(what => typeof icons[what] !== 'string' && !new RegExp('^  ' + what + ": '", 'm').test(marks)), [])
+  assert.match(marks, /^  value: 'M[^']+',$/m)
+  assert.match(marks, /^  result: 'M[^']+',$/m)
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const get = async path => (await (await fetch(firm.graph + path, { headers: { cookie } })).text()).split('</main>')[0].replaceAll('<!-- -->', '').replaceAll('&#x27;', "'").replaceAll('&amp;', '&')
+  const person = /href="(\/journey\/[^"]+)"/.exec(await get('/board/90'))[1]
+  const pages = { '/accounts': 'accounts', [person.replace('/journey/', '/accounts/')]: 'accounts', '/accounts/contact%3Anobody': 'accounts', '/journey': 'journey', [person]: 'journey', '/board/90': 'board', '/decide': 'decide', '/calls': 'calls', '/channels': 'channels', '/health': 'health' }
+  for (const [path, view] of Object.entries(pages)) {
+    const html = await get(path)
+    // One button beside the title, named for its guide. It opens the box with the same id, which has every sentence in order.
+    const found = [...html.matchAll(/<button type="button" class="explain" title="Guide" aria-label="Guide: ([^"]+)" popoverTarget="([^"]+)">[\s\S]*?<\/button><dialog class="lesson" popover="auto" id="([^"]+)" aria-label="([^"]+)">([\s\S]*?)<\/dialog>/g)]
+    assert.equal(found.length, 1, path)
+    const [, named, opens, id, label, body] = found[0]
+    assert.deepEqual([named, label, opens === id], [guides[view].title, guides[view].title, true], path)
+    assert.match(html, new RegExp('<div class="page-head">(<h2 class="page-title">[\\s\\S]*?</h2>)<button type="button" class="explain"'), path + ': the button follows the title')
+    assert.deepEqual([...body.matchAll(/<li>([^<]+)<\/li>/g)].map(match => match[1]), guides[view].steps.map(step => step[0]), path)
+    assert.equal(/<button type="button" class="lesson-shut" aria-label="Close" popoverTarget="([^"]+)" popoverTargetAction="hide">/.exec(body)?.[1], id, path + ': Close shuts this guide')
+  }
 })
 
 test('a term has its definition beside it on every page, in the page from the start', async t => {

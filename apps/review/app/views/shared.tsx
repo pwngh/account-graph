@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useId, useRef, useState, type Rea
 import { Form, Link, useFetcher, useLocation } from 'react-router'
 import { subjectPath } from '../navigation'
 import { ICONS, PERSON, typeOf } from './cluster-layout.js'
+import { Guide } from './guide'
 import { ViewMark, type ViewName } from './marks'
 import { Term } from './terms'
 import { idText, lasted } from './report-words.js'
@@ -101,7 +102,7 @@ export function PeriodForm({ action, from, to, today, keep = {} }: { action: str
 
 /** The heading of a view: its mark, its name, and the controls of the whole view. */
 export function PageHead({ view, title, children }: { view: ViewName, title: ReactNode, children?: ReactNode }) {
-  return <div className="page-head"><h2 className="page-title"><ViewMark name={view}/>{title}</h2>{children}</div>
+  return <div className="page-head"><h2 className="page-title"><ViewMark name={view}/>{title}</h2><Guide key={view} view={view}/>{children}</div>
 }
 
 export interface Reason { identifier: string, evidence: number, fanout: number, gap: number, group?: string, counted?: false }

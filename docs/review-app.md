@@ -104,6 +104,8 @@ The server writes every time on the page. On the first load with JavaScript, the
 | `/channels` | What each campaign cost and brought in for a period: six totals with the change from the days before, the campaigns ranked by a measure, the table with a breakdown and a cost per chosen step, platform-reported conversions, time to convert, value changes and what followed calls. `/channels/csv` gives the table as a file. |
 | `/health` | What needs someone, first. Then each feed with a card, the jobs, what waits to be sent, rejected conversions with Retry, the matching rules, the audit hash and conflicting decisions. |
 
+Each page has its guide beside the title: a few sentences about what the page is for, each with a picture. With JavaScript off the guide opens as the list of its sentences. The guides are the existing screen's, and a test holds the two together.
+
 The existing screen remains at `/review` on the graph server and at `/legacy` in the firm demo. It uses its own sign-in. The app links to it only at `REVIEW_LEGACY_URL`, or at `/legacy` in the demo. Opening an old `/review#/…` bookmark on the new app converts the fragment to a path when JavaScript runs. Call date ranges and links to a call on a journey keep their targets. Channels bookmarks keep their days, breakdown and steps. With scripts off the browser sends only `/review`. Use the Accounts link and navigation.
 
 ## Tests
