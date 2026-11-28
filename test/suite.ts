@@ -601,6 +601,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(await graph.cluster('account:2'), undefined)
       assert.deepEqual(await graph.history('account:2'), [])
       assert.deepEqual(await graph.verify(), [])
+      // The record of decisions still names it, so a screen asks which of its names are of deleted records. One never seen is not one of them.
+      assert.deepEqual((await graph.decisionPage({ limit: 5 })).filter((decision) => decision.action === 'forget').map((decision) => decision.about), [['account:2']])
+      assert.deepEqual(await graph.deleted(['account:1', 'account:2', 'account:2', 'account:never']), ['account:2'])
+      // Seen again, it is a record once more.
+      await graph.observe([{ subject: 'account:2', identifiers: ['email:c'], at: T0 + 1 }])
+      assert.deepEqual(await graph.deleted(['account:2']), [])
     })
 
     test('a reviewer can join two subjects by hand', async () => {

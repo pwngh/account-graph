@@ -960,7 +960,12 @@ export function createHandler(core: Core, options: HandlerOptions) {
         // One more than asked for says whether there is another page.
         const found = await graph.decisionPage({ limit: limit + 1, ...(before !== undefined && { before }), ...(author !== undefined && { author }) })
         const decisions = found.slice(0, limit)
-        return { decisions, next: found.length > limit ? decisions.at(-1)!.seq : null, total: (await graph.decisionPage({ limit: 1 }))[0]?.seq ?? 0 }
+        // The record of decisions keeps the ID of a deleted record, because each entry is sealed to the one before. A screen is sent "[Deleted]"
+        // in its place, so the ID does not reach a browser. Only an entry about records is read this way: what an ignore or a prune is about is no record.
+        const ofRecords = (action: string) => action === 'forget' || action === 'withdraw' || action === 'join' || action === 'unjoin' || action === 'separate' || action === 'rejoin'
+        const gone = new Set(await graph.deleted(decisions.filter(({ action }) => ofRecords(action)).flatMap(({ about }) => about)))
+        const shown = decisions.map((decision) => (ofRecords(decision.action) && decision.about.some((id) => gone.has(id)) ? { ...decision, about: decision.about.map((id) => (gone.has(id) ? '[Deleted]' : id)) } : decision))
+        return { decisions: shown, next: found.length > limit ? decisions.at(-1)!.seq : null, total: (await graph.decisionPage({ limit: 1 }))[0]?.seq ?? 0 }
       }
       case 'GET /disputes':
         return graph.disputes()

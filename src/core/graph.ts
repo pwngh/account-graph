@@ -443,6 +443,8 @@ export interface Graph {
   decisions(): Promise<Decision[]>
   /** One page of decisions, newest first. */
   decisionPage(page: DecisionPage): Promise<Decision[]>
+  /** Those of the given subjects that were deleted and have not come back: a decision deleted them, and nothing is kept of them now. */
+  deleted(subjects: readonly Subject[]): Promise<Subject[]>
   /** What the record says of each given pair. A pair nothing was decided about is left out. */
   verdicts(pairs: readonly (readonly [Subject, Subject])[]): Promise<Verdict[]>
   /** Pairs that systems have contradicted themselves or each other about three times or more, the most recently decided first. */
@@ -3348,6 +3350,19 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
     decisionPage(page) {
       return store.read((tx) => tx.decisionPage(page))
+    },
+
+    deleted(subjects) {
+      return store.read(async (tx) => {
+        const asked = unique(subjects)
+        const kept = await tx.labelsOf(asked)
+        const gone: Subject[] = []
+        // Most are still here. The rest are looked for among the decisions in one read, however many they are.
+        const absent = asked.filter((each) => !kept.has(each))
+        if (absent.length === 0) return gone
+        const forgotten = new Set((await tx.decisionsNaming(absent)).filter((decision) => decision.action === 'forget').flatMap((decision) => decision.about))
+        return absent.filter((each) => forgotten.has(each))
+      })
     },
 
     verdicts(pairs) {
