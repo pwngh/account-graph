@@ -69,7 +69,7 @@ export function Layout({children}: {children: React.ReactNode}) {
     <Form id="find" className="row" method="post" action="/search"><label>Search <input name="text" aria-keyshortcuts="Control+K Meta+K" placeholder="Search" autoComplete="off" enterKeyHint="search" required /></label><button className="primary">Open</button><span id="summon" aria-hidden="true"><kbd>{keys}</kbd></span></Form>
     <Form id="who" className="row" method="post" action="/signout" reloadDocument><bdi id="name">{data.name}</bdi><button id="leave">Sign out</button></Form></>}</header>
     <div id="notice" role="status">{navigation.state === 'loading' ? 'Opening view…' : navigation.state === 'submitting' ? 'Saving…' : ''}</div>
-    {data?.name && <Palette views={menu}/>}
+    {data?.name && <Palette views={menu} reviewer={data.name}/>}
     <main id="view" tabIndex={-1}><ZoneContext.Provider value={data?.zone ?? 'UTC'}>{children}</ZoneContext.Provider></main><footer>{data?.name && location.pathname !== '/stage' && (data.live ? <Live path={location.pathname}/> : <p className="meta">Live updates are off. Reload to see changes.</p>)}{data?.name && <span id="zone">Times in {data.zone}</span>}</footer><ScrollRestoration/><Scripts/></body></html>
 }
 export default function App() { return <Outlet/> }
