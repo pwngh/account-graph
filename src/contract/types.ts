@@ -532,6 +532,8 @@ export interface FollowUp {
   delay?: number
   /** A system of yours reported the return, and no call shows it. */
   reported?: true
+  /** Who signed that report, in a person's history, where the report was signed. */
+  reporter?: string
   /** How often you rang and nothing says they answered, before it was closed. */
   attempts: number
 }

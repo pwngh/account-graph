@@ -336,6 +336,24 @@ test('what a reviewer said of a call is taken back from the call in the caller\'
   assert.deepEqual([await waits(), await forms()], [['waits-1', 'waits-1-again'], []])
 })
 
+test('the history of a caller names the reviewer who reported them reached', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const { at } = await (await fetch(firm.graph + '/review/api/board?days=90', { headers: { authorization: 'Bearer demo' } })).json()
+  const written = await fetch(firm.graph + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ entries: [{ type: 'call', key: 'waits-1', at: at - 3 * 3600_000, direction: 'inbound', from: '+15550100061', to: '+15550100102', duration: 20, result: { answered: false, waited: 20 } }] }) })
+  const [{ value: { subject } }] = (await written.json()).results
+  const history = async () => (await (await fetch(firm.graph + '/journey/' + encodeURIComponent(subject), { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
+  assert.match(await history(), /Not returned/)
+  const said = await fetch(firm.graph + '/calls', { method: 'POST', headers: { cookie, origin: firm.graph }, body: new URLSearchParams({ intent: 'reached', call: 'waits-1', key: crypto.randomUUID(), at: String(at) }), redirect: 'manual' })
+  assert.equal(said.status, 303)
+  // The reviewer signed in as dana, so the row and the details of the wait both say so.
+  const after = await history()
+  assert.match(after, /Returned after 3 h \(reported by dana\)/)
+  assert.match(after, /Reported by dana, with no call/)
+})
+
 test('a term has its definition beside it on every page, in the page from the start', async t => {
   const firm = await startFirm({}, { quick: true })
   t.after(() => firm.close())

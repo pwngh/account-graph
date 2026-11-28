@@ -2190,6 +2190,10 @@
             "const": true,
             "description": "A system of yours reported the return, and no call shows it."
           },
+          "reporter": {
+            "type": "string",
+            "description": "Who signed that report, in a person's history, where the report was signed."
+          },
           "attempts": {
             "type": "number",
             "description": "How often you rang and nothing says they answered, before it was closed."

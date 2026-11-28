@@ -251,7 +251,7 @@ export function cardModels(recent) {
       const { call, followUp, pick } = data ?? {}
       if (!call || !(followUp?.delay >= 0)) return undefined
       return { title: `${followUp.state === 'called again' ? 'Called again' : 'Returned'} after ${lasted(followUp.delay)}`,
-        rows: [['From', moment(call.at)], ['To', moment(call.at + followUp.delay)], ['Attempts before that', followUp.attempts > 0 ? amount(followUp.attempts) : undefined], ['How we know', followUp.reported ? 'Reported, with no call' : 'An answered call']],
+        rows: [['From', moment(call.at)], ['To', moment(call.at + followUp.delay)], ['Attempts before that', followUp.attempts > 0 ? amount(followUp.attempts) : undefined], ['How we know', followUp.reported ? (followUp.reporter ? `Reported by ${followUp.reporter}, with no call` : 'Reported, with no call') : 'An answered call']],
         links: pick ? [{ text: 'Missed Call', href: journeyHash(call.subject, call.id) }, !followUp.reported && followUp.by && { text: followUp.state === 'called again' ? 'Later Call' : 'Return Call', href: journeyHash(call.subject, followUp.by) }] : [],
         foot: 'Click for both calls' }
     },

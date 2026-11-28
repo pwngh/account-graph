@@ -387,7 +387,7 @@ curl -q --noproxy 127.0.0.1 -X POST http://127.0.0.1:8080/v1/record -H "@${GRAPH
 { "results": [{ "type": "call_update", "key": "return-CA1", "ok": true, "value": { "duplicate": false, "stands": true, "state": "missed", "counted": false, "followUp": { "state": "returned", "by": "CA1", "delay": 7200000, "reported": true, "attempts": 1 } } }] }
 ```
 
-`reported` marks a return known only from such a report. The call summary counts these separately.
+`reported` marks a return known only from such a report. In a person's history the follow-up has `reporter`, the name that signed the report, where the report that stands was signed. The call summary counts these separately.
 
 | Rule | Behavior |
 | --- | --- |

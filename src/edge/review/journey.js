@@ -33,7 +33,7 @@ function told(entry, icon = '') {
     // Said to be nobody's inquiry, it waits for nobody.
     const followUp = entry.notLead ? undefined : entry.followUp
     const how = { answered: 'answered', missed: 'missed', voicemail: 'voicemail', waiting: 'waiting for result', unknown: 'unknown result' }[state] ?? 'unknown result'
-    const after = followUp && { open: 'Not returned', returned: `Returned after ${lasted(followUp.delay)}${followUp.reported ? ' (reported)' : ''}`, 'called again': `Called again after ${lasted(followUp.delay)}`, hidden: 'Number withheld' }[followUp.state]
+    const after = followUp && { open: 'Not returned', returned: `Returned after ${lasted(followUp.delay)}${followUp.reported ? (followUp.reporter ? ` (reported by ${followUp.reporter})` : ' (reported)') : ''}`, 'called again': `Called again after ${lasted(followUp.delay)}`, hidden: 'Number withheld' }[followUp.state]
     return [call.direction === 'outbound' ? 'Outbound ' : 'Inbound ', reviewDisplay.chip(how[0].toUpperCase() + how.slice(1), reviewDisplay.callTone(state)), notLead(entry.notLead), icon,
       facts(after && `${after}${followUp.attempts > 0 ? ` · ${amount(followUp.attempts)} ${followUp.attempts === 1 ? 'attempt' : 'attempts'}` : ''}`,
         call.duration === undefined ? '' : `Duration ${amount(Math.round(call.duration))} s`,
@@ -331,7 +331,7 @@ DETAILS['chart.wait'] = {
     const { call, followUp, pick } = data ?? {}
     if (!call || !(followUp?.delay >= 0)) return undefined
     return { title: `${followUp.state === 'called again' ? 'Called again' : 'Returned'} after ${lasted(followUp.delay)}`,
-      rows: [['From', moment(call.at)], ['To', moment(call.at + followUp.delay)], ['Attempts before that', followUp.attempts > 0 ? amount(followUp.attempts) : undefined], ['How we know', followUp.reported ? 'Reported, with no call' : 'An answered call']],
+      rows: [['From', moment(call.at)], ['To', moment(call.at + followUp.delay)], ['Attempts before that', followUp.attempts > 0 ? amount(followUp.attempts) : undefined], ['How we know', followUp.reported ? (followUp.reporter ? `Reported by ${followUp.reporter}, with no call` : 'Reported, with no call') : 'An answered call']],
       links: pick ? [{ text: 'Missed Call', href: location.hash, act: () => pick(call.id) }, !followUp.reported && followUp.by && { text: followUp.state === 'called again' ? 'Later Call' : 'Return Call', href: location.hash, act: () => pick(followUp.by) }] : [],
       foot: 'Click for both calls' }
   },

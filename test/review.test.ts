@@ -316,6 +316,12 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
     await run(`location.hash = ${JSON.stringify(`#/journey/${encodeURIComponent(`caller:${hashPhone(from!)}`)}`)}`)
     await until(said!, async () => (await text('#view')).includes(said!))
   }
+  // A report somebody signed names them.
+  await graph.sayReturn({ call: 'told-1', key: 'signed', at: Date.now(), reachedAt: rang + 600_000, by: 'dana' })
+  await run(`location.hash = '#/calls'`)
+  await until('the calls again', async () => (await text('#view')).includes('Not a lead'))
+  await run(`location.hash = ${JSON.stringify(`#/journey/${encodeURIComponent(`caller:${hashPhone('+17135550181')}`)}`)}`)
+  await until('who reported', async () => (await text('#view')).includes('Returned after 10 min (reported by dana)'))
 
   // What a platform claims stands beside what is credited, and a value it did not give is not a number.
   await graph.spend({ day: today, source: 'google', campaign: '=1+1', amount: 1234.5, clicks: 3, conversions: 7.5 })
