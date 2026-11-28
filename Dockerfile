@@ -10,10 +10,13 @@ RUN npm run build
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
-COPY package.json ./
+COPY package.json package-lock.json ./
 # The package itself needs nothing at run time; the server needs the PostgreSQL client.
-# The package lists that client for development only, so clear that list and install it plainly.
-RUN npm pkg delete devDependencies peerDependencies peerDependenciesMeta && npm install pg@^8.13.0 && npm cache clean --force
+# The package lists that client for development only, so clear that list and install it plainly, at the version the lock file holds,
+# with the packages it needs at theirs, so the image is built the same way twice.
+RUN PG=$(node -p "require('./package-lock.json').packages['node_modules/pg'].version") \
+  && npm pkg delete devDependencies peerDependencies peerDependenciesMeta && npm pkg set dependencies.pg=$PG \
+  && npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY --from=build /app/dist ./dist
 USER node
 EXPOSE 8080
