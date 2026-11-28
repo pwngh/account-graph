@@ -3276,6 +3276,20 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         let cut = Math.max(0, found.length - limit)
         while (cut > 0 && found[cut - 1]!.at === found[cut]!.at) cut -= 1
         const page = found.slice(cut)
+        // Who signed a reported return is with the statement, on the call it was said of. One report can close several misses, and only what this page shows is looked up.
+        const reporters = new Map<string, string | undefined>()
+        for (const entry of page) {
+          if (entry.kind !== 'call' || !entry.followUp?.reported || entry.followUp.by === undefined) continue
+          const source = entry.followUp.by
+          if (!reporters.has(source)) {
+            const said = newest(await tx.saidOf('return', source))
+            // A return written with no statement is nobody's, whoever signed a statement before it.
+            const stands = said !== undefined && said.data.reachedAt !== null && said.data.reachedAt === calls.find((call) => call.id === source)?.result?.returned
+            reporters.set(source, stands ? said.data.by : undefined)
+          }
+          const reporter = reporters.get(source)
+          if (reporter !== undefined) entry.followUp = { ...entry.followUp, reporter }
+        }
         // Delivery state belongs beside the ownership that was current when this journey was read.
         const shown = deliveries ? await Promise.all(page.map(async entry => {
           if (entry.kind !== 'outcome') return entry

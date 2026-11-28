@@ -235,6 +235,7 @@
 - On the Board in the review app, a card in Missed calls has Reached them and Not a lead, said of the caller's oldest missed call that still waits. `POST /board/:days` takes the same fields as `POST /calls`. A row of `GET /review/api/board` has `missed`, the ID of that call.
 - A reviewer's statement about a call clears the Board and report answers the server had kept, so the next read shows it.
 - In the review app, a call's row in a caller's history has Take back where it shows a reported return or not a lead. `POST /calls` and `POST /journey/:subject` take `intent` `not_reached` or `lead`. A statement older than the one that stands is answered `409`.
+- `followUp.reporter` names who signed a reported return, in a `journey` lookup and in `GET /review/api/journey`. Both screens show the name on the call's row and in the details of the wait.
 - The review app has the original screen's definitions: a mark beside a label opens what the word or the number means, with its arithmetic where it has one. Resting the mouse on the mark shows it, and pressing keeps it open.
 - A column heading of the campaign table on Channels orders it: largest first, then smallest, then as the report came. A word in the filter box narrows it to the campaigns with that word in their source, name or ID. Both are in the address (`sort`, `dir`, `find`), and the total stays of all campaigns.
 - An old `#/channels/…` bookmark opens Channels in the review app with its days, breakdown and steps. Health and Channels no longer link to the original screen.

@@ -1566,6 +1566,36 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([await graph.callResult('never'), (await graph.callResult('Q1'))!.answered], [undefined, false])
     })
 
+    test('a reported return names who signed it, in the history of the caller', async () => {
+      const now = () => T0 + 10 * HOUR
+      const { graph } = await fresh(undefined, { now })
+      const from = '+15550100082'
+      const miss = (id: string, at: number) => recordCall(graph, { id, from, to: '+15550100001', at, duration: 20, answered: false }, { results: 'expected', now })
+      await miss('M1', T0)
+      await miss('M2', T0 + HOUR)
+      await miss('M3', T0 + 5 * HOUR)
+      const history = async () => (await graph.journey(`caller:${hashPhone(from)}`)).entries.flatMap((entry) => (entry.kind === 'call' && entry.call.direction === 'inbound' ? [[entry.call.id, entry.followUp?.state, entry.followUp?.by, entry.followUp?.reporter]] : []))
+      // A report nobody signed names nobody.
+      await graph.sayReturn({ call: 'M1', key: 'a', at: T0 + 6 * HOUR, reachedAt: T0 + 3 * HOUR })
+      assert.deepEqual(await history(), [['M1', 'returned', 'M1', undefined], ['M2', 'returned', 'M1', undefined], ['M3', 'open', undefined, undefined]])
+      // The newest statement stands, and whoever signed it is named on every miss it closed.
+      await graph.sayReturn({ call: 'M1', key: 'b', at: T0 + 7 * HOUR, reachedAt: T0 + 3 * HOUR, by: 'dana' })
+      assert.deepEqual(await history(), [['M1', 'returned', 'M1', 'dana'], ['M2', 'returned', 'M1', 'dana'], ['M3', 'open', undefined, undefined]])
+      // An unsigned report after it stands in its place, and the older name is not shown for it.
+      await graph.sayReturn({ call: 'M1', key: 'c', at: T0 + 8 * HOUR, reachedAt: T0 + 3 * HOUR })
+      assert.deepEqual((await history()).map((row) => row[3]), [undefined, undefined, undefined])
+      await graph.sayReturn({ call: 'M1', key: 'd', at: T0 + 9 * HOUR, reachedAt: T0 + 3 * HOUR, by: 'dana' })
+      assert.deepEqual((await history()).map((row) => row[3]), ['dana', 'dana', undefined])
+      // A page of the history names them as the whole does.
+      assert.deepEqual((await graph.journey(`caller:${hashPhone(from)}`, { limit: 1, before: T0 + 2 * HOUR })).entries.flatMap((entry) => (entry.kind === 'call' ? [[entry.call.id, entry.followUp?.reporter]] : [])), [['M2', 'dana']])
+      // A return written with no statement is nobody's.
+      await graph.keepReturn('M1', T0 + 4 * HOUR)
+      assert.deepEqual(await history(), [['M1', 'returned', 'M1', undefined], ['M2', 'returned', 'M1', undefined], ['M3', 'open', undefined, undefined]])
+      // A call that reached them is not a report, and names nobody.
+      await recordCall(graph, { id: 'O1', direction: 'outbound', from: '+15550100001', to: from, at: T0 + 6 * HOUR, duration: 60, answered: true }, { now })
+      assert.deepEqual(await history(), [['M1', 'returned', 'M1', undefined], ['M2', 'returned', 'M1', undefined], ['M3', 'returned', 'O1', undefined]])
+    })
+
     test('a missed call is returned where one of your own systems says the caller was reached', async () => {
       const clock = { now: T0 + 10 * HOUR }
       const { graph } = await fresh(undefined, { now: () => clock.now })
