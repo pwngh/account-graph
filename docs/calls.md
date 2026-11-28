@@ -49,6 +49,8 @@ Two people can use the same line. When staff know who an individual call concern
 | `excluded` | Staff know the call did not concern the named record. | It stays under its call ID until someone identifies the person. |
 | `unknown` | Staff take back the earlier identification. Omit `subject`. | It stays under its call ID. |
 
+"Under its call ID" is the journey of `call:ID`, which shows a call that names nobody. A call nobody has named yet is in the history of its number.
+
 The newest statement wins, by `at` and then by key in byte order. It can arrive before the call. Use a new key for a correction. Results and reported returns have their own order. The call lookup keeps the statements and who made each one. After a deletion, a new statement can name the returning record once it has a fresh observation, such as a profile, and the call is on file with a start time after the deletion. A staff merge alone cannot establish a return. For an earlier or missing call the statement receives `FORGOTTEN`. A refused new key can be retried after the call arrives.
 
 For a staff desk, read the statement when the editor opens and keep its key until the reviewer saves. This also works before the phone report arrives.

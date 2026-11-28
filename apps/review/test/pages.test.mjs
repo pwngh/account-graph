@@ -387,7 +387,7 @@ test('a reviewer says which record a call was with, and the call moves to the hi
   }
   assert.equal(await form(ofRecord), undefined, 'the call is not in the history of the record yet')
   const first = await form(ofNumber)
-  assert.deepEqual([first.label, first.records, first.roles, first.fields.intent, first.fields.call, first.fields.seen], ['Say who it was', ['contact:rowan Rowan Vale · contact:rowan', 'contact:wren Wren Vale · contact:wren'], ['self', 'representative'], 'party', 'with-1', ''])
+  assert.deepEqual([first.label, first.records, first.roles, first.fields.intent, first.fields.call, first.fields.seen], ['Say who it was', ['contact:rowan Rowan Vale · contact:rowan', 'contact:wren Wren Vale · contact:wren'], ['self', 'representative', 'excluded', 'unknown'], 'party', 'with-1', ''])
   // Nothing is chosen for the reviewer: the list begins on no record. A form with no role, no record, two records, an ID no record has, or an ID the graph made for a caller is refused.
   assert.match(await page(ofNumber), /<select name="subject"><option value="" selected="">Choose a record<\/option>/)
   const refused = async more => { const answer = await post(ofNumber, { ...first.fields, _enhanced: '1', ...more }); return [answer.status, (await answer.text()).match(/Choose who was on the call|Choose a record, or give its ID|not both|No record has this ID/)?.[0]] }
@@ -405,7 +405,7 @@ test('a reviewer says which record a call was with, and the call moves to the hi
   assert.match(await page(ofRecord), /Record holder confirmed by dana/)
   // In the history of the record the form shows what stands and offers to take it back. The form of the page read before is refused.
   const second = await form(ofRecord)
-  assert.deepEqual([second.label, second.records, second.roles, second.fields.seen], ['Change who it was', ['contact:wren* Wren Vale · contact:wren', 'contact:rowan Rowan Vale · contact:rowan'], ['self*', 'representative'], 'dana ' + said.at + ' self'])
+  assert.deepEqual([second.label, second.records, second.roles, second.fields.seen], ['Change who it was', ['contact:wren* Wren Vale · contact:wren', 'contact:rowan Rowan Vale · contact:rowan'], ['self*', 'representative', 'excluded', 'unknown'], 'dana ' + said.at + ' self'])
   const stale = await post(ofNumber, { ...first.fields, key: crypto.randomUUID(), subject: 'contact:wren', role: 'representative', _enhanced: '1' })
   assert.equal(stale.status, 409)
   assert.match(await stale.text(), /Somebody said who this call was with after this page was read/)
@@ -417,11 +417,18 @@ test('a reviewer says which record a call was with, and the call moves to the hi
   // Somebody speaking for them. Then the other record on that line, by its ID with the list left as it was, which takes the call into its history.
   assert.equal((await post(ofRecord, { ...second.fields, subject: 'contact:wren', role: 'representative', _enhanced: '1' })).headers.get('location'), ofRecord + '#call-with-1')
   const third = await form(ofRecord)
-  assert.deepEqual([(await stands()).role, third.roles], ['representative', ['self', 'representative*']])
+  assert.deepEqual([(await stands()).role, third.roles], ['representative', ['self', 'representative*', 'excluded', 'unknown']])
   assert.match(await page(ofRecord), /Representative confirmed by dana/)
   assert.equal((await post(ofRecord, { ...third.fields, subject: 'contact:wren', other: 'contact:rowan', role: 'self' })).headers.get('location'), ofOther + '#call-with-1')
   const moved = await stands()
   assert.deepEqual([moved.role, moved.subject, await form(ofRecord), (await form(ofOther)).records], ['self', 'contact:rowan', undefined, ['contact:rowan* Rowan Vale · contact:rowan', 'contact:wren Wren Vale · contact:wren']])
+
+  // Not this record: the call leaves the record's history for its own, where the reviewer is taken. Then nobody named, with no record chosen.
+  const ofCall = '/journey/' + encodeURIComponent('call:with-1')
+  assert.equal((await post(ofOther, { ...(await form(ofOther)).fields, subject: 'contact:rowan', role: 'excluded' })).headers.get('location'), ofCall + '#call-with-1')
+  assert.deepEqual([(await stands()).role, await form(ofOther), (await form(ofCall)).roles], ['excluded', undefined, ['self', 'representative', 'excluded*', 'unknown']])
+  assert.equal((await post(ofCall, { ...(await form(ofCall)).fields, role: 'unknown' })).headers.get('location'), ofCall + '#call-with-1')
+  assert.deepEqual([(await stands()).role, (await form(ofCall)).label, await form(ofNumber)], ['unknown', 'Change who it was', undefined])
 })
 
 test('a join a reviewer made is undone from the account page, and the two are undecided again', async t => {

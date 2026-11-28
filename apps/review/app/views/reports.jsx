@@ -149,8 +149,10 @@ function CallWith({ entry, at, records }) {
       <label className="pick">{options.length > 0 ? 'Or another record, by its ID' : 'Record ID'}<input name="other" autoComplete="off" spellCheck="false"/></label>
       <label><input type="radio" name="role" value="self" required defaultChecked={party?.role === 'self'}/><span>They were on the call</span></label>
       <label><input type="radio" name="role" value="representative" defaultChecked={party?.role === 'representative'}/><span>Somebody spoke for them</span></label>
+      <label><input type="radio" name="role" value="excluded" defaultChecked={party?.role === 'excluded'}/><span>It was not this record</span></label>
+      <label><input type="radio" name="role" value="unknown" defaultChecked={party?.role === 'unknown'}/><span>Nobody is named. The record is not needed</span></label>
     </fieldset>
-    <p>A call that is named belongs to that record alone, with its outcome and its value, and moves to that record's history. No new conversion is sent to an ad platform for it. It is recorded under your name.</p>
+    <p>A call that is named belongs to that record alone, with its outcome and its value, and moves to that record's history. One that is not this record, or names nobody, stays under the call's own ID. No new conversion is sent to an ad platform for it. It is recorded under your name.</p>
   </SayOfCall>
 }
 /**
