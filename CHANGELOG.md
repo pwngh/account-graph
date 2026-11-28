@@ -202,6 +202,7 @@
 
 ### Reviewer screen
 
+- After a restart of the review app, the sign-in page says the session ended and why, and signing in returns the reviewer to their page.
 - `REVIEW_TRUST_PROXY` has the review app read each sender's address from `x-forwarded-for`, so behind a proxy ten wrong tokens lock out one address and not every reviewer.
 - A `profile`'s date of birth and address are kept as written on its record, and shown on the account page only. `POST /review/api/called` with `every: true` adds `dob` and `address`.
 - Search finds a person by any part of their name. `lookup` `find` answers `by: "name"` for it, once the text is no ID and no ad click.
