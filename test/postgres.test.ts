@@ -272,7 +272,9 @@ if (!url) {
         assert.ok(first.ok)
         const before = first.value.cursor
         assert.match(await run(['events', 'new-epoch']), /^history \w+ begins: every cursor is lost$/)
-        assert.equal((await graph.events({ after: before, limit: 1 })).ok, false)
+        const lost = await graph.events({ after: before, limit: 1 })
+        assert.deepEqual([lost.ok, !lost.ok && lost.reason], [false, 'CURSOR_LOST'])
+        assert.ok((await graph.events({ after: null, limit: 1 })).ok, 'the new history reads from its start')
       } finally {
         await graph.close()
       }
@@ -287,6 +289,14 @@ if (!url) {
       const meta = { META_PIXEL_ID: '555', META_ACCESS_TOKEN: 'made-up', META_SITE_URL: 'https://example.org' }
       await assert.rejects(run(['retry', 'nope-1'], meta), /No conversion nope-1 was queued for an ad platform/)
       await assert.rejects(run(['retry']), /Usage: account-graph retry CONVERSION/)
+      // A conversion queued for Meta: a failed send goes back in line, another platform is named, and one that arrived has nothing to retry.
+      const jobs = createPostgresStore(pool, schema).outbox
+      const job = (transactionId: string, state: 'failed' | 'sent') => ({ transactionId, target: 'meta', subject: 'contact:1', at: 1, action: 'Lead', keys: {}, state, attempts: 8, due: 1 })
+      await jobs.add(job('failed-1', 'failed'))
+      await jobs.add(job('sent-1', 'sent'))
+      await assert.rejects(run(['retry', 'failed-1', 'google'], meta), /Conversion failed-1 was not queued for google\. It was for meta/)
+      assert.deepEqual(JSON.parse(await run(['retry', 'failed-1', 'meta'], meta)).map((each: { state: string, target: string }) => [each.target, each.state]), [['meta', 'pending']])
+      await assert.rejects(run(['retry', 'sent-1'], meta), /Conversion sent-1 has no failed or skipped send to retry/)
       // A sample of joins is a sheet with its header, even of an empty graph, and refuses a size that is none.
       assert.equal((await run(['sample-joins', '--size', '5', '--seed', 'x'])).split('\n')[0], 'a,b,score,reasons,same')
       await assert.rejects(run(['sample-joins', '--size', '0']), /Usage: account-graph sample-joins/)
