@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { Script } from 'node:vm'
 import { createHash, createVerify, generateKeyPairSync } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -260,7 +259,7 @@ test('the server keeps the device id in its own cookie and honours an opt-out', 
   }
 })
 
-test('the reviewer screen is a locked-down shell, and its data needs the token', async () => {
+test('no reviewer screen is served, and the review data needs the token', async () => {
   const graph = createGraph(createMemoryStore())
   await graph.observe([
     { subject: 'account:1', identifiers: ['hardware:h', 'email:e1'], at: T0, event: 'login' },
@@ -275,26 +274,7 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   const auth = { authorization: 'Bearer secret' }
   try {
-    const page = await fetch(`${base}/review`)
-    const html = await page.text()
-    assert.equal(page.status, 200)
-    assert.match(page.headers.get('content-type')!, /^text\/html/)
-    assert.equal(page.headers.get('cache-control'), 'no-store')
-    // The policy names the exact script and style the page ships, and nothing else may run or load.
-    const policy = page.headers.get('content-security-policy')!
-    for (const tag of ['script', 'style']) {
-      const body = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(html)![1]!
-      assert.ok(policy.includes(`${tag}-src 'sha256-${createHash('sha256').update(body).digest('base64')}'`), `${tag} hash`)
-    }
-    assert.match(policy, /^default-src 'none';/)
-    assert.match(policy, /connect-src 'self'/)
-    assert.match(policy, /form-action 'none'/)
-    assert.equal(html.includes('\r'), false)
-    // The one address outside is the project's own docs, which a card links to, and which nothing on the page loads.
-    const outside = 'https://github.com/pwngh/account-graph/blob/main/docs/'
-    assert.equal(html.split(outside).length, 2)
-    assert.equal(/https?:\/\/(?!www\.w3\.org\/2000\/svg)/.test(html.replace(outside, '')), false, 'the page loads nothing from outside')
-    assert.equal(html.includes('innerHTML'), false)
+    assert.equal((await fetch(`${base}/review`)).status, 404)
 
     assert.equal((await fetch(`${base}/subject?subject=account:1`)).status, 401)
     const profile = (await (await fetch(`${base}/subject?subject=account:1`, { headers: auth })).json()) as any
@@ -319,8 +299,6 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
     const changed = await beat(tag)
     assert.equal(changed.status, 200)
     assert.notEqual(changed.headers.get('etag'), tag)
-    // The scripts are put together from several files; together they must parse.
-    assert.doesNotThrow(() => new Script(new RegExp('<script>([\\s\\S]*?)</script>').exec(html)![1]!))
 
     // A reviewer joins two accounts by hand; the decision is on the record.
     const joined = await fetch(`${base}/join`, { method: 'POST', headers: auth, body: JSON.stringify({ a: 'account:9', b: 'account:3', by: 'dana', reason: 'same caller' }) })

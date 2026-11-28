@@ -138,7 +138,6 @@ services:
       REVIEW_ORIGIN: ${REVIEW_ORIGIN:-}
       # Lets an open page update by itself. It is the named token above, which reads events and nothing else.
       REVIEW_EVENTS_TOKEN: ${REVIEW_EVENTS_TOKEN:-change-me-review-events-token}
-      REVIEW_LEGACY_URL: ${REVIEW_LEGACY_URL:-}
       REVIEW_RECORD_LINKS: ${REVIEW_RECORD_LINKS:-}
       # With a proxy of your own in front: true, or the number of proxies.
       REVIEW_TRUST_PROXY: ${REVIEW_TRUST_PROXY:-}

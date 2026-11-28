@@ -34,7 +34,6 @@ import type { Job, JobState, Outbox } from '../core/outbox.ts'
 import { dayIn, dayStart, sourceOf } from '../core/report.ts'
 import type { Ladder } from '../core/ladder.ts'
 import { defaultPolicy, plainPolicy, REBUILD_NOTICE } from '../core/policy.ts'
-import { reviewPage } from './review.ts'
 import { browserMark, readToken, signToken } from '../core/sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
 import { TOUCH_FIELDS } from '../core/touch.ts'
@@ -288,9 +287,8 @@ export function createLeadHandler(leads: LeadSources, record: RecordLead, now: (
 
 /**
  * An HTTP handler for `node:http`. `/collect` and `/event` are open to the listed origins,
- * `/collect.js` is the script tag that posts to it, `/review` serves the
- * reviewer screen, `/health` says the database answers, and every other
- * route needs a bearer token.
+ * `/collect.js` is the script tag that posts to it, `/health` says the database answers, and every other
+ * route needs a bearer token. The review app in `apps/review` reads `/review/api/*`.
  */
 export function createHandler(core: Core, options: HandlerOptions) {
   if (!validPageRules(options)) throw malformed('Page lists require literal paths or subtrees ending in /*')
@@ -837,13 +835,6 @@ export function createHandler(core: Core, options: HandlerOptions) {
       const format = path === 'GET /collect.js' && url.searchParams.get('gtm') === '1' ? 'classic' : 'module'
       const served = scripts[format] ??= browserScripts(options, format)
       response.writeHead(200, scriptHeaders).end(path === 'GET /collect.js' ? served.collect : served.fingerprint)
-      return SENT
-    }
-
-    if (path === 'GET /review') {
-      // The page is only a shell. Nothing it shows arrives without the token.
-      const page = reviewPage()
-      response.writeHead(200, page.headers).end(page.html)
       return SENT
     }
 

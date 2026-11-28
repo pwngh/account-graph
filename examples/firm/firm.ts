@@ -11,7 +11,7 @@
  * scenes. Ctrl-C stops and deletes all of it.
  */
 import { execFileSync } from 'node:child_process'
-import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto'
+import { generateKeyPairSync, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { createServer, type RequestListener } from 'node:http'
@@ -21,12 +21,11 @@ import type { AddressInfo } from 'node:net'
 import { accountGraph } from '../../src/index.ts'
 import type { CallValue, LocalOptions, RecordEntry, RecordValue } from '../../src/index.ts'
 import { createEdge } from '../../src/edge/index.ts'
-import { reviewPage } from '../../src/edge/review.ts'
 import { runWorkers } from '../../src/testing/index.ts'
 // The months before the story are written straight into the graph, as a program of this repository may. The story itself only uses what the package ships.
 import { internalsOf } from '../../src/client/internals.ts'
 import { hashPhone } from '../../tools/internals.ts'
-import { clockScript, landing } from './firm-page.ts'
+import { landing } from './firm-page.ts'
 import { PRACTICES } from './practice.ts'
 import { ADDRESS, DAY, HOUR, SECRET, campaignsOf, firmHistory, linesOf, stepsOf } from './history.ts'
 import { loadFirmHistory } from './load-history.ts'
@@ -102,7 +101,6 @@ async function round(databaseUrl: string | undefined, graphAt: string, sitePort:
   const { graph } = engine
   const handler = createEdge(firm, { token: 'service-demo', reviewers: { dana: 'demo' }, origins: [siteAt], limit: false, events: ['phone_click', 'text_click'] })
   const edge: RequestListener = (request, response) => {
-    response.setHeader('x-demo-ahead', ahead)
     const path = request.method + ' ' + new URL(request.url ?? '/', graphAt).pathname
     // A visit to the demo's own site is recorded at the firm's address, as the seeded ones are.
     if (path === 'POST /collect') {
@@ -113,12 +111,7 @@ async function round(databaseUrl: string | undefined, graphAt: string, sitePort:
         yield Buffer.from(Buffer.concat(chunks).toString().replace(`"landing":"${siteAt}`, `"landing":"${ADDRESS}`))
       }
     }
-    if (path !== 'GET /legacy') return handler(request, response)
-    const { html, headers } = reviewPage()
-    const script = clockScript(ahead)
-    const hash = createHash('sha256').update(script).digest('base64')
-    const policy = headers['content-security-policy']!.replace('script-src ', "script-src 'sha256-" + hash + "' ")
-    response.writeHead(200, { ...headers, 'content-security-policy': policy }).end(html.replace('<style>', () => '<script>' + script + '</script><style>'))
+    return handler(request, response)
   }
   const asked = async (path: string, init: RequestInit): Promise<any> => {
     const response = await fetch(graphAt + path, { ...init, headers: { 'user-agent': 'Mozilla/5.0 (the demo)', ...init.headers } })
@@ -590,7 +583,7 @@ export async function startFirm({databaseUrl}: Kept, options: Options = {}): Pro
     const path = (req.url ?? '/').split('?')[0]!
     if (!app) await listening
     if (!active || !app) return void res.writeHead(503).end('The firm could not start. Check its terminal and reload.')
-    if (/^\/(v1\/|review\/api\/|collect(?:[/.]|$)|legacy$|calls\/twilio|texts\/twilio)/.test(path)) return active.edge(req,res)
+    if (/^\/(v1\/|review\/api\/|collect(?:[/.]|$)|calls\/twilio|texts\/twilio)/.test(path)) return active.edge(req,res)
     return app(req,res)
   })
   await once(server.listen(ports[0], '127.0.0.1'), 'listening')

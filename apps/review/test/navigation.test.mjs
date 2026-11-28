@@ -3,7 +3,7 @@ import test from 'node:test'
 import { affectsPage, oldBookmark } from '../app/navigation.ts'
 
 test('old bookmarks keep subjects, call anchors, date ranges and original channel controls', () => {
-  const convert = hash => oldBookmark(hash, '/review', '/legacy')
+  const convert = hash => oldBookmark(hash, '/review')
   assert.equal(convert('#/accounts/contact%3Aone%2Ftwo'), '/accounts/contact%3Aone%2Ftwo')
   assert.equal(convert('#/journey/contact%3Aone/a%2Fb'), '/journey/contact%3Aone#call-a%252Fb')
   assert.equal(convert('#/calls/2026-10-01/2026-10-31'), '/calls?from=2026-10-01&to=2026-10-31')
@@ -13,9 +13,8 @@ test('old bookmarks keep subjects, call anchors, date ranges and original channe
   assert.equal(convert('#!channels'), '/channels')
   assert.equal(convert('#contact:one/two'), '/accounts/contact%3Aone%2Ftwo')
   assert.equal(convert('#view'), undefined)
-  assert.equal(oldBookmark('#call-a', '/journey/contact:one', '/legacy'), undefined)
-  // A Channels bookmark keeps its days and its breakdown here, with or without an address for the original screen.
-  assert.equal(oldBookmark('#/channels/2026-10-01/2026-10-31/hour', '/review'), '/channels?from=2026-10-01&to=2026-10-31&by=hour')
+  assert.equal(oldBookmark('#call-a', '/journey/contact:one'), undefined)
+  assert.equal(convert('#/channels/2026-10-01/2026-10-31/hour'), '/channels?from=2026-10-01&to=2026-10-31&by=hour')
 })
 
 test('live changes refresh the visible report, its details and journeys of related subjects', () => {

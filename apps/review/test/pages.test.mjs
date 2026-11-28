@@ -512,18 +512,12 @@ test('a long Board column is read on, fifty people at a time', async t => {
   assert.equal((await fetch(firm.graph + '/board/90?column=99&from=50', { headers: { cookie } })).status, 400)
 })
 
-test('the guide of each page is the original screen\'s, and opens from the page title with no script', async t => {
-  // The words, the pictures and the drawing are copied from the original screen. Whoever changes one changes the other.
-  const original = readFileSync(new URL('../../../src/edge/review/help.js', import.meta.url), 'utf8')
+test('the guide of each page opens from the page title with no script', async t => {
   const copied = readFileSync(new URL('../app/views/guide.jsx', import.meta.url), 'utf8')
-  const part = (from, to) => original.slice(original.indexOf(from), original.indexOf(to, original.indexOf(from)) + to.length)
-  for (const [from, to] of [['const LESSON_ICONS = {', '\n}\n'], ['const GUIDES = {', '\n}\n'], ['function scene(lesson) {', '\n  return { root, show }\n}\n']]) {
-    const block = part(from, to)
-    assert.ok(block.length > 200 && copied.includes(block.replace(/^const /, 'export const ')), from)
-  }
-  const guides = new Function('GLYPHS', part('const GUIDES = {', '\n}\n').replace('const GUIDES =', 'return'))({})
+  const part = (from, to) => copied.slice(copied.indexOf(from), copied.indexOf(to, copied.indexOf(from)) + to.length)
+  const guides = new Function('GLYPHS', part('export const GUIDES = {', '\n}\n').replace('export const GUIDES =', 'return'))({})
   // Every thing a guide draws has its drawing here: one of the guide's own, or the mark of a view. The two it borrows from the events are in the app's marks.
-  const icons = new Function('GLYPHS', part('const LESSON_ICONS = {', '\n}\n').replace('const LESSON_ICONS =', 'return'))({ value: 'value', result: 'result' })
+  const icons = new Function('GLYPHS', part('export const LESSON_ICONS = {', '\n}\n').replace('export const LESSON_ICONS =', 'return'))({ value: 'value', result: 'result' })
   const marks = readFileSync(new URL('../app/views/marks.tsx', import.meta.url), 'utf8')
   const things = Object.values(guides).flatMap(guide => Object.values(guide.in).filter(([kind]) => kind === 'thing').map(([, what]) => what))
   assert.deepEqual(things.filter(what => typeof icons[what] !== 'string' && !new RegExp('^  ' + what + ": '", 'm').test(marks)), [])

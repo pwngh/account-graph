@@ -4,8 +4,7 @@ import { reviewCalled, reviewGet, withGraph } from './auth.server'
 
 export function remaining(request: Request, view: string) {
   return withGraph(request, async session => {
-    const legacy = runtime().legacy
-    const base = { view, legacy: legacy && legacy + '#/' + view }
+    const base = { view }
     if (view === 'decide') {
       const audit = await reviewGet(request, session, 'decisions', {limit: '1'})
       // As many as the graph gives at once, so Skip reaches every pair it lists.

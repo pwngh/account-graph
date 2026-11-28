@@ -9,7 +9,7 @@ export interface Pair { a: string, b: string, score: number, level: 'same' | 're
 /** What is known of one of the two, as the comparison shows it. */
 export interface Side { subject: string, kinds: string[], events: string[], first?: number, last?: number, sightings: number, members: number, separated: number }
 export interface MatchesModel {
-  view: 'decide', legacy?: string, context: WriteContext
+  view: 'decide', context: WriteContext
   queue: { pairs: Pair[], total: number, seen: number, window?: { kind: string, older?: boolean, oldest?: number } }
   at: number, reasons?: Reason[], sides?: [Side, Side], effect?: string
   /** What each person in the queue is called, by ID. */
@@ -65,7 +65,7 @@ function MatchesPage({ model }: { model: MatchesModel }) {
   const next = queue.pairs[(model.at + 1) % queue.pairs.length]
   return <DecisionScope key={pair ? pairName(pair) : 'none'}><section><PageHead view="decide" title="Matches"/><Tiles items={[[['Pending', 'pending'], amount(queue.total)], [['IDs checked', 'checked'], amount(queue.seen)]]}/>
     {queue.total > queue.pairs.length && <p className="meta">The strongest {amount(queue.pairs.length)} are listed. The rest follow as these are decided.</p>}
-    {queue.window?.kind === 'recent' && queue.window.older && <p className="meta older">Pairs among sightings before <Time at={queue.window.oldest}/> are not in this queue. {model.legacy ? <a href={model.legacy}>Check older records on the original reviewer screen</a> : 'Check older records on the original reviewer screen'}.</p>}</section>
+    {queue.window?.kind === 'recent' && queue.window.older && <p className="meta older">Pairs among sightings before <Time at={queue.window.oldest}/> are not in this queue.</p>}</section>
     {pair && sides ? <div className="deck" ref={deck}><div className="queue-rail scroll" tabIndex={0} role="region" aria-label="Queue">{groups.map(([name, term, list]) => list.length > 0 && <div key={name}><p className="inbox-age"><Term id={term}>{name}</Term><span className="count">{amount(list.length)}</span></p>
       {list.slice(0, 40).map(each => <Link key={pairName(each)} className="queue-pair" aria-current={each === pair ? 'true' : undefined} to={pairPath(each)} preventScrollReset><span className="queue-names"><span title={each.a}>{named(each.a)}</span><span title={each.b}>{named(each.b)}</span></span><b>{percent(each.score)}</b><span className="meta">{each.kinds}</span><Meter share={each.score}/></Link>)}
       {list.length > 40 && <p className="meta queue-more">{amount(list.length - 40)} more</p>}</div>)}</div>

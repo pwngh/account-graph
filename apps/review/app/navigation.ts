@@ -25,7 +25,7 @@ export function readSubject(url: URL) {
 }
 
 // Fragments reach the browser only. Keep the old screen's date ranges and its links to a particular call.
-export function oldBookmark(hash: string, pathname: string, legacy?: string) {
+export function oldBookmark(hash: string, pathname: string) {
   if (!hash.startsWith('#') || hash === '#') return
   let raw = hash.slice(1)
   if (raw === '!channels') raw = '/channels'

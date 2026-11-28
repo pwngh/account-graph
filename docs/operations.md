@@ -1,6 +1,6 @@
 # Operations
 
-One command upgrades the database, serves the six calls, browsers, Twilio and the reviewer screen, and runs the workers.
+One command upgrades the database, serves the six calls, browsers, Twilio and the routes of the review app, and runs the workers.
 
 ```sh
 DATABASE_URL=postgres://localhost/graph \
@@ -121,7 +121,7 @@ Browsers keep cookies per domain, so each domain assigns its own device id. A pe
 
 ## Tokens
 
-`GRAPH_TOKEN`, the service token, opens the six calls. Send it from your own services, and keep it out of browsers. `REVIEW_TOKENS` gives each reviewer a name and a token for the reviewer screen, and for [some of the calls](http.md#tokens). Make every token long and random, for example with `openssl rand -hex 32`.
+`GRAPH_TOKEN`, the service token, opens the six calls. Send it from your own services, and keep it out of browsers. `REVIEW_TOKENS` gives each reviewer a name and a token for the review app, and for [some of the calls](http.md#tokens). Make every token long and random, for example with `openssl rand -hex 32`.
 
 ```sh
 REVIEW_TOKENS='{"dana":"…","lee":"…"}'
@@ -131,7 +131,7 @@ The audit log signs each decision with the name its token belongs to. Issue one 
 
 To replace a token, list both, `{"dana":["new","old"]}`, and restart. Remove the old token once it is out of use. Removing a name ends that person's access. Their decisions stay in the audit log.
 
-[Routes for browsers](http.md#routes-for-browsers), `/collect.js`, `/review` and `/health` need no token. `/review` serves a page whose data requires one.
+[Routes for browsers](http.md#routes-for-browsers), `/collect.js` and `/health` need no token.
 
 ### Named service tokens
 
@@ -146,34 +146,11 @@ Omit a call to close it. Use an array of entry types for `record`, actions for `
 
 ## Reviewer screen
 
-Open `/review` and enter a token. Each view has its own address, so you can link to it, reload it and go back to it.
-
-| Address | View | Shows |
-| --- | --- | --- |
-| `/review#/accounts` | Accounts | The largest clusters, recent changes, and decisions. |
-| `/review#/accounts/account:42` | Accounts | The subject, its cluster, links and their reasons, transfers, and sightings. The heading and Links table show "First seen here" and "Created in your system" for your records when known. Hover over a time for the exact timestamp. |
-| `/review#/journey/contact:42` | Journey | One person's timeline across all their subjects: visits, page activity, calls, steps and their values, consent, and decisions. A call's id may follow, to bring that call into view. |
-| `/review#/board/90` | Board | People by the furthest step they reached. Unreturned missed calls come first. |
-| `/review#/decide` | Matches | Related pairs in different clusters, one at a time, to join or separate. Keys: J, K, S to skip, U to undo. |
-| `/review#/calls` | Calls | Unreturned missed calls, call outcomes by hour and weekday, and coverage, over the last 30 days. Accepts two days in the address, as Channels does. |
-| `/review#/channels` | Channels | The cost and results of each campaign over the last 30 days. |
-| `/review#/channels/2026-11-01/2026-11-30` | Channels | The same for the given days. A breakdown, a step and a number of days may follow. |
-| `/review#/health` | Health | Undelivered alerts, feeds, jobs, conversions, the newest audit hash, and the running policy by kind. A banner appears when a rebuild is due. |
-
-A ring with three lines opens a detail card. It holds what is behind the number or row it stands beside: the counts, when and how something is known, the arithmetic, how to read it, and links. A card is made when it is opened, from what the page holds and the routes a reviewer already has, and is made again when the page is read again. What it fetched is kept for up to a minute, and dropped when the screen sees new writes or makes one. While the screen is paused, as below, a card can be as old as the view under it. What is not known is left out. Escape, Close or a press outside it closes it.
-
-| View | Cards |
-| --- | --- |
-| Calls | The five numbers, and each call after its state |
-| Board | The four numbers, and each person or text beside its age |
-| Journey | Each call after its state. A mark, a number or a dashed wait on the chart shows a short card when it is pointed at or focused, and opens beside the chart when pressed. |
-| Health | Each feed. One that is not monitored names the setting that would watch it. |
-
-The screen checks for new writes every ten seconds and reloads the view when there are some. It pauses while its tab is hidden, and while someone types in the view or answers a prompt.
+Reviewers work in the [review app](review-app.md), which `docker compose up --build` starts on port 3100. The graph server serves no page of its own. The app reads the routes under `/review/api/`.
 
 The reviewer endpoint `GET /review/api/undecided` returns up to 50 pairs by default. Set `limit` from 1 to 500. Pairs involving a subject from the newest 10,000 sightings come first by score, with ties ordered by the two subject ids. The `window` gives the number of sightings examined, the earliest recording time in epoch milliseconds (`oldest`, or null for an empty history), and whether older sightings were left out (`older`). Pass `next` back as `cursor` while `more` is true to see the rest of this queue.
 
-Matches on the reviewer screen says when older sightings were left out, and its "Check older records" goes through every record this way, a page of 100 records at a time.
+Matches in the review app says when older sightings were left out.
 
 Start with `?full=true` to review all subjects, including those whose sighting history has been pruned. Each request reads up to 100 subjects in id order and offers each pair under its first subject. Within that subject, pairs are ordered by the other id. The window names the first and last subjects examined. An empty page can still have a next cursor. In both modes, `seen` counts subjects examined and `total` counts qualifying pairs in this window. Each request starts a fresh read, so decisions made between pages take effect. A new or changed pair behind the cursor can be found on the next sweep.
 
@@ -204,7 +181,7 @@ A sample of joins, checked by a person each month, gives the share of joins that
 
    `share` is the share of checked rows that were one person. `low` and `high` are its 95% Wilson interval. With 300 rows checked, the interval is about 5 points wide.
 
-For each `no`, keep the two records apart in the [reviewer screen](#reviewer-screen), so the decision and its reason are recorded.
+For each `no`, keep the two records apart in the [review app](review-app.md), so the decision and its reason are recorded.
 
 ## Policy
 
@@ -408,7 +385,7 @@ After its receipt is pruned, a key is new again. A conversion, call, text, payme
 | Where | Answers |
 | --- | --- |
 | `GET /health` | `{"ok":true}` once the database answers. Needs no token. Use it for load balancer checks. |
-| `/review#/health` | Feeds and the time of each one's last record, job runs, undelivered alerts, pool usage, deliveries by state, whether a rebuild is due, and a [stop on sends](#stopping-sends) with its reason and time |
+| **Health** in the [review app](review-app.md) | Feeds and the time of each one's last record, job runs, undelivered alerts, pool usage, deliveries by state, whether a rebuild is due, and a [stop on sends](#stopping-sends) with its reason and time |
 | The server's log | Each line begins with its time in UTC. One line per request: method, path without its query, status and milliseconds. One line per conversion a platform rejects for good: transaction, platform and reason. `stopping` and `stopped` around a shutdown |
 
 ## Events
@@ -548,7 +525,7 @@ The call summary reports the calls that began while you were closed, and their o
 
 ### Targets
 
-A target is a number you set yourself to meet. The reviewer screen shows it beside what was reached, as set by you, and says whether it is met. It changes no count, color or alert. Without `TARGETS` none is shown.
+A target is a number you set yourself to meet. The review app shows it beside what was reached, as set by you, and says whether it is met. It changes no count, color or alert. Without `TARGETS` none is shown.
 
 ```sh
 TARGETS='{"answered":0.9,"returned":0.8,"callbackHours":2}'
@@ -601,7 +578,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `POLICY`, `POLICY_FILE` | the default policy | Overrides to the default policy, as JSON or a JSON file. Set at most one. |
 | `STAFF_NETWORKS` | none | Addresses and ranges whose visits are dropped, separated by commas: `192.0.2.10,198.51.100.0/24`. |
 | `LINK_SECRET` | none | Signs personal links, staff links, and the tokens that carry a visitor between your sites. At least 32 characters. |
-| `REPORT_TIME_ZONE` | `UTC` | Time zone of the reviewer screen's days, the Board's today, opening hours and alerts, such as `America/New_York`. Use the ad account's. A `report` call names its own zone in its `window`. |
+| `REPORT_TIME_ZONE` | `UTC` | Time zone of the review app's days, the Board's today, opening hours and alerts, such as `America/New_York`. Use the ad account's. A `report` call names its own zone in its `window`. |
 
 ### Outcomes and calls
 
@@ -725,5 +702,5 @@ The last column is the median of 300 sequential runs. Other tests used the datab
 
 - The shared test suite runs on the memory store and PostgreSQL 16, locally and in CI. It includes a fuzz test of observations, decisions, deletions and transfers, and six concurrent outbox workers.
 - The Docker image, the example site, ad click attribution, signed links, cross-site visitors and tap-to-call matching were exercised end to end in Chrome.
-- The reviewer screen and the `HttpOnly` device cookie were exercised in Chrome under their production headers.
+- The `HttpOnly` device cookie was exercised in Chrome under its production headers.
 - The hardware id was exercised on macOS and Linux.

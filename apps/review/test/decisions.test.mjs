@@ -95,13 +95,13 @@ test('native review forms change a memory graph and replay the decision and dele
   assert.equal((await profile(a)).known, true)
 })
 
-test('Matches says when pairs among older sightings are left out, and where to check them', async t => {
+test('Matches says when pairs among older sightings are left out', async t => {
   const graph = accountGraph({ memory: true })
   const at = Date.now()
   await graph.record({ entries: ['contact:old-a', 'contact:old-b'].map((subject, i) => ({ type: 'profile', key: 'old-' + i, at, subject, facts: { identifiers: ['canvas:shared'] } })) })
   const edge = createEdge(graph, { token: 'service-fixture', reviewers: { dana: 'review-fixture' }, origins: [], limit: false })
   // Ten thousand newer sightings are slow to write here, so the queue's answer is given the window the graph gives
-  // when they push older pairs out. test/review.test.ts checks that window with real sightings.
+  // when they push older pairs out. test/suite.ts checks that window with real sightings.
   let older = true
   const upstream = createServer(async (request, response) => {
     if (!request.url.startsWith('/review/api/undecided')) return edge(request, response)
@@ -110,7 +110,7 @@ test('Matches says when pairs among older sightings are left out, and where to c
   })
   const real = createServer(edge)
   for (const server of [upstream, real]) await once(server.listen(0, '127.0.0.1'), 'listening')
-  const ui = await reviewServer({ host: '127.0.0.1', port: 0, graphUrl: address(upstream), secret: 'local-review-test-secret-without-other-uses', legacyUrl: address(real) + '/review' })
+  const ui = await reviewServer({ host: '127.0.0.1', port: 0, graphUrl: address(upstream), secret: 'local-review-test-secret-without-other-uses' })
   t.after(async () => {
     for (const server of [ui, upstream, real]) {
       const done = once(server, 'close')
@@ -125,7 +125,7 @@ test('Matches says when pairs among older sightings are left out, and where to c
   const login = await fetch(origin + '/signin', { method: 'POST', headers: { origin }, body: new URLSearchParams({ token: 'review-fixture' }), redirect: 'manual' })
   const cookie = login.headers.get('set-cookie').split(';')[0]
   const page = async () => (await fetch(origin + '/decide', { headers: { cookie } })).text()
-  assert.match(await page(), /<p class="meta older">Pairs among sightings before <time dateTime="[^"]+"[^>]*>[^<]+<\/time> are not in this queue\. <a href="[^"]+#\/decide">Check older records on the original reviewer screen<\/a>\.<\/p>/)
+  assert.match(await page(), /<p class="meta older">Pairs among sightings before <time dateTime="[^"]+"[^>]*>[^<]+<\/time> are not in this queue\.<\/p>/)
   // With nothing left out, nothing is said.
   older = false
   assert.doesNotMatch(await page(), /class="older"/)

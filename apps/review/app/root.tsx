@@ -6,10 +6,11 @@ import { runtime } from './runtime.server'
 import { ZoneContext } from './views/shared'
 import { ViewMark, type ViewName } from './views/marks'
 import { affectsPage, oldBookmark, subjectAddress, subjectPath } from './navigation'
-import original from '../../../src/edge/review/style.css?url'
+// The original screen's stylesheet, which the app is drawn with. The app's own additions follow it.
+import original from './original.css?url'
 import additions from './style.css?url'
 export const links = () => [{rel: 'icon', type: 'image/svg+xml', href: '/favicon.ico'}, {rel: 'stylesheet', href: original}, {rel: 'stylesheet', href: additions}]
-export async function loader({request}: LoaderFunctionArgs) { return {name: (await current(request))?.name, legacy: runtime().legacy, live: Boolean(runtime().eventsToken), zone: await reviewerZone(request)} }
+export async function loader({request}: LoaderFunctionArgs) { return {name: (await current(request))?.name, live: Boolean(runtime().eventsToken), zone: await reviewerZone(request)} }
 const menu: [string, string, ViewName][] = [['accounts','Accounts','accounts'], ['journey','Journey','journey'], ['board/90','Board','board'], ['decide','Matches','decide'], ['calls','Calls','calls'], ['channels','Channels','channels'], ['health','Health','health']]
 
 function Live({path}: {path: string}) {
@@ -52,13 +53,13 @@ export function Layout({children}: {children: React.ReactNode}) {
   const navigation = useNavigation()
   useEffect(() => {
     function bookmark() {
-      const path = oldBookmark(window.location.hash, window.location.pathname, data?.legacy)
-      if (path) window.location.replace(!data?.name && path.startsWith('/') && !path.startsWith('/legacy') ? '/signin?next=' + encodeURIComponent(path) : path)
+      const path = oldBookmark(window.location.hash, window.location.pathname)
+      if (path) window.location.replace(!data?.name ? '/signin?next=' + encodeURIComponent(path) : path)
     }
     bookmark()
     window.addEventListener('hashchange', bookmark)
     return () => window.removeEventListener('hashchange', bookmark)
-  }, [data?.legacy, data?.name])
+  }, [data?.name])
   useEffect(() => {
     function search(event: KeyboardEvent) {
       const input = document.querySelector<HTMLInputElement>('#find input')

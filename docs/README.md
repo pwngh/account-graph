@@ -34,7 +34,7 @@ One page for each concept.
 | Command | Purpose |
 | --- | --- |
 | `npm run firm` | Sample firm with a stage for presenting |
-| `npm run review` | Reviewer screen with sample data (`tools/review-demo.ts`) |
+| `npm run firm` | The review app over a sample firm's data (`examples/firm/firm.ts`) |
 | `npm run demo` | The six calls from Node, on made-up data (`examples/six-calls.ts`) |
 | `examples/site.ts` | Two-page site with the script tag and a signup form |
 | `examples/call-tracking.ts` | Takes a call tracking webhook and records the call |

@@ -13,7 +13,7 @@ node examples/site.ts            # in a second terminal: an example site on :300
 
 1. Open <http://localhost:3000/?gclid=demo-click&utm_id=20111> and enter `pat@example.org` on the example site.
 2. The page shows the attributed ad click and its confidence, 98%.
-3. Open <http://localhost:8080/review>, sign in with the token `change-me-review-token`, and open the account. **Channels** shows the signup under its campaign.
+3. Open the review app at <http://localhost:3100>, sign in with the token `change-me-review-token`, and open the account. **Channels** shows the signup under its campaign.
 
 To use another port, run `GRAPH_PORT=8090 docker compose up --build` and `GRAPH_URL=http://localhost:8090 node examples/site.ts`.
 

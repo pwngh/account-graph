@@ -15,7 +15,7 @@ google   Search: brand         164.50     70         5        5         3     62
 (none)                           0.00      0         0        0         1     200
 ```
 
-The **Channels** view at `/review` shows the same table. Run `npm run review` to see it with sample data.
+The **Channels** page of the [review app](review-app.md) shows the same table. Run `npm run firm` to see it with sample data.
 
 Campaign totals count a stated caller once with duplicates that staff explicitly merged into that record. The chain of merges must run through records. Records linked to that caller only by a shared phone or browser count separately.
 

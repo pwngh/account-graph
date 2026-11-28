@@ -98,14 +98,3 @@ test('each row of Call results has a card: the count, what it is a share of, the
   assert.ok(report.includes('<dt>Missed and voicemail</dt>'), 'the card is in the page')
   assert.match(await (await get(links[2])).text(), /<h2>Voicemail<\/h2>[^]*<dt>All inbound calls<\/dt><dd>4<\/dd>/)
 })
-
-test('the app has a card for each one the original screen has, for as long as that screen is there', async () => {
-  const { readFile, readdir } = await import('node:fs/promises')
-  const root = new URL('../../../', import.meta.url)
-  const keys = text => [...text.matchAll(/DETAILS(?:\['([^']+)'\]|\.(\w+)) *=/g)].map(([, quoted, plain]) => quoted ?? plain)
-  const old = new URL('src/edge/review/', root)
-  const original = new Set((await Promise.all((await readdir(old)).filter(name => name.endsWith('.js')).map(name => readFile(new URL(name, old), 'utf8')))).flatMap(keys))
-  const app = new Set(keys(await readFile(new URL('apps/review/app/cards.server.js', root), 'utf8')))
-  assert.ok(app.size >= 16, 'the card models were found')
-  assert.deepEqual([...original].filter(key => !app.has(key)).sort(), [])
-})

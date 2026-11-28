@@ -45,7 +45,7 @@ This starts a made-up law firm with two months of data, a site and 27 scenes to 
 
 ## Reviewer screen
 
-The reviewer app serves Accounts, Journey, Board, Matches, Calls, Channels and Health as HTML, and `docker compose up --build` starts it on port 3100. The original screen is still available on the graph server. See the [review app guide](docs/review-app.md).
+The reviewer app serves Accounts, Journey, Board, Matches, Calls, Channels and Health as HTML, and `docker compose up --build` starts it on port 3100. See the [review app guide](docs/review-app.md).
 
 Reviewers see the evidence behind every match, missed calls awaiting a callback, and the return on each campaign. These are four of its seven views. Accounts is the picture at the top, and the others are Matches and Calls.
 
@@ -64,7 +64,7 @@ flowchart LR
   B[Browser on your site] -- "device id, ad click, page events" --> S[Graph server]
   T[Phone provider] -- "calls" --> S
   A[Your backend] -- "record, decide, lookup" --> S
-  R[Reviewer] -- "/review" --> S
+  R[Reviewer] -- "review app" --> S
   S --> G[(PostgreSQL)]
   S -- "conversions" --> P[Google, Meta, Microsoft, TikTok]
   S -- "events" --> W[Your webhook]
