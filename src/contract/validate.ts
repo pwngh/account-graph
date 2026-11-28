@@ -162,7 +162,7 @@ const ENTRIES: Record<string, Check> = {
   }),
   payment: entry({ conversion: key, direction: oneOf('received', 'refunded'), amount: number(1e-5, 1e10), 'currency?': currency }),
   call: entry({ direction: oneOf('inbound', 'outbound'), 'from?': phone, to: phone, 'duration?': number(0, 1e7), 'result?': callResult, 'code?': string(1, 64), 'tags?': tags, 'caller?': shape({ 'name?': string(1, 120), 'place?': string(1, 120) }) }, providerId),
-  call_update: entry({ call: providerId, change: byField('kind', { result: shape({ kind: any, result: callResult }), returned: shape({ kind: any, reachedAt: at, 'by?': signer }), not_returned: shape({ kind: any, 'by?': signer }), party }) }),
+  call_update: entry({ call: providerId, change: byField('kind', { result: shape({ kind: any, result: callResult }), returned: shape({ kind: any, reachedAt: at, 'by?': signer }), not_returned: shape({ kind: any, 'by?': signer }), recording: shape({ kind: any, id: providerId, state: oneOf('in_progress', 'completed', 'absent', 'deleted') }), party }) }),
   text: entry({ direction: oneOf('inbound', 'outbound'), from: phone, to: phone, 'text?': string(0, 20_000), 'code?': string(1, 64), 'tags?': tags }, providerId),
   consent: entry({ subject, consent, 'source?': short }),
   link: entry({ subject, url: text, expires: at, 'purpose?': name }, string(1, 200, /^[^\r\n]+$/)),

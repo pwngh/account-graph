@@ -11,6 +11,8 @@ export type Said = { about: string; key: string; at: number } & (
   | { topic: 'result'; data: { answered: boolean; voicemail?: boolean; waited?: number } }
   | { topic: 'party'; data: CallParty & { by: string } }
   | { topic: 'return'; data: { reachedAt: number | null; by?: string } }
+  /** A recording the phone system holds of a call: its ID there, and how it stands. The recording itself is never fetched or kept. */
+  | { topic: 'recording'; data: { id: string; state: string } }
 )
 export type Topic = Said['topic']
 export type SaidOf<T extends Topic> = Extract<Said, { topic: T }>

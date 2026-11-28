@@ -24,7 +24,7 @@ import { trusted } from '../providers/fingerprint.ts'
 import type { FingerprintVerifier } from '../providers/fingerprint.ts'
 import { placeOf, shared } from '../providers/maxmind.ts'
 import { RECENT_SIGHTINGS } from '../core/undecided.ts'
-import { fromTwilio, twilioCall, twilioText } from '../providers/twilio.ts'
+import { fromTwilio, twilioCall, twilioRecording, twilioText } from '../providers/twilio.ts'
 import type { Targets } from '../core/targets.ts'
 import { asks, codeNote, textCode, texted } from '../core/texts.ts'
 import type { TextOptions } from '../core/texts.ts'
@@ -53,6 +53,8 @@ export interface Core {
   /** The stop on sends that stands, if one does. */
   sendsPaused?(): Promise<{ at: number; reason: string } | undefined>
   called(call: Call): Promise<unknown>
+  /** A recording the phone system holds of a call: its ID there and how it stands. */
+  recorded?(recording: { call: string; id: string; state: 'in_progress' | 'completed' | 'absent' | 'deleted'; at: number }): Promise<unknown>
   texted(text: Text): Promise<unknown>
   forget(subjects: readonly Subject[], why: Deciding, retract: boolean): Promise<{ changes: Change[]; sent: unknown[] }>
   /** Hears of a decision made here, so answers kept elsewhere are worked out again. */
@@ -801,6 +803,12 @@ export function createHandler(core: Core, options: HandlerOptions) {
       const { authToken, url: address } = options.calls.twilio
       if (!fromTwilio(authToken, address, fields, String(request.headers['x-twilio-signature'] ?? ''))) throw new Refusal(403, 'Invalid signature')
       storable(fields)
+      // The same address takes the recording status callback, which says nothing of how the call went.
+      const recording = twilioRecording(fields, now())
+      if (recording) {
+        await core.recorded?.(recording)
+        return undefined
+      }
       const call = twilioCall(fields, now())
       if (call) await core.called(call)
       return undefined

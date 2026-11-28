@@ -623,7 +623,7 @@ export interface Conflict {
 export type Entry = { at: number; subject: Subject } & (
   | { kind: 'visit'; touch: Touch }
   | { kind: 'sighting'; event: string; identifiers: Identifier[] }
-  | { kind: 'call'; call: KeptCall; followUp?: FollowUp; notLead?: NotLead['kind'] }
+  | { kind: 'call'; call: KeptCall; followUp?: FollowUp; notLead?: NotLead['kind']; /** The phone system's recording of the call: its ID there, and how it stands. */ recording?: { id: string; state: string } }
   | { kind: 'text'; text: KeptText; reply?: TextReply; notLead?: NotLead['kind'] }
   | { kind: 'link'; link: SentLink }
   | { kind: 'outcome'; outcome: Counted; first: OutcomeValue | null; notLead?: NotLead['kind'] }

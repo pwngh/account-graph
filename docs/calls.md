@@ -204,6 +204,7 @@ A shorter window loses callers who took longer to dial. A number that is always 
 Choose it from your own calls. Count the ties at each length, then move every tap by several amounts, such as a day and a week, to times as busy on the same number, and count again. The second counts estimate the ties made by chance.
 
 Where Twilio sends `CallerName`, `FromCity` or `FromState` with the callback, the adapter keeps them on the record of the caller's number as the phone company's words. The review app shows them on the open call and on the account page. Nothing is matched on them: a caller ID is often the account holder or a carrier's placeholder. Your own system can send the same as `caller` on a `call` entry.
+To have a recorded call marked "Recorded" in the review app, set the recording status callback of your Twilio calls to the same `/calls/twilio` address. The graph keeps the recording's ID at Twilio and how it stands. It never fetches or keeps the audio, and it does not store the address Twilio sends. Your own system can send the same as a `call_update` with `change.kind` `recording`.
 
 The Twilio adapter estimates when a call began from the callback timestamp, or the receipt time, minus connected seconds. Ring time and delivery delay can move a missed call outside the tap window. See [Twilio status callbacks](https://www.twilio.com/docs/voice/twiml#statuscallback-request-parameters).
 

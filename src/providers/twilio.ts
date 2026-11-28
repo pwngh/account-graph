@@ -53,6 +53,17 @@ export function twilioCall(fields: Readonly<Record<string, string>>, now: number
   }
 }
 
+/**
+ * What a recording status callback says: which call, the recording's ID at Twilio, and how it stands.
+ * Undefined for a callback that is not of a recording. The address of the audio is left where it is.
+ */
+export function twilioRecording(fields: Readonly<Record<string, string>>, now: number): { call: string; id: string; state: 'in_progress' | 'completed' | 'absent'; at: number } | undefined {
+  const state = ({ 'in-progress': 'in_progress', completed: 'completed', absent: 'absent' } as const)[fields.RecordingStatus ?? '']
+  if (!fields.RecordingSid || !fields.CallSid || !state) return undefined
+  const said = Date.parse(fields.Timestamp ?? '')
+  return { call: fields.CallSid, id: fields.RecordingSid, state, at: Number.isNaN(said) ? now : said }
+}
+
 /** The text an incoming message webhook reports, or undefined for a status report of one you sent. `now` is its time, which Twilio does not send. */
 export function twilioText(fields: Readonly<Record<string, string>>, now: number): Text | undefined {
   if (!fields.MessageSid || !fields.From || !fields.To || (fields.SmsStatus ?? 'received') !== 'received' || !['received', 'receiving'].includes(fields.MessageStatus ?? 'received')) return undefined
