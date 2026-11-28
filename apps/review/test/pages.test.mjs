@@ -454,6 +454,51 @@ test('a join a reviewer made is undone from the account page, and the two are un
   assert.deepEqual([await members(), last.filter(form => form.other === 'contact:birch'), linked(last)], [['contact:ash', 'contact:cedar'], [], ['separate']])
 })
 
+test('a long Board column is read on, fifty people at a time', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const board = async () => (await fetch(firm.graph + '/review/api/board?days=90', { headers: { authorization: 'Bearer demo' } })).json()
+  const { at } = await board()
+  // Sixty callers nobody has returned, each a minute after the one before.
+  const written = await fetch(firm.graph + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ entries: Array.from({ length: 60 }, (_, i) => ({ type: 'call', key: 'long-' + String(i).padStart(2, '0'), at: at - (120 - i) * 60_000, direction: 'inbound', from: '+1555010' + (6000 + i), to: '+15550100102', duration: 20, result: { answered: false, waited: 20 } })) }) })
+  assert.ok((await written.json()).results.every(result => result.ok))
+  for (let tries = 0; tries < 50 && (await board()).columns[0].people < 60; tries++) await new Promise(resolve => setTimeout(resolve, 100))
+  const { people } = (await board()).columns[0]
+  assert.ok(people >= 60, String(people))
+  const page = async path => (await (await fetch(firm.graph + path, { headers: { cookie } })).text()).replaceAll('<!-- -->', '').replaceAll('&amp;', '&')
+  // What the first column says under its people, the calls its cards are about, and where a card's details are read.
+  const column = html => {
+    const [section] = html.match(/<section aria-label="Missed calls" id="column-0"[\s\S]*?<\/section>/) ?? []
+    assert.ok(section, 'the Missed calls column')
+    return { foot: (section.match(/<p class="muted board-foot">([\s\S]*?)<\/p>/)?.[1] ?? '').replace(/<a [^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/g, '[$2 $1]'), named: [...section.matchAll(/<a [^>]*aria-label="((?:Next|Previous) 50 in [^"]+)"/g)].map(match => match[1]), calls: [...new Set([...section.matchAll(/name="call" value="([^"]+)"/g)].map(match => match[1]))], details: section.match(/href="(\/details\/board\/90\?[^"]+)"/)?.[1] }
+  }
+  const first = column(await page('/board/90'))
+  assert.equal(first.foot, '1 to 50 of ' + people + ' · [Next 50 /board/90?column=0&from=50#column-0]')
+  assert.equal(first.calls.length, 50)
+  // The next fifty are the rest, with a way back, and none of them was on the first page. A card there opens its own details.
+  const second = column(await page('/board/90?column=0&from=50'))
+  assert.equal(second.foot, '51 to ' + people + ' of ' + people + ' · [Previous 50 /board/90#column-0]')
+  assert.deepEqual([second.calls.length, second.calls.filter(call => first.calls.includes(call))], [people - 50, []])
+  assert.ok(second.calls.includes('long-59'), 'the caller who has waited least is last')
+  assert.deepEqual([first.named, second.named], [['Next 50 in Missed calls'], ['Previous 50 in Missed calls']])
+  assert.match(second.details ?? '', /column=0&from=50/)
+  // The details lead back to the column and the people the card was among.
+  const details = await fetch(firm.graph + second.details, { headers: { cookie } })
+  assert.equal(details.status, 200)
+  assert.match((await details.text()).replaceAll('&amp;', '&'), /<a [^>]*href="\/board\/90\?column=0&from=50#column-0"[^>]*>Back to report<\/a>/)
+  // What is said of a caller on a later page is recorded, and the page read again is the same one.
+  const said = await fetch(firm.graph + '/board/90?column=0&from=50', { method: 'POST', headers: { cookie, origin: firm.graph }, body: new URLSearchParams({ intent: 'reached', call: 'long-59', key: crypto.randomUUID(), at: String(at) }), redirect: 'manual' })
+  assert.deepEqual([said.status, said.headers.get('location')], [303, '/board/90?column=0&from=50'])
+  assert.equal((await board()).columns[0].people, people - 1)
+  // A place that is no step of fifty is read as the beginning.
+  assert.equal(column(await page('/board/90?column=0&from=25')).foot, '1 to 50 of ' + (people - 1) + ' · [Next 50 /board/90?column=0&from=50#column-0]')
+  // An address past the end says so and leads back. One that names no column is refused.
+  assert.equal(column(await page('/board/90?column=0&from=500')).foot, 'None after 500 of ' + (people - 1) + ' · [Previous 50 /board/90?column=0&from=450#column-0]')
+  assert.equal((await fetch(firm.graph + '/board/90?column=99&from=50', { headers: { cookie } })).status, 400)
+})
+
 test('a term has its definition beside it on every page, in the page from the start', async t => {
   const firm = await startFirm({}, { quick: true })
   t.after(() => firm.close())

@@ -1011,7 +1011,11 @@ export function createHandler(core: Core, options: HandlerOptions) {
       case 'GET /board': {
         const steps = Object.entries(options.stages ?? {}).map(([name, { wait }]) => ({ name, ...(wait && { wait }) }))
         const days = url.searchParams.has('days') ? Number(url.searchParams.get('days')) : 90
-        const { columns, ...board } = await graph.board({ steps, days, at: now(), ...(options.timeZone && { timeZone: options.timeZone }), ...(options.returnHours && { returnHours: options.returnHours }), ...(options.hours && { hours: options.hours }) })
+        // One column can be read further on, fifty people at a time. A column that does not exist, or a row that is no whole number, is the caller's mistake.
+        // Each is read as written: digits only, so that a blank or a fraction is not rounded into a row.
+        const [column, from] = ['column', 'from'].map((name) => (url.searchParams.has(name) ? (/^\d{1,9}$/.test(url.searchParams.get(name)!) ? Number(url.searchParams.get(name)) : NaN) : undefined))
+        if ((column === undefined) !== (from === undefined) || (column !== undefined && !(Number.isSafeInteger(column) && column >= 0 && column <= steps.length && Number.isSafeInteger(from) && from! >= 0))) throw new Refusal(400, '`column` and `from` go together: a column of the board, counted from 0, and how many of its rows to pass over')
+        const { columns, ...board } = await graph.board({ steps, days, at: now(), ...(column !== undefined && { page: { column, from: from! } }), ...(options.timeZone && { timeZone: options.timeZone }), ...(options.returnHours && { returnHours: options.returnHours }), ...(options.hours && { hours: options.hours }) })
         return {
           ...board, days, openHours: options.hours !== undefined, timeZone: options.timeZone ?? 'UTC',
           columns: columns.map((column) => ({

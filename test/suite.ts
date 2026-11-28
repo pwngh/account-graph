@@ -2417,6 +2417,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // No limit set: nobody waits too long. Fewer rows: the counts are still of everybody.
       const plain = await graph.board({ steps, at: T0, limit: 1 })
       assert.deepEqual(plain.columns.map((column) => [column.people, column.late, column.rows.length]), [[1, null, 1], [2, 1, 1], [3, null, 1]])
+      // One column read further on begins after the rows passed over. The others begin at their first, and the counts are of everybody still.
+      const further = async (column: number, from: number) => (await graph.board({ steps, at: T0, limit: 1, page: { column, from } })).columns.map((each) => [each.people, ...each.rows.map((row) => row.subject)])
+      assert.deepEqual(await further(2, 1), [[1, `caller:${hashPhone('+15550100061')}`], [2, 'a:late'], [3, 'a:again']])
+      assert.deepEqual([(await further(1, 1))[1], (await further(2, 3))[2]], [[2, 'a:new'], [3]])
+      for (const page of [{ column: 3, from: 0 }, { column: -1, from: 0 }, { column: 0, from: -1 }, { column: 0.5, from: 0 }, { column: 0 }]) await assert.rejects(graph.board({ steps, at: T0, page } as never), TypeError)
       // Reached on one of two numbers, a person is reached. Missed again since, they are done today and waiting too.
       await graph.observe([{ subject: 'd:1', identifiers: [`phone:${hashPhone('+15550100063')}`, `phone:${hashPhone('+15550100064')}`, 'email:d'], at: hours(95) }])
       await recordCall(graph, { id: 'A4', from: '+15550100064', to: '+15550100001', at: hours(310), duration: 60, answered: true }, { results: 'expected' })

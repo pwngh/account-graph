@@ -41,8 +41,9 @@ function listed(report: Row): string[] {
 export async function loadCard(request: Request, kind?: string, which?: string) {
   const item = new URL(request.url).searchParams.get('item')
   if (!item || !/^[a-z.]+\.[\w-]{24}$/.test(item) || (kind !== 'calls' && kind !== 'journey' && kind !== 'board' && kind !== 'health')) throw missing()
-  const { cards, canonical } = await loadReport(request, kind, which, item)
-  return { card: cards[item], canonical }
+  const { cards, canonical, page } = await loadReport(request, kind, which, item)
+  // The way back is to the column and the people the card was among.
+  return { card: cards[item], canonical: page ? canonical + '?column=' + page.column + '&from=' + page.from + '#column-' + page.column : canonical }
 }
 
 export async function prepareReport(kind: ReportKind, which: string | undefined, query: URLSearchParams, read: Read, selected?: string, at = Date.now()) {
@@ -104,7 +105,13 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
       report.groups = [...groups.values()].map(events => ({ at: events[0].entry.at, kind: events[0].entry.kind, look: events.every(e => unanswered(e.entry)) ? 'missed' : events[0].entry.kind, count: events.length, card: events.length === 1 ? events[0].mark : add('chart.number', events.map(e => e.mark).join('/'), { list: events.map(e => e.entry) }) }))
     }
   } else if (kind === 'board') {
-    const board = report.board = await get('board', { days: which || '90' })
+    // One column can be read further on. The address says which and from where, and the links to a card's details keep both.
+    const [column, from] = [query.get('column') ?? '', query.get('from') ?? '']
+    // The foot's links step by fifty, so any other place is read as the column's beginning.
+    const further = /^\d{1,3}$/.test(column) && /^[1-9]\d{0,6}$/.test(from) && Number(from) % 50 === 0
+    if (further) for (const [name, value] of [['column', column], ['from', from]]) qs.set(name, value)
+    const board = report.board = await get('board', { days: which || '90', ...(further && { column, from }) })
+    if (further) report.page = { column: Number(column), from: Number(from) }
     const inbox = await get('texts', { from: board.from, to: board.day })
     report.texts = inbox.texts.map((text: Row) => ({ text, card: add('board.text', text.subject, { text, at: board.at }) }))
     report.moreTexts = inbox.next != null
