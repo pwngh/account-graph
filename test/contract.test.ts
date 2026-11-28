@@ -1597,6 +1597,25 @@ test('a call party written by another instance ends a cached report during its g
   assert.equal(runs, 2)
 })
 
+test('the kind of line a lookup finds for the number of a record is kept with the record, and goes with it', async () => {
+  const { createEngine } = await import('../src/core/engine.ts')
+  const { createMemoryStore } = await import('../src/core/memory.ts')
+  const { createSix } = await import('../src/core/six.ts')
+  const { createReceipts } = await import('../src/core/receipts.ts')
+  const lines: Record<string, string> = { '+12025550101': 'mobile', '+12025550102': 'landline', '+12025550103': 'nonFixedVoip', '+12025550104': 'unknown' }
+  const engine = createEngine(createMemoryStore(), { lineType: async (number) => (lines[number] ? { type: lines[number]!, carrier: undefined } : undefined) })
+  const six = createSix(engine, { receipts: createReceipts([SECRET]) })
+  const profile = (n: number) => ({ type: 'profile', key: `line-${n}`, subject: `record:${n}`, at: AT, facts: { email: `line${n}@example.org`, phone: `202-555-010${n}` } }) as const
+  assert.ok((await six.record({ entries: [1, 2, 3, 4, 5].map(profile) })).results.every((result) => result.ok))
+  const kept = async () => Object.fromEntries(Object.entries(await engine.graph.called([1, 2, 3, 4, 5].map((n) => `record:${n}`), true)).map(([subject, called]) => [subject, (called as { line?: string }).line]))
+  // A kind staff act on is kept. One the lookup could not name, and a number it did not know, leave nothing.
+  assert.deepEqual(await kept(), { 'record:1': 'mobile', 'record:2': 'landline', 'record:3': 'nonFixedVoip', 'record:4': undefined, 'record:5': undefined })
+  // It is said only where everything of a record is asked for, as its date of birth is.
+  assert.equal(((await engine.graph.called(['record:1']))['record:1'] as { line?: string }).line, undefined)
+  assert.ok((await six.forget({ key: 'line-gone', at: NOW, by: 'desk', subjects: ['record:2'], platforms: 'report' })).ok)
+  assert.equal((await kept())['record:2'], undefined)
+})
+
 test('a forgotten profile never sends its phone or address to a check on retry', async () => {
   const { createEngine } = await import('../src/core/engine.ts')
   const { createMemoryStore } = await import('../src/core/memory.ts')
