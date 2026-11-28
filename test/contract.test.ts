@@ -1089,6 +1089,22 @@ test('what the phone company says of a caller is kept on the record of the numbe
   }
 })
 
+test('a time sent in seconds is refused, and says what to do', async () => {
+  const { graph, close } = await memory()
+  try {
+    const seconds = Math.floor(AT / 1000)
+    const profile = (at: number): RecordEntry => ({ type: 'profile', key: `at-${at}`, at, subject: 'contact:at', facts: { email: 'at@example.org' } })
+    // The whole request is refused before anything is written, as any malformed entry is.
+    await assert.rejects(graph.record({ entries: [profile(seconds)] }), (error: { code?: string; message?: string }) => error.code === 'INPUT.MALFORMED' && /must be in milliseconds\. This is a time in seconds: multiply it by 1000/.test(error.message ?? ''))
+    await assert.rejects(graph.record({ entries: [{ type: 'call_update', key: 'at-r', at: AT, call: 'CA1', change: { kind: 'returned', reachedAt: seconds } }] }), /must be in milliseconds/)
+    await assert.rejects(graph.lookup({ kind: 'person', subjects: ['contact:at'], at: seconds }), /must be in milliseconds/)
+    // The same moment in milliseconds is taken, and so is any time since 1973.
+    assert.ok((await graph.record({ entries: [profile(AT), profile(100_000_000_000)] })).results.every((result) => result.ok))
+  } finally {
+    await close()
+  }
+})
+
 test('answers of a report are shared until something is written', async () => {
   let now = NOW
   const { graph, local, close } = await memory({ now: () => now })

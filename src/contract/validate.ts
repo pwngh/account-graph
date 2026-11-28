@@ -63,7 +63,14 @@ const any: Check = () => {}
 const both = (...checks: Check[]): Check => (value, path) => checks.forEach((check) => check(value, path))
 
 const lastAt = 8_640_000_000_000_000
-const at = integer(0, lastAt)
+/**
+ * A time in epoch milliseconds. A ten-digit number is a time in seconds, the commonest mistake an integration makes, and as
+ * milliseconds it would file the entry in January 1970. No real time in milliseconds is that small: the range is 1970 to early 1973.
+ */
+const at: Check = (value, path) => {
+  integer(0, lastAt)(value, path)
+  if ((value as number) >= 1e9 && (value as number) < 1e11) throw bad(path, 'must be in milliseconds. This is a time in seconds: multiply it by 1000')
+}
 const key = string(1, 200)
 /** The ids of calls and texts name things in the graph, so they are plainer than other keys. */
 const providerId = string(1, 128, /^[\w.-]+$/)
