@@ -66,6 +66,8 @@ function MatchesPage({ model }: { model: MatchesModel }) {
     // J joins, K separates, S skips and U undoes, as the keys beside the buttons say. A key typed into a field is text.
     function key(event: KeyboardEvent) {
       if (event.metaKey || event.ctrlKey || event.altKey || (event.target as Element).closest?.('input, textarea, select, [contenteditable]')) return
+      // A key pressed in an open dialog, a guide or a menu is that one's.
+      if (document.querySelector('dialog[open], [popover]:popover-open')) return
       const key = event.key.toLowerCase()
       // U takes back the newest decision of this session, which is listed below the pair.
       ;(key === 'u' ? document.querySelector<HTMLElement>('.decided [aria-keyshortcuts="u"]') : deck.current?.querySelector<HTMLElement>('.choices [aria-keyshortcuts="' + key + '"]'))?.click()

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { createCookieSessionStorage, data, redirect } from 'react-router'
 import { accountGraph } from 'account-graph'
 import { subjectAddress } from './navigation'
-import { clientAddress, runtime, validZone, type Reviewer } from './runtime.server'
+import { clientAddress, graphTime, runtime, validZone, type Reviewer } from './runtime.server'
 
 const lifetime = 8 * 3600
 export const publicOrigin = (request: Request) => runtime().origin ?? new URL(request.url).origin
@@ -176,7 +176,8 @@ export async function openSession(request: Request, token: string, name: string,
   const id = randomUUID()
   const controller = new AbortController()
   const expires = Date.now() + lifetime * 1000
-  sessions.set(id, { id, name, token, retraction, controller, expires, since: Date.now() })
+  // On the graph's clock, which is the one its decisions are dated by.
+  sessions.set(id, { id, name, token, retraction, controller, expires, since: graphTime() })
   const expiry = setTimeout(() => {
     sessions.delete(id)
     controller.abort()

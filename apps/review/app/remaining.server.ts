@@ -7,7 +7,8 @@ export function remaining(request: Request, view: string) {
   return withGraph(request, async session => {
     const base = { view }
     if (view === 'decide') {
-      const audit = await reviewGet(request, session, 'decisions', {limit: '1'})
+      // The newest decisions, by anyone. The write context and the list of this reviewer's own come from this one read.
+      const audit = await reviewGet(request, session, 'decisions', {limit: '200'})
       // As many as the graph gives at once, so Skip reaches every pair it lists. `older` checks every record, from the start or from a place
       // a page before gave, where the queue is otherwise of recent sightings.
       const older = new URL(request.url).searchParams.get('older') ?? ''
@@ -27,17 +28,16 @@ export function remaining(request: Request, view: string) {
       const named = new URL(request.url).searchParams.get('pair')
       const at = Math.max(0, found.pairs.findIndex((pair: {a: string, b: string}) => pair.a + '\n' + pair.b === named))
       const pair = found.pairs[at]
-      // What this reviewer joined or separated since signing in, the newest first, each pair once, as the original screen lists it.
-      // A pair whose newest decision of theirs took one back is done with.
-      const theirs = await reviewGet(request, session, 'decisions', {limit: '100', author: session.name})
+      // What this reviewer joined or separated since signing in, the newest first, each pair once, as the original screen lists it. A pair is
+      // listed only where the newest decision on it, by anyone, is that join or separation of theirs, so Undo takes back their own.
       const seen = new Set<string>()
       const mine: {action: 'join' | 'separate', a: string, b: string, at: number}[] = []
-      for (const decision of theirs.decisions as {action: string, about: string[], at: number}[]) {
-        if (decision.at < session.since || decision.about.length !== 2 || !['join', 'separate', 'unjoin', 'rejoin'].includes(decision.action) || decision.about.includes('[Deleted]')) continue
-        const key = [...decision.about].sort().join('\n')
+      for (const decision of audit.decisions as {action: string, about: string[], at: number, by?: string}[]) {
+        if (decision.about.length !== 2 || !['join', 'separate', 'unjoin', 'rejoin'].includes(decision.action) || decision.about.includes('[Deleted]')) continue
+        const key = JSON.stringify([...decision.about].sort())
         if (seen.has(key)) continue
         seen.add(key)
-        if (decision.action === 'join' || decision.action === 'separate') mine.push({action: decision.action, a: decision.about[0]!, b: decision.about[1]!, at: decision.at})
+        if (decision.by === session.name && decision.at >= session.since && (decision.action === 'join' || decision.action === 'separate')) mine.push({action: decision.action, a: decision.about[0]!, b: decision.about[1]!, at: decision.at})
       }
       const session_ = {skipped, passed: listed - found.pairs.length, mine}
       // A row of the queue shows the kinds of what a pair shares. The identifiers themselves go to the page for the open pair only.

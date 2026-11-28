@@ -196,7 +196,7 @@ test('Matches skips pairs for this visit, restores them, and lists what the revi
   const [a, b, c, d] = ['contact:ann', 'contact:bo', 'contact:cy', 'contact:di']
   const { results } = await graph.record({ entries: [a, b, c, d].map((subject, i) => ({ type: 'profile', key: 'session-' + i, at: Date.now(), subject, facts: { phone: i < 2 ? '+15550100071' : '+15550100072' } })) })
   assert.ok(results.every(result => result.ok))
-  const edge = createEdge(graph, { token: 'service-fixture', reviewers: { dana: 'review-fixture' }, origins: [], limit: false })
+  const edge = createEdge(graph, { token: 'service-fixture', reviewers: { dana: 'review-fixture', lee: 'lee-fixture' }, origins: [], limit: false })
   const upstream = createServer(edge)
   await once(upstream.listen(0, '127.0.0.1'), 'listening')
   const ui = await reviewServer({ host: '127.0.0.1', port: 0, graphUrl: address(upstream), secret: 'local-review-test-secret-without-other-uses' })
@@ -244,4 +244,12 @@ test('Matches skips pairs for this visit, restores them, and lists what the revi
   const undone = await page('/decide')
   assert.doesNotMatch(undone, /<h2>This session<\/h2>/)
   assert.equal((await graph.lookup({ kind: 'pair', a, b }).catch(() => null))?.together ?? false, false)
+  // A pair Dana joined and another reviewer separated since is that reviewer's, and Dana has no Undo for it.
+  const head = async token => (await (await fetch(address(upstream) + '/review/api/decisions?limit=1', { headers: { authorization: 'Bearer ' + token } })).json()).decisions[0]?.seq ?? 0
+  const joined = await fetch(address(upstream) + '/review/api/join', { method: 'POST', headers: { authorization: 'Bearer review-fixture', 'content-type': 'application/json' }, body: JSON.stringify({ a: c, b: d, by: 'dana', seen: await head('review-fixture') }) })
+  assert.equal(joined.status, 200, await joined.clone().text())
+  assert.match(await page('/decide'), /<h2>This session<\/h2>/)
+  const separated = await fetch(address(upstream) + '/review/api/separate', { method: 'POST', headers: { authorization: 'Bearer lee-fixture', 'content-type': 'application/json' }, body: JSON.stringify({ a: c, b: d, by: 'lee', seen: await head('lee-fixture') }) })
+  assert.equal(separated.status, 200, await separated.clone().text())
+  assert.doesNotMatch(await page('/decide'), /<h2>This session<\/h2>/)
 })
