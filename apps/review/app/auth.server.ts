@@ -44,9 +44,10 @@ export async function signedOut(request: Request, session?: Reviewer) {
 export async function signInPage(request: Request) {
   const jar = storage(request)
   const cookie = await jar.getSession(request.headers.get('cookie'))
-  if (cookie.has('id') && !await current(request)) {
-    return data(null, {headers: {'set-cookie': await jar.destroySession(cookie)}})
-  }
+  // The cookie is one this app signed, and no session answers to it: the app was restarted, the session ran its eight hours, or it was ended elsewhere.
+  // The page says so. A reviewer sent here without a word takes it for a fault.
+  // The cookie is left as it is. Signing in replaces it, and an answer that cleared it could arrive after a sign-in from another tab and undo it.
+  if (cookie.has('id') && !await current(request)) return { ended: true }
   return null
 }
 

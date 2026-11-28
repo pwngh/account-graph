@@ -468,6 +468,43 @@ test('a server shutdown ends open streams without signing the reviewer out', asy
   }
 })
 
+test('after a restart a reviewer is told their session ended, and is sent back to their page on signing in', async () => {
+  const { reviewServer } = await import('../server.mjs')
+  const first = await reviewServer({ port: 0, host: '127.0.0.1' })
+  let cookie
+  try {
+    const url = address(first)
+    cookie = cookieFrom(await fetch(url + '/signin', post({ token: reviewer }, undefined, url)))
+    assert.equal((await fetch(url + '/accounts', { headers: { cookie }, redirect: 'manual' })).status, 200)
+  } finally {
+    first.closeAllConnections()
+    first.close()
+  }
+  // Another process, with the same secret, has no record of the session the cookie names.
+  const second = await reviewServer({ port: 0, host: '127.0.0.1' })
+  try {
+    const url = address(second)
+    const sent = await fetch(url + '/accounts', { headers: { cookie }, redirect: 'manual' })
+    assert.deepEqual([sent.status >= 300 && sent.status < 400, new URL(sent.headers.get('location'), url).pathname, new URL(sent.headers.get('location'), url).searchParams.get('next')], [true, '/signin', '/accounts'])
+    const page = await fetch(new URL(sent.headers.get('location'), url), { headers: { cookie } })
+    const html = (await page.text()).split('<script')[0].replaceAll('<!-- -->', '')
+    assert.match(html, /<p role="status" id="ended">Your session has ended\. That happens when the review app is restarted, after eight hours, or when you sign out in another tab\. Sign in again and you return to the page you were on\./)
+    assert.match(html, /name="next" value="\/accounts"/)
+    // The answer clears no cookie. One that did could arrive after a sign-in from another tab and undo it.
+    assert.equal(page.headers.get('set-cookie'), null)
+    // Opened by itself, the page promises no return to a page it was not given.
+    const bare = (await (await fetch(url + '/signin', { headers: { cookie } })).text()).split('<script')[0].replaceAll('<!-- -->', '')
+    assert.match(bare, /in another tab\. Sign in again\. Decisions you had saved are kept\./)
+    // Somebody who was never signed in is told nothing of the kind.
+    assert.doesNotMatch((await (await fetch(url + '/signin')).text()).split('<script')[0], /Your session ended/)
+    const again = await fetch(url + '/signin', post({ token: reviewer, next: '/accounts' }, undefined, url))
+    assert.deepEqual([again.status, new URL(again.headers.get('location'), url).pathname], [303, '/accounts'])
+  } finally {
+    second.closeAllConnections()
+    second.close()
+  }
+})
+
 test('without a service events token authenticated HTML still works', async () => {
   const { reviewServer } = await import('../server.mjs')
   const standalone = await reviewServer({ port: 0, host: '127.0.0.1', eventsToken: '' })
