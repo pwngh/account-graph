@@ -232,10 +232,10 @@ export async function retryConversion(request: Request) {
 const SAYINGS = ['reached', 'not_lead', 'not_reached', 'lead'] as const
 type Saying = typeof SAYINGS[number]
 /**
- * Who a call was with, as the graph names it. The graph also takes `excluded` and `unknown`, which leave the call in no history,
- * so the app does not offer them until a call under its own ID can be opened.
+ * Who a call was with, as the graph names it. `excluded` says it was not the chosen record, and `unknown` names nobody.
+ * A call that names nobody is under its own ID.
  */
-const PARTIES = ['self', 'representative'] as const
+const PARTIES = ['self', 'representative', 'excluded', 'unknown'] as const
 type Party = typeof PARTIES[number]
 
 export async function sayOfCall(request: Request) {
@@ -263,21 +263,23 @@ export async function sayOfCall(request: Request) {
       const [role, picked, typed] = [field('role'), field('subject'), field('other')]
       const wrong = (error: string) => data({ error }, { status: 400 })
       if (!(PARTIES as readonly string[]).includes(role)) return wrong('Choose who was on the call, then save again.')
-      if (!picked && !typed) return wrong('Choose a record, or give its ID, then save again.')
+      const nobody = role === 'unknown'
+      if (!nobody && !picked && !typed) return wrong('Choose a record, or give its ID, then save again.')
       // A typed ID is the choice where the list was left as the page had it. A record chosen from the list and another typed are two choices.
       if (picked && typed && picked !== typed && picked !== field('was')) return wrong('Choose a record from the list or give an ID, not both.')
-      const subject = typed || picked
+      const subject = nobody ? undefined : typed || picked
       // A call named for an ID nobody has would be in no history at all.
-      if (subject.length > 300 || madeByGraph(subject) || !(await reviewGet(request, session, 'subject', { subject })).known) return wrong('No record has this ID. Check it and save again.')
+      if (subject !== undefined && (subject.length > 300 || madeByGraph(subject) || !(await reviewGet(request, session, 'subject', { subject })).known)) return wrong('No record has this ID. Check it and save again.')
       // The statement that stands is read now, and must be the one the page showed. Then the graph takes this one only if that one still stands.
       const stands = await graph.lookup({ kind: 'party', call }, { signal: request.signal }) as { key: string; role: string; subject?: string; by: string; at: number } | null
       const changed = data({ error: 'Somebody said who this call was with after this page was read. Reload the page.' }, { status: 409 })
-      // The call moves to the history of the record it is named for, so the reviewer is taken there, to the call's row.
-      const moved = () => redirect(subjectPath(subject, 'journey') + '#call-' + encodeURIComponent(encodeURIComponent(call)), 303)
+      // The call moves to the history of the record it is named for, or to its own where it names nobody, so the reviewer is taken there, to the call's row.
+      const home = role === 'self' || role === 'representative' ? subject! : 'call:' + call
+      const moved = () => redirect(subjectPath(home, 'journey') + '#call-' + encodeURIComponent(encodeURIComponent(call)), 303)
       // The same form sent twice with the same choice is one statement, and the second is answered as the first was.
       if (stands?.key === said + '/party' && stands.role === role && stands.subject === subject) return moved()
       if ((stands ? [stands.by, stands.at, stands.role].join(' ') : '') !== field('seen')) return changed
-      const result = (await graph.record({ entries: [{ type: 'call_update', key: said + '/party', at, call, change: { kind: 'party', role: role as Party, subject, by, seen: stands?.key ?? null } }] }, { signal: request.signal })).results[0]!
+      const result = (await graph.record({ entries: [{ type: 'call_update', key: said + '/party', at, call, change: subject === undefined ? { kind: 'party', role: 'unknown', by, seen: stands?.key ?? null } : { kind: 'party', role: role as Exclude<Party, 'unknown'>, subject, by, seen: stands?.key ?? null } }] }, { signal: request.signal })).results[0]!
       if (!result.ok) return result.reason === 'STALE' ? changed : data({ error: result.reason === 'FORGOTTEN' ? 'This record was deleted since the call, so the call cannot be named for it.' : 'The graph refused this (' + result.reason + ').' }, { status: 409 })
       if (result.value.stands === false) return changed
       return moved()

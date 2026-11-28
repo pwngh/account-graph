@@ -1641,6 +1641,24 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await history(), [['M1', 'returned', 'M1', undefined], ['M2', 'returned', 'M1', undefined], ['M3', 'returned', 'O1', undefined]])
     })
 
+    test('a call said to be nobody named stays under its call ID, and in no record', async () => {
+      const { graph } = await fresh()
+      const from = '+12025550181'
+      await graph.observe({ subject: 'contact:1', identifiers: [`phone:${hashPhone(from)}`], at: T0 - 1000 })
+      await recordCall(graph, { id: 'C1', from, to: '+12025550109', at: T0 })
+      const calls = async (subject: string) => (await graph.journey(subject)).entries.filter((entry) => entry.kind === 'call').map((entry) => (entry as { call: { id: string } }).call.id)
+      // Before anybody names it, it is under its ID and its number's records alike.
+      assert.deepEqual([await calls('call:C1'), await calls('contact:1')], [['C1'], ['C1']])
+      for (const [n, party] of [{ role: 'excluded', subject: 'contact:1', by: 'desk' }, { role: 'unknown', by: 'desk' }].entries()) {
+        await graph.sayParty({ call: 'C1', key: `k${n}`, at: T0 + 1 + n, party: party as never })
+        assert.deepEqual([await calls('call:C1'), await calls('contact:1')], [['C1'], []])
+      }
+      // Named again, it is the record's, and no longer under its ID.
+      await graph.sayParty({ call: 'C1', key: 'k9', at: T0 + 9, party: { role: 'self', subject: 'contact:1', by: 'desk' } })
+      assert.deepEqual([await calls('call:C1'), await calls('contact:1')], [[], ['C1']])
+      assert.deepEqual(await calls('call:none'), [])
+    })
+
     test('a recording the phone system holds of a call is said on the call in a history, and goes with the call', async () => {
       const { graph } = await fresh()
       const from = '+15550100083'

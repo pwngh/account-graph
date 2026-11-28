@@ -108,6 +108,7 @@
 ### Calls and texts
 
 - The review app keeps a page it reads again while the graph does not answer, with a note, where the error page replaced it.
+- A call said to be `excluded` or `unknown` is in the journey of `call:ID`. It was in no history. The app's call form offers both, and goes to that history after either.
 - `call_update` with `returned` or `not_returned`, and `restatement` with `not_lead` or `lead`, take an optional `by`, kept with the statement. A reviewer's token may record these for a call or a text when each is signed with the reviewer's own name. A named service token may sign them with its own name or none.
 - A `not_lead` or `lead` restatement sent again answers `stands: false` once a newer one stands. It answered `true`.
 - A call no longer doubts again every call to its number recorded in the last minute. One already doubted, with nothing on it to take back, is passed over in one read, so a busy line keeps its speed: on PostgreSQL, 20 calls a second answer with a p95 of 767 ms where 244 of 400 timed out.

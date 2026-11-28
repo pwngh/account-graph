@@ -3311,8 +3311,13 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           return rest as T
         }
         const recorded = await tx.callsOf(people)
-        // A guessed link may still put two records in one cluster. A staff statement is for the exact record it names.
-        const visible = (call: KeptCall) => !call.party || ((call.party.role === 'self' || call.party.role === 'representative') && call.party.subject === subject)
+        // A call that names nobody, because staff said it was not the record's or took a name back, stays under its call ID.
+        const asked = subject.startsWith('call:') ? await tx.callOf(subject.slice('call:'.length)) : undefined
+        if (asked && !recorded.some((call) => call.id === asked.id)) recorded.push(asked)
+        // A guessed link may still put two records in one cluster. A staff statement is for the exact record it names. One that names
+        // nobody is shown under the call's ID, and to no record.
+        const namesNobody = (call: KeptCall) => call.party?.role === 'excluded' || call.party?.role === 'unknown'
+        const visible = (call: KeptCall) => !call.party || ((call.party.role === 'self' || call.party.role === 'representative') && call.party.subject === subject) || (namesNobody(call) && subject === callId(call))
         const hidden = new Set(recorded.filter((call) => !visible(call)).map(callId))
         const calls = recorded.filter(visible).map(namingOwn)
         const outcomes = (await tx.outcomesOf(people)).filter((outcome) => !hidden.has(outcome.transactionId))
