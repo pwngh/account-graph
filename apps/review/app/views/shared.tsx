@@ -5,7 +5,7 @@ import { ICONS, PERSON, typeOf } from './cluster-layout.js'
 import { Guide } from './guide'
 import { ViewMark, type ViewName } from './marks'
 import { Term } from './terms'
-import { idText, lasted } from './report-words.js'
+import { idText, lasted, linkedBy } from './report-words.js'
 
 export const amount = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 })
 export const percent = (n: number) => Math.round(n * 100) + '%'
@@ -114,7 +114,7 @@ const apartBy = (gap: number) => {
 export function Reasons({ reasons, context, subject }: { reasons: Reason[], context: WriteContext, subject: string }) {
   // One of a group counts, and the others of the group follow it, said not to count. The group is named only where it left one out.
   const mates = (reason: Reason) => reasons.filter(other => reason.group !== undefined && other.group === reason.group && other.counted === false)
-  const line = (r: Reason) => <div className={'reason' + (r.counted === false ? ' uncounted' : '')} key={r.identifier}><b>{r.identifier.split(':')[0]}</b> {percent(r.evidence)} · {r.fanout} IDs · {apartBy(r.gap)}{r.group === undefined ? '' : r.counted === false ? ' · not counted (' + r.group + ' group)' : mates(r).length > 0 ? ' · ' + r.group + ' group' : ''}<DecisionForm context={context} intent="mute" subject={subject} identifier={r.identifier} look="link"/></div>
+  const line = (r: Reason) => <div className={'reason' + (r.counted === false ? ' uncounted' : '')} key={r.identifier}><b title={r.identifier.split(':')[0]}>{linkedBy(r.identifier)}</b> {percent(r.evidence)} · {r.fanout} IDs · {apartBy(r.gap)}{r.group === undefined ? '' : r.counted === false ? ' · not counted (' + r.group + ' group)' : mates(r).length > 0 ? ' · ' + r.group + ' group' : ''}<DecisionForm context={context} intent="mute" subject={subject} identifier={r.identifier} look="link"/></div>
   return <>{reasons.filter(reason => reason.counted !== false).flatMap(reason => [line(reason), ...mates(reason).map(line)])}</>
 }
 
