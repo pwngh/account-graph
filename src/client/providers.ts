@@ -9,8 +9,17 @@ import { createAddressVerifier } from '../providers/smarty.ts'
 import { googleAds, meta, microsoftAds, tiktok } from '../providers/targets.ts'
 import { createLineTypeLookup } from '../providers/twilio.ts'
 
-export function targetsOf({ ads, fetch: fetcher }: LocalOptions): Target[] {
+/** A fetch that sends each request to `receiver`, keeping its path and query. */
+function toReceiver(receiver: string, fetcher: typeof fetch = fetch): typeof fetch {
+  return (input, init) => {
+    const asked = new URL(input instanceof Request ? input.url : String(input))
+    return fetcher(new URL(asked.pathname + asked.search, receiver), init)
+  }
+}
+
+export function targetsOf({ ads, fetch: given }: LocalOptions): Target[] {
   const out: Target[] = []
+  const fetcher = ads?.testReceiver ? toReceiver(ads.testReceiver, given) : given
   const how = fetcher && { fetch: fetcher }
   if (ads?.google) {
     const { serviceAccount, customerId, loginCustomerId } = ads.google

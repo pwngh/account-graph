@@ -586,6 +586,8 @@ export interface LocalSettings extends Common {
     readonly microsoft?: { readonly clientId: string; readonly refreshToken: string; readonly developerToken: string; readonly customerId: string; readonly accountId: string; readonly clientSecret?: string; readonly sandbox?: boolean }
     readonly tiktok?: { readonly pixelCode: string; readonly accessToken: string; readonly siteUrl: string; readonly testEventCode?: string }
     readonly retractOnForget?: boolean
+    /** Sends every request to the ad platforms, and for their tokens, to this address on this machine in place of the platform, with its path. */
+    readonly testReceiver?: string
     readonly delayMs?: number
     /** Stops sends once this many conversions fail for good within an hour, counted across processes, until `account-graph sends resume`. 0 or left out is never. */
     readonly pauseAfterFailures?: number

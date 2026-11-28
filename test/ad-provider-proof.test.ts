@@ -7,6 +7,11 @@ import { runWorkers } from '../src/testing/index.ts'
 import { checked } from '../src/contract/validate.ts'
 import { compared } from '../src/core/receipts.ts'
 import { test } from 'node:test'
+import { generateKeyPairSync } from 'node:crypto'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { adsReceiver } from '../tools/ads-receiver.ts'
 import { configFrom, readEnvironment } from '../src/bin.ts'
 import { internalsOf } from '../src/client/internals.ts'
 import { targetsOf } from '../src/client/providers.ts'
@@ -41,6 +46,33 @@ test('a configured Microsoft sandbox handles the conversion and its retraction',
     await target!.forget!([item.job])
     const host = sandbox ? 'campaign.api.sandbox.bingads.microsoft.com' : 'campaign.api.bingads.microsoft.com'
     assert.deepEqual(urls, [host, host])
+  }
+})
+
+test('a test receiver on this machine takes every ad platform request, and no other address is taken for one', async () => {
+  for (const address of ['https://ads.example.com', 'http://10.0.0.2:9000', 'http://127.0.0.1:9000/ads', 'nonsense']) assert.throws(() => configFrom({ ...base, ADS_TEST_RECEIVER: address }), /ADS_TEST_RECEIVER/)
+  const heard: { path: string; body: string }[] = []
+  const receiver = adsReceiver((request) => heard.push(request)).listen(0, '127.0.0.1')
+  await new Promise((resolve) => receiver.once('listening', resolve))
+  const keyFile = join(mkdtempSync(join(tmpdir(), 'receiver-')), 'google.json')
+  writeFileSync(keyFile, JSON.stringify({ client_email: 'test@example.iam.gserviceaccount.com', private_key: generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }) }))
+  try {
+    const options = configFrom({
+      ...base, ADS_TEST_RECEIVER: `http://127.0.0.1:${(receiver.address() as AddressInfo).port}`,
+      GOOGLE_ADS_CUSTOMER_ID: '1234567890', GOOGLE_SERVICE_ACCOUNT_FILE: keyFile,
+      META_PIXEL_ID: '555', META_ACCESS_TOKEN: 'made-up', META_SITE_URL: 'https://example.org',
+      MICROSOFT_CLIENT_ID: 'id', MICROSOFT_REFRESH_TOKEN: 'made-up', MICROSOFT_DEVELOPER_TOKEN: 'made-up', MICROSOFT_CUSTOMER_ID: '1', MICROSOFT_ACCOUNT_ID: '2',
+      TIKTOK_PIXEL_CODE: 'pixel', TIKTOK_ACCESS_TOKEN: 'made-up', TIKTOK_SITE_URL: 'https://example.org',
+    }).graph
+    // Any fetch given still sends it, to the receiver.
+    const targets = targetsOf({ ...options, fetch: (input, init) => fetch(input, init) })
+    for (const target of targets) {
+      const job = { ...item.job, target: target.name, keys: target.keys({ email: 'pat@example.org' } as never) }
+      assert.deepEqual(await target.deliver('Lead', [{ ...item, job }]), { requestId: 'test-receiver' }, target.name)
+    }
+    assert.deepEqual(heard.map((each) => each.path), ['/token', '/v1/events:ingest', '/v27.0/555/events', '/open_api/v1.3/event/track/', '/common/oauth2/v2.0/token', '/CampaignManagement/v13/OfflineConversions/Apply'])
+  } finally {
+    receiver.close()
   }
 })
 
