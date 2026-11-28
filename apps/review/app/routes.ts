@@ -14,5 +14,5 @@ export default [
   route('decide', 'routes/remaining.tsx', {id: 'decide'}),
   route('channels', 'routes/channels.tsx', {id: 'channels'}), route('channels/csv', 'routes/channels-csv.ts'),
   route('guide/:section', 'routes/guide.tsx'),
-  route('events', 'routes/events.ts'),
+  route('events', 'routes/events.ts'), route('find', 'routes/find.ts'),
 ] satisfies RouteConfig

@@ -431,6 +431,42 @@ test('a form sent while the graph is away is answered, so its page is not replac
   }
 })
 
+test('Chrome opens the search palette on Ctrl K, finds IDs and views as they are typed, and opens the one chosen', { skip: !process.env.CHROME && 'set CHROME to use the search palette', timeout: 40000 }, async t => {
+  const { browse, until } = await import('../../../test/chrome.ts')
+  const { run, close: closeBrowser } = await browse(origin + path)
+  t.after(closeBrowser)
+  await until('the sign-in form', () => run("Boolean(document.querySelector('input[name=token]'))").catch(() => false))
+  await run(`{
+    const input = document.querySelector('input[name=token]')
+    input.value = ${JSON.stringify(reviewer)}
+    input.form.requestSubmit()
+  }`)
+  await until('enhanced account', () => run("Boolean(document.querySelector('input[type=range]'))").catch(() => false))
+  const press = (key, more = {}) => run(`document.querySelector('#palette input').dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true, ...${JSON.stringify(more)} }))`)
+  const type = text => run(`{
+    const input = document.querySelector('#palette input')
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(text)})
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }`)
+  const items = () => run("JSON.stringify([...document.querySelectorAll('#palette [role=group]')].map(group => [group.getAttribute('aria-label'), [...group.querySelectorAll('.palette-item')].map(item => item.title)]))")
+  await run("window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))")
+  await until('the open palette', () => run("document.querySelector('#palette').open").catch(() => false))
+  // Before anything is typed: what can be done with the open ID, the views, and the ID opened here.
+  const first = JSON.parse(await items())
+  assert.deepEqual(first.map(([group]) => group), [subject, 'Go to', 'Recent'])
+  assert.deepEqual(first[0][1], ['Open journey'])
+  assert.ok(first[1][1].includes('Board') && first[1][1].includes('Refresh'))
+  assert.deepEqual(first[2][1], [subject])
+  // Typed words find IDs, from the graph, and views by their letters.
+  await type('hello')
+  await until('the IDs found', () => items().then(found => JSON.parse(found).some(([group, list]) => group === 'IDs' && list.includes(specialSubjects[3]))).catch(() => false))
+  assert.ok(requests.some(call => call.path === '/v1/lookup' && call.input?.text === 'hello'), 'the words went in a body')
+  await type('boa')
+  await until('the board', () => items().then(found => JSON.parse(found).find(([group]) => group === 'Go to')?.[1][0] === 'Board').catch(() => false))
+  await press('Enter')
+  await until('the board page', () => run("location.pathname.startsWith('/board') && !document.querySelector('#palette').open").catch(() => false))
+})
+
 test('Chrome keeps a form open with what was typed when the graph does not answer, and sends it once the graph is back', { skip: !process.env.CHROME && 'set CHROME to check a form through an outage', timeout: 40000 }, async t => {
   const { browse, until } = await import('../../../test/chrome.ts')
   const { run, close: closeBrowser } = await browse(origin + path)
