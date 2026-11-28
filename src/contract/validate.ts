@@ -205,6 +205,7 @@ const REQUEST = {
     record: shape({ kind: any, type: oneOf('conversion', 'call', 'text'), key, at }),
     transfers: shape({ kind: any, subject, 'tiedOnly?': boolean }),
     messages: shape({ kind: any, subject }),
+    pair: shape({ kind: any, a: subject, b: subject }),
   }),
   report: byField('kind', {
     campaigns: shape({ kind: any, window, 'by?': short, 'per?': short }),

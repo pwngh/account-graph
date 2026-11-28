@@ -763,6 +763,10 @@
                     {
                       "title": "messages",
                       "$ref": "#/components/schemas/LookupMessagesValue"
+                    },
+                    {
+                      "title": "pair",
+                      "$ref": "#/components/schemas/LookupPairValue"
                     }
                   ]
                 },
@@ -6490,6 +6494,35 @@
               "subject"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "pair"
+              },
+              "a": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^\\S(?:[\\s\\S]*\\S)?$",
+                "description": "At most 512 UTF-8 bytes, with no surrounding whitespace."
+              },
+              "b": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^\\S(?:[\\s\\S]*\\S)?$",
+                "description": "At most 512 UTF-8 bytes, with no surrounding whitespace."
+              }
+            },
+            "required": [
+              "kind",
+              "a",
+              "b"
+            ],
+            "additionalProperties": false
           }
         ]
       },
@@ -6525,9 +6558,12 @@
           "transfers": {
             "$ref": "#/components/schemas/LookupTransfersValue"
           },
+          "pair": {
+            "$ref": "#/components/schemas/LookupPairValue",
+            "description": "Whether two records are one person now, and what they share. `link` is null where they share nothing that counts."
+          },
           "messages": {
-            "$ref": "#/components/schemas/LookupMessagesValue",
-            "description": "What the person wrote, the newest first, at most 100: form messages and inbound texts of the records in their group."
+            "$ref": "#/components/schemas/LookupMessagesValue"
           }
         },
         "required": [
@@ -6540,6 +6576,7 @@
           "party",
           "record",
           "transfers",
+          "pair",
           "messages"
         ],
         "additionalProperties": false
@@ -9843,6 +9880,64 @@
         "required": [
           "counterparties",
           "rings"
+        ],
+        "additionalProperties": false
+      },
+      "LookupPairValue": {
+        "type": "object",
+        "properties": {
+          "together": {
+            "type": "boolean"
+          },
+          "separated": {
+            "type": "boolean"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "score": {
+                    "type": "number"
+                  },
+                  "level": {
+                    "$ref": "#/components/schemas/Level"
+                  },
+                  "kinds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "conflict": {
+                    "type": "string",
+                    "enum": [
+                      "birth",
+                      "given"
+                    ]
+                  },
+                  "unconfirmed": {
+                    "type": "boolean",
+                    "const": true
+                  }
+                },
+                "required": [
+                  "score",
+                  "level",
+                  "kinds"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "together",
+          "separated",
+          "link"
         ],
         "additionalProperties": false
       },
