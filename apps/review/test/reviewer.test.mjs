@@ -326,13 +326,13 @@ test('the original screen is linked only at REVIEW_LEGACY_URL, never at the grap
   const unset = await pages({})
   assert.ok(!unset.includes(process.env.REVIEW_GRAPH_URL), 'the graph address is not in the page')
   assert.doesNotMatch(unset, /href="[^"]*#\/(health|channels|decide)"/)
-  // Health and Channels are whole in the app. Only Matches names the original screen, for the records its queue leaves out.
-  assert.match(unset, /Check older records on the original reviewer screen\./)
+  // Health, Channels and Matches are whole in the app, older records included, and none names the original screen.
+  assert.match(unset, /<a href="\/decide\?older=all"[^>]*>Check older records<\/a>/)
+  assert.doesNotMatch(unset, /original reviewer screen/)
   assert.doesNotMatch(unset, /Open the full|has the full/)
   for (const title of ['Health', 'Channels', 'Matches']) assert.match(unset, new RegExp('<h2 class="page-title"><svg[^>]*>.*?</svg>' + title + '</h2>'))
   const set = await pages({ legacyUrl: 'https://graph.example.org/review' })
-  assert.ok(set.includes('<a href="https://graph.example.org/review#/decide">Check older records on the original reviewer screen</a>'))
-  assert.doesNotMatch(set, /#\/(health|channels)"/)
+  assert.doesNotMatch(set, /#\/(health|channels|decide)"/)
   assert.ok(!set.includes(process.env.REVIEW_GRAPH_URL))
   await assert.rejects(reviewServer({ port: 0, host: '127.0.0.1', legacyUrl: 'javascript:alert(1)' }).then(async server => { await close(server); return server }), /REVIEW_LEGACY_URL/)
 })

@@ -74,6 +74,7 @@
 
 ### People
 
+- The review app's Matches page checks older records, page by page, where it linked to the original screen for that.
 - A phone number thins its evidence by the most records of one type that hold it, not by all of them. A `caller:`, a `lead:` and a `contact:` record on one number stay joined, where the third record ended the join. Three records of one type are three people, as before. Breaking: groups are due a rebuild after the upgrade. Run `account-graph rebuild`.
 - `lookup` `pair` says whether two records are one person now, whether somebody kept them apart, and the score, level and kinds of what they share.
 - A name is always hashed: a record given a name keeps one `called:` key of the whole name under every policy, as a note that links nothing. The policy still decides whether a name counts as evidence.
