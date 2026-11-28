@@ -135,6 +135,8 @@
 - On PostgreSQL, a send an ad platform refuses for now waits its time before the next try. The retry time was a fraction of a millisecond, which the store refused, so the job came back each minute and could fail for good in about eight.
 - `call_update` stops new ad sends for a stated call. Adjustments to a conversion already sent use its original platform identifiers.
 - Conversions go to Google, Meta, Microsoft and TikTok, with leases, backoff and retries. `report` `deliveries` lists them by state.
+- A `conversion` that names no `email` or `phone` is sent with the email and number kept of its own record, when consent to ad-user data stands. Without that consent nothing of the record is used.
+- The email kept of a record for reading is the one written, in lowercase. It was the form Google matches, without the dots of a Gmail address.
 - `record` `consent` keeps every answer about advertising, and the newest stands. Global Privacy Control is an answer.
 - `FORGET_ADS`, or `platforms: 'retract'` for one deletion, asks platforms that support it to retract conversions.
 

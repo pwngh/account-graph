@@ -299,7 +299,7 @@ export function createSix(engine: Engine, options: SixOptions) {
         // The kind of line a lookup found for the number, where it is one staff act on. The fact reader notes it as it reads the phone.
         const line = phone !== undefined && LINES.has(found.notes.phone ?? '') ? found.notes.phone : undefined
         await inside.tx.setDetails(entry.subject, { ...(full && { name: full }), ...(day && { dob: day }), ...(home && { address: home }), ...(line && { line }) }, entry.at, entry.key)
-        await inside.tx.setShown(entry.subject, new Map([...shownNumber(phone).shown, ...(address === undefined ? [] : [[email(address), normalizeEmail(address)] as [Identifier, string]])]))
+        await inside.tx.setShown(entry.subject, new Map([...shownNumber(phone).shown, ...(address === undefined ? [] : [[email(address), address.trim().toLowerCase()] as [Identifier, string]])]))
         // Of whoever speaks too. Once they are deleted, a late retry must not bring them back.
         return { value: { changes: inside.changes, notes }, subjects: [entry.subject, ...speakers], stands }
       }

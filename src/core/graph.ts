@@ -362,6 +362,8 @@ export interface Graph {
   consentOf(subjects: readonly Subject[]): Promise<Map<Subject, Consent>>
   /** Every answer a subject gave, the standing one first. With `limit`, only that many. */
   consentHistory(subject: Subject, limit?: number): Promise<ConsentAnswer[]>
+  /** The email and the number kept of one record, as they are read. Those of the rest of its group are left out. */
+  contactOf(subject: Subject): Promise<{ email?: string; phone?: string }>
   /** Records a reviewer's decision that two subjects are one person. They join one cluster unless separated. `marked` is told the mark it leaves, to `ignore` if it is taken back. */
   join(a: Subject, b: Subject, why?: Deciding, marked?: (mark: Identifier) => void): Promise<Change[]>
   /** A number that is different after every write. The same number means nothing has changed. */
@@ -3134,6 +3136,13 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
     consentHistory(subject, limit) {
       return store.read((tx) => tx.consentHistory(subject, limit))
+    },
+
+    contactOf(subject) {
+      return store.read(async (tx) => {
+        const { email, phone } = (await tx.detailsOf([subject])).get(subject) ?? {}
+        return { ...(email !== undefined && { email }), ...(phone !== undefined && { phone }) }
+      })
     },
 
     async transfer(flow) {
