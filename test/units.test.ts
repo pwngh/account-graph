@@ -437,7 +437,7 @@ test('the server reads its settings from the environment and names everything wr
   assert.equal(configFrom({ DATABASE_URL: 'x', IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', COOKIE: 'true' }).cookie, true)
   assert.deepEqual(['true', 'false', '2', undefined].map((value) => configFrom({ DATABASE_URL: 'x', IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', TRUST_PROXY: value }).trustProxy), [1, 0, 2, 0])
     const calls = configFrom({ DATABASE_URL: 'x', IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', EVENTS: 'inquiry, brochure', CALL_NUMBERS: '{"555-123-0001":{"source":"google"}}', TWILIO_AUTH_TOKEN: 't', TWILIO_WEBHOOK_URL: 'https://g.example/calls/twilio' })
-  assert.throws(() => configFrom({ DATABASE_URL: 'x', IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', CHANGE_SECRET: 's' }), /now WEBHOOK_URL and WEBHOOK_SECRET/)
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', CHANGE_SECRET: 's' }), /CHANGE_SECRET is now WEBHOOK_SECRET/)
   assert.equal(configFrom({ DATABASE_URL: 'x', IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', WEBHOOK_SECRET: 's', WEBHOOK_URL: 'https://example.org/c' }).webhookSecret, 's')
   assert.equal(await signWebhook('s', 5, '{}'), `t=5,v1=${createHmac('sha256', 's').update('5.{}').digest('hex')}`)
   const dir = mkdtempSync(join(tmpdir(), 'numbers-'))

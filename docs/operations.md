@@ -576,7 +576,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 
 ## Environment variables
 
-A partially set group stops the server at startup, with a message naming the missing variables.
+A partially set group stops the server at startup, with a message naming the missing variables. So does a name that is one of these written another way, such as `FORGET_ADD` or `forget_ads`, and a true-or-false setting with another value, such as `TRUE`. `src/settings.ts` lists every name with its kind of value.
 
 ### Server
 
