@@ -2,7 +2,9 @@
 import type { Subject } from '../contract/types.ts'
 
 /** The plain values kept of a record. Matching never reads them: it works from the hashes. */
-export type DetailField = 'name' | 'phone' | 'email' | 'dob' | 'address'
+export type DetailField = 'name' | 'phone' | 'email' | 'dob' | 'address' | 'line'
+/** The kinds of phone line a lookup can find that staff act on: whether a number can be texted, and whether it is an app's. */
+export const LINES = new Set(['mobile', 'landline', 'fixedVoip', 'nonFixedVoip'])
 export type Details = Partial<Record<DetailField, string>>
 /** One of them as kept: the value, and the entry that said it. The newest by (`at`, `key`) stands. */
 export type DetailSaid = { value: string; at: number; key: string }
@@ -34,10 +36,10 @@ export function called(subject: Subject, members: readonly Subject[], kept: Read
   return { ...(name !== undefined && { name }), ...(phone !== undefined && { phone }), ...(email !== undefined && { email }), ...(record !== undefined && { record }) }
 }
 
-/** A person's date of birth and address, from the first record of their group that has each: for the account page, and nowhere else. */
-export function born(subject: Subject, members: readonly Subject[], kept: ReadonlyMap<Subject, Details>): { dob?: string; address?: string } {
+/** A person's date of birth, address and kind of phone line, from the first record of their group that has each: for the account page, and nowhere else. */
+export function born(subject: Subject, members: readonly Subject[], kept: ReadonlyMap<Subject, Details>): { dob?: string; address?: string; line?: string } {
   const order = [subject, ...members.filter((each) => each !== subject && !madeByGraph(each))]
-  const first = (field: 'dob' | 'address') => order.map((each) => kept.get(each)?.[field]).find((value) => value !== undefined)
-  const [dob, address] = [first('dob'), first('address')]
-  return { ...(dob !== undefined && { dob }), ...(address !== undefined && { address }) }
+  const first = (field: 'dob' | 'address' | 'line') => order.map((each) => kept.get(each)?.[field]).find((value) => value !== undefined)
+  const [dob, address, line] = [first('dob'), first('address'), first('line')]
+  return { ...(dob !== undefined && { dob }), ...(address !== undefined && { address }), ...(line !== undefined && { line }) }
 }

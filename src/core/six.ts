@@ -8,6 +8,7 @@ import { no, ok } from '../contract/outcome.ts'
 import type { Decided, Outcome } from '../contract/outcome.ts'
 import type { AttributedTouch, Candidate, Counterparty, Identifier, Reason, Subject, Touch } from '../contract/types.ts'
 import { callState, followUp, HIDDEN, recordCall, ringing, settleCall, settleLead } from './calls.ts'
+import { LINES } from './details.ts'
 import type { CallOptions, Call } from './calls.ts'
 import type { Engine, Inside, Parts } from './engine.ts'
 import { cursorOf, seqOf } from './events.ts'
@@ -289,7 +290,9 @@ export function createSix(engine: Engine, options: SixOptions) {
         const home = lives && [lives.street, lives.street2, lives.secondary, lives.city, [lives.state, lives.zipcode].filter(Boolean).join(' ')].map(plain).filter(Boolean).join(', ')
         // A date of birth is kept where it is written as a day.
         const day = dob !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(dob) ? dob : undefined
-        await inside.tx.setDetails(entry.subject, { ...(full && { name: full }), ...(day && { dob: day }), ...(home && { address: home }) }, entry.at, entry.key)
+        // The kind of line a lookup found for the number, where it is one staff act on. The fact reader notes it as it reads the phone.
+        const line = phone !== undefined && LINES.has(found.notes.phone ?? '') ? found.notes.phone : undefined
+        await inside.tx.setDetails(entry.subject, { ...(full && { name: full }), ...(day && { dob: day }), ...(home && { address: home }), ...(line && { line }) }, entry.at, entry.key)
         await inside.tx.setShown(entry.subject, new Map([...shownNumber(phone).shown, ...(address === undefined ? [] : [[email(address), normalizeEmail(address)] as [Identifier, string]])]))
         // Of whoever speaks too. Once they are deleted, a late retry must not bring them back.
         return { value: { changes: inside.changes, notes }, subjects: [entry.subject, ...speakers], stands }

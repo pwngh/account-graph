@@ -128,7 +128,7 @@ function ProfileView({ profile, data, context }: { profile: Profile, data: Accou
   const indices = Array.from({ length: Math.min(50, count - start) }, (_, i) => i)
   return <><section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi title={subject}>{headed(subject, data.called?.[subject])}</bdi></h2><Guide view="accounts"/><div className="row"><Link className="button" to={subjectPath(subject, 'journey')}>Journey</Link><DecisionForm context={context} subject={subject} intent="join" label="Join with…"/><DecisionForm context={context} subject={subject} intent="forget" label="Delete…" targets={data.retraction?.always ? undefined : data.retraction?.targets}/></div></div>
   <p className="meta" id="known"><bdi>{knownOf(subject, data.called?.[subject])}</bdi></p>
-  {(data.called?.[subject]?.dob || data.called?.[subject]?.address) && <p className="meta" id="born"><bdi>{[data.called[subject].dob && 'Born ' + data.called[subject].dob, data.called[subject].address].filter(Boolean).join(' · ')}</bdi></p>}
+  {(data.called?.[subject]?.dob || data.called?.[subject]?.address || data.called?.[subject]?.line) && <p className="meta" id="born"><bdi>{[LINE_WORDS[data.called[subject].line ?? ''], data.called[subject].dob && 'Born ' + data.called[subject].dob, data.called[subject].address].filter(Boolean).join(' · ')}</bdi></p>}
     <DatesOf id={subject} dates={dates}/><Tiles items={[
       [['Linked IDs', 'linkedIds'], amount(profile.memberCount), profile.cluster.oversized && 'Above review limit'],
       profile.linkCount > 0 && [['Strongest link', 'strongest'], percent(profile.strongest), amount(profile.linkCount) + (profile.linkCount === 1 ? ' link' : ' links')],
@@ -151,6 +151,8 @@ function ProfileView({ profile, data, context }: { profile: Profile, data: Accou
   <section><h2><Term id="sightings"/><span className="count">{amount(profile.history.length)}</span></h2>{profile.history.length ? <Table title="Sightings" headers={['Date', 'Event', 'Identifier']}>{profile.history.map((row, i) => <tr key={i}><td><Time at={row.at} short/></td><td>{row.event}</td><td title={row.identifier}>{seenAs(row.identifier)}</td></tr>)}</Table> : <p className="muted">No sightings</p>}</section></div></>
 }
 
+/** The kind of line a phone lookup found, as staff say it. A landline cannot be texted, and an app's number is weaker evidence of who somebody is. */
+const LINE_WORDS: Record<string, string> = { mobile: 'Mobile number', landline: 'Landline', fixedVoip: 'Internet phone line', nonFixedVoip: 'Number from a calling app' }
 const ACTIONS: Record<string, string> = { ignore: 'Ignored identifier', restore: 'Restored identifier', separate: 'Separated', rejoin: 'Removed separation', join: 'Joined', unjoin: 'Removed join', forget: 'Deleted data', rebuild: 'Rebuilt all groups', prune: 'Deleted sightings before' }
 export default function Accounts({ data }: { data: AccountsData }) {
   return <CalledContext.Provider value={data.called ?? {}}><AccountsPage data={data}/></CalledContext.Provider>
