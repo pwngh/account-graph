@@ -193,6 +193,9 @@
 
 ### Reviewer screen
 
+- The review app shows each person by name, else by phone number, on every page. The ID, the record of yours that stands for a caller, the number and the email are in the title, and beneath the heading of the account page.
+- A name or a number on a Board card, in the missed calls and in the Matches queue is shown whole, on as many lines as it needs.
+- The demo firm's sample history keeps a name and a number for each person.
 - Health lists a stop on sends to ad platforms with its reason, how long it has stood, and how to resume. `GET /review/api/ops` carries it as `paused`.
 - The review app's Health page shows a stop on sends to ad platforms with its reason, its time and how to resume.
 - The review app's Matches page says when pairs among older sightings are not in its queue, and links to Check older records on the original screen.

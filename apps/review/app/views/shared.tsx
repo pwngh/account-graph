@@ -29,9 +29,46 @@ export function Time({ at, now, short = false }: { at?: number, now?: number, sh
   return <time dateTime={exact} title={stamp(at, zone) + ' · ' + exact}>{lasted(Math.abs(now - at))}{now >= at ? ' ago' : ' from now'}</time>
 }
 
-// As on the original screen, a long ID such as a caller's hash is shortened in a link and given in full in its title.
+/** What a person is called: the values the graph keeps of their group, and the record of the firm's own that stands for one the graph made. */
+export interface Called { name?: string, phone?: string, email?: string, record?: string }
+/** What each person a page lists is called, by ID. A page sets it from what its loader read. */
+export const CalledContext = createContext<Record<string, Called>>({})
+
+/** A phone number as a person writes it, where it is a North American one, and as kept otherwise. */
+export function shownPhone(phone: string) {
+  const national = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(phone)
+  return national ? '(' + national[1] + ') ' + national[2] + '-' + national[3] : phone
+}
+
+/**
+ * What to show for a person: their name, else their phone number, else the record of the firm's own that stands for them,
+ * else the ID, shortened where it is a long hash.
+ */
+export function nameOf(id: string, called?: Called) {
+  return called?.name ?? (called?.phone && shownPhone(called.phone)) ?? (called?.record && idText(called.record)) ?? idText(id)
+}
+
+/** The same, read from the page: `useNamed()(id)`. */
+export function useNamed() {
+  const called = useContext(CalledContext)
+  return (id: string) => nameOf(id, called[id])
+}
+
+/** Everything known of who an ID is, for a title: the ID itself, then the record that stands for it, the phone and the email. */
+export function knownOf(id: string, called?: Called) {
+  return [id, called?.record, called?.phone && shownPhone(called.phone), called?.email].filter(Boolean).join(' · ')
+}
+
+/** A person's name or number as text, where a link of its own would not do. The ID and what else is known of them are in the title. */
+export function Named({ id }: { id: string }) {
+  const called = useContext(CalledContext)[id]
+  return <bdi title={knownOf(id, called)}>{nameOf(id, called)}</bdi>
+}
+
+// A person is shown by name or number. The ID, which may be a long hash, is in the title and on the account page.
 export function Subject({ id, journey = false }: { id: string, journey?: boolean }) {
-  return <Link className="link subject" title={id} to={subjectPath(id, journey ? 'journey' : 'accounts')}><bdi>{idText(id)}</bdi></Link>
+  const called = useContext(CalledContext)[id]
+  return <Link className="link subject" title={knownOf(id, called)} to={subjectPath(id, journey ? 'journey' : 'accounts')}><bdi>{nameOf(id, called)}</bdi></Link>
 }
 
 // Another system's decisions are signed system:<name>. The original screen says system <name>.

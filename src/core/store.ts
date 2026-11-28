@@ -69,6 +69,10 @@ export interface ActivityRows {
   calls: { call: Omit<KeptCall, 'result'>; lineKind: CallLineKind | undefined }[]
   results: [string, CallResult][]
   decisions: Decision[]
+  /** What is said of records themselves, as it stands. */
+  details?: { subject: Subject; field: string; value: string; at: number; key: string }[]
+  /** A number or an email beside its hash, for identifiers already written and held. */
+  shown?: { identifier: Identifier; value: string }[]
 }
 
 export interface WriteOptions {

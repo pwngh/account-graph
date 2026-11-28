@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { graphTime, runtime } from './runtime.server'
-import { reviewGet, withGraph } from './auth.server'
+import { reviewCalled, reviewGet, withGraph } from './auth.server'
 
 export function remaining(request: Request, view: string) {
   return withGraph(request, async session => {
@@ -18,9 +18,13 @@ export function remaining(request: Request, view: string) {
       // A row of the queue shows the kinds of what a pair shares. The identifiers themselves go to the page for the open pair only.
       const kindsOf = (each: {reasons: {identifier: string, counted?: false}[]}) => [...new Set(each.reasons.filter(reason => reason.counted !== false).map(reason => reason.identifier.split(':')[0]))].join(', ')
       const queue = {...found, pairs: found.pairs.map((each: any) => ({a: each.a, b: each.b, score: each.score, level: each.level, kinds: kindsOf(each)}))}
-      if (!pair) return {...base, queue, context, at}
+      // The page draws forty pairs of each kind. Each row needs only what to call its two sides. A number and an email go to the page for the open pair only.
+      const drawn = [...found.pairs.filter((each: {level: string}) => each.level === 'same').slice(0, 40), ...found.pairs.filter((each: {level: string}) => each.level !== 'same').slice(0, 40), ...(pair ? [pair] : [])]
+      const known = await reviewCalled(request, session, drawn.flatMap((each: {a: string, b: string}) => [each.a, each.b]))
+      const called = Object.fromEntries(Object.entries(known).map(([id, each]) => [id, pair && (id === pair.a || id === pair.b) ? each : each.name ? {name: each.name} : each.phone ? {phone: each.phone} : each.record ? {record: each.record} : {}]))
+      if (!pair) return {...base, queue, context, at, called}
       const sides = await Promise.all([pair.a, pair.b].map(async subject => sideOf(subject, await reviewGet(request, session, 'subject', {subject}))))
-      return {...base, queue, context, at, reasons: pair.reasons, sides, effect: await effectOf(session.token, pair)}
+      return {...base, queue, context, at, called, reasons: pair.reasons, sides, effect: await effectOf(session.token, pair)}
     }
     throw new Response('Unknown view', {status: 404})
   })

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Form, Link, useLocation, useSearchParams } from 'react-router'
 import { subjectPath } from '../navigation'
-import { amount, Author, Badge, Compare, DecisionForm, Reasons, type Reason, DecisionScope, PageHead, percent, Scroll, Subject, Table, Tiles, Time, type WriteContext } from './shared'
+import { amount, Author, Badge, type Called, CalledContext, Compare, DecisionForm, knownOf, Reasons, type Reason, DecisionScope, PageHead, percent, Scroll, shownPhone, Subject, Table, Tiles, Time, type WriteContext } from './shared'
 import { ICONS, nameOf, PERSON, typeOf, type ClusterLayout } from './cluster-layout.js'
 import { Term } from './terms'
 
@@ -25,6 +25,8 @@ export type ProfilePage = Omit<KnownProfile, 'cluster' | 'apart' | 'edges'> & {
 export type Profile = ProfilePage | { subject: string, known: false, dates?: Dates }
 export interface AccountsData {
   subject?: string, profile?: Profile, layout?: ClusterLayout, key: string, at: number, offset?: number, author?: string
+  /** What each person the page lists is called, by ID. */
+  called?: Record<string, Called>
   clusters: { id: string, size: number, oversized?: boolean }[]
   recent: { subject: string, to?: string, at: number }[]
   decisions: { decisions: Decision[], total: number, next: number | null }
@@ -105,11 +107,14 @@ function DatesOf({ id, dates }: { id: string, dates?: Dates }) {
   return <>{firstSeen != null && <div className="meta">First seen here <Time at={firstSeen}/></div>}{createdAt != null && <div className="meta">Created in your system <Time at={createdAt}/></div>}</>
 }
 
+/** The heading of an account: the person's name, else their number, else the whole ID, which is never shortened here. */
+const headed = (subject: string, called?: Called) => called?.name ?? (called?.phone ? shownPhone(called.phone) : subject)
+
 function ProfileView({ profile, data, context }: { profile: Profile, data: AccountsData, context: WriteContext }) {
   const { subject, dates } = profile
   const [query] = useSearchParams()
   const { pathname } = useLocation()
-  if (!profile.known) return <section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi>{subject}</bdi></h2></div><DatesOf id={subject} dates={dates}/><p className="muted">No records</p></section>
+  if (!profile.known) return <section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi title={subject}>{headed(subject, data.called?.[subject])}</bdi></h2></div><DatesOf id={subject} dates={dates}/><p className="muted">No records</p></section>
   const members = new Set(profile.listedMembers)
   const consent = profile.consent[0]
   const verdicts = new Map(profile.verdicts.map(v => [v.a === subject ? v.b : v.a, v]))
@@ -117,7 +122,8 @@ function ProfileView({ profile, data, context }: { profile: Profile, data: Accou
   const start = profile.start
   const pageHref = (offset: number) => { const q = new URLSearchParams(query); q.set('links', String(offset / 50)); return pathname + '?' + q + '#links' }
   const indices = Array.from({ length: Math.min(50, count - start) }, (_, i) => i)
-  return <><section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi>{subject}</bdi></h2><div className="row"><Link className="button" to={subjectPath(subject, 'journey')}>Journey</Link><DecisionForm context={context} subject={subject} intent="join" label="Join with…"/><DecisionForm context={context} subject={subject} intent="forget" label="Delete…" targets={data.retraction?.always ? undefined : data.retraction?.targets}/></div></div>
+  return <><section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi title={subject}>{headed(subject, data.called?.[subject])}</bdi></h2><div className="row"><Link className="button" to={subjectPath(subject, 'journey')}>Journey</Link><DecisionForm context={context} subject={subject} intent="join" label="Join with…"/><DecisionForm context={context} subject={subject} intent="forget" label="Delete…" targets={data.retraction?.always ? undefined : data.retraction?.targets}/></div></div>
+  <p className="meta" id="known"><bdi>{knownOf(subject, data.called?.[subject])}</bdi></p>
     <DatesOf id={subject} dates={dates}/><Tiles items={[
       [['Linked IDs', 'linkedIds'], amount(profile.memberCount), profile.cluster.oversized && 'Above review limit'],
       profile.linkCount > 0 && [['Strongest link', 'strongest'], percent(profile.strongest), amount(profile.linkCount) + (profile.linkCount === 1 ? ' link' : ' links')],
@@ -141,6 +147,10 @@ function ProfileView({ profile, data, context }: { profile: Profile, data: Accou
 
 const ACTIONS: Record<string, string> = { ignore: 'Ignored identifier', restore: 'Restored identifier', separate: 'Separated', rejoin: 'Removed separation', join: 'Joined', unjoin: 'Removed join', forget: 'Deleted data', rebuild: 'Rebuilt all groups', prune: 'Deleted sightings before' }
 export default function Accounts({ data }: { data: AccountsData }) {
+  return <CalledContext.Provider value={data.called ?? {}}><AccountsPage data={data}/></CalledContext.Provider>
+}
+
+function AccountsPage({ data }: { data: AccountsData }) {
   const { audit, clusters, recent, decisions, subject, profile } = data
   const first = clusters[0]
   const context = { key: data.key, at: data.at, seen: audit.head?.seq ?? 0 }

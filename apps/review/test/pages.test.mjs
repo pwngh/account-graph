@@ -26,7 +26,8 @@ test('Journey has a lane for each kind of event, a mark for each on the chart, a
   const journey = /href="(\/journey\/caller[^"]+)"/.exec(board)?.[1]
   assert.ok(journey, 'a caller on the Board')
   const html = await get(journey)
-  assert.match(html, /<h2 class="page-title"><svg class="mark-view"[^>]*>.*?<\/svg><bdi title="caller:[0-9a-f]+">caller:/)
+  // The heading says who it is by name or number. Its title is the exact ID.
+  assert.match(html, /<h2 class="page-title"><svg class="mark-view"[^>]*>.*?<\/svg><bdi title="caller:[0-9a-f]+">[^<]+<\/bdi>/)
   const lanes = [...html.matchAll(/<div class="name (\w+)"><svg class="glyph \1"/g)].map(([, kind]) => kind)
   assert.ok(lanes.includes('call'), lanes.join())
   const rows = [...html.matchAll(/<li class="timeline-entry"[^>]*><span class="num"><time[^>]*title="[^"]+ [A-Z]{2,5}"[^>]*>(\d{1,2}:\d{2} [AP]M)<\/time><\/span><span class="chip kind (\w+)"><svg class="glyph (\w+)"/g)]
@@ -50,7 +51,8 @@ test('Matches has the queue beside the strongest pair, the two records side by s
   assert.ok(queue.length > 1, 'pairs in the queue')
   assert.deepEqual(queue.map(([, current]) => Boolean(current)), queue.map((_, i) => i === 0), 'the first pair is the one open')
   const [, , , a, b] = queue[0]
-  assert.match(html, new RegExp('<div class="versus-who">.*?<bdi>' + a + '</bdi>.*?<div class="versus-who">.*?<bdi>' + b + '</bdi>'))
+  // Each side is shown by name or number. Its link's title begins with the exact ID.
+  assert.match(html, new RegExp('<div class="versus-who">.*?title="' + a + '[" ].*?<div class="versus-who">.*?title="' + b + '[" ]'))
   for (const name of ['Identifiers', 'Events', 'Active', 'Linked IDs', 'Separated from']) assert.ok(html.includes('<div class="versus-name" role="rowheader">' + name + '</div>'), name)
   assert.match(html, /<p class="pair-effect" role="status">(After joining: \d+ (person|people) \(.+ IDs?\)|Joining changes no groups\.)<\/p>/)
   assert.match(html, /<div class="pair-why"><p class="inbox-age"><span class="term">Evidence<button[^]*?<\/p><div class="reason"><b>\w+<\/b> \d+% · \d+ IDs · /)

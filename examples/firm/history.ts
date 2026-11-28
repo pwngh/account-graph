@@ -38,6 +38,9 @@ export const stepsOf = ({ papers, won, value }: Practice): Record<string, { valu
 const FIRST = ['Ana', 'Luis', 'Maria', 'Jorge', 'Elena', 'Pat', 'Sam', 'Robin', 'Lee', 'Dana', 'Alex', 'Noor']
 const LAST = ['Rivera', 'Santos', 'Moreno', 'Hill', 'Stone', 'Brook', 'Vale', 'Cruz', 'Marsh', 'Field']
 
+/** Keeps what a person is called, as a `profile` or a `call` would, for the sample history that is written without them. */
+export type Keep = (subject: string, at: number, said: { name?: string; phone?: string }) => Promise<void>
+
 /** Uses the same generator for the historical sample and for the offices that keep working between scenes. */
 export function firmHistory(kind: Practice, clock: () => number, writeAt: (at: number | undefined) => void, quick: boolean, say: (line: string) => void | Promise<void>) {
   const names = campaignsOf(kind)
@@ -62,11 +65,13 @@ export function firmHistory(kind: Practice, clock: () => number, writeAt: (at: n
   }
   let others = 0
   /** Somebody else arrives from an ad, rings and is answered, so the feeds are as alive as they would be. */
-  async function other(graph: Graph, rang: number) {
+  async function other(graph: Graph, rang: number, keep: Keep = async () => {}) {
     const { lang, line, office, source, campaignId, campaign } = pick(CAMPAIGNS)
     writeAt(rang)
     await graph.touch({ subject: `visitor:d${others}`, at: rang, source, medium: 'cpc', campaignId, campaign, [source === 'google' ? 'gclid' : 'fbclid']: `d${others}`, landing: `${ADDRESS}${lang === 'es' ? '/es' : '/'}`, custom: { office, lang } })
-    await recordCall(graph, { id: `day-${rang}`, from: phoneOf(2000 + ++others), to: line, at: rang, duration: 120 + Math.floor(chance() * 600), answered: true, tags: { language: lang } }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call!.value, currency: 'USD' }) })
+    const from = phoneOf(2000 + ++others)
+    await recordCall(graph, { id: `day-${rang}`, from, to: line, at: rang, duration: 120 + Math.floor(chance() * 600), answered: true, tags: { language: lang } }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call!.value, currency: 'USD' }) })
+    await keep(`caller:${hashPhone(from)}`, rang, { phone: from })
   }
   const known = new Set<string>()
   /** A contact called after a made-up person, and a number where there are several. */
@@ -79,7 +84,7 @@ export function firmHistory(kind: Practice, clock: () => number, writeAt: (at: n
   }
 
   /** Two months of a firm's life. */
-  async function fill(graph: Graph) {
+  async function fill(graph: Graph, keep: Keep = async () => {}) {
     const start = clock()
     writeAt(start)
     for (let ago = 59; ago >= 0; ago--) await spend(graph, start - ago * DAY, ago)
@@ -110,6 +115,7 @@ export function firmHistory(kind: Practice, clock: () => number, writeAt: (at: n
         const call = { from, to: line, duration: answered ? 120 + Math.floor(chance() * 900) : 20 + Math.floor(chance() * 80), waited: Math.floor(chance() * 60), ...(chance() < 0.8 && { tags: { language: lang } }) }
         writeAt(rang)
         await recordCall(graph, { id: `s${n}`, at: rang, answered, ...(roll > 0.9 && { voicemail: true }), ...call }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call!.value, currency: 'USD' }) })
+        await keep(`caller:${hashPhone(from)}`, rang, { phone: from })
         reached = answered
         met = rang + (call.duration + call.waited) * 1000
         // Staff call back the same day, and again on the next ones until somebody picks up.
@@ -130,6 +136,7 @@ export function firmHistory(kind: Practice, clock: () => number, writeAt: (at: n
       const contact = contactOf(...name)
       writeAt(asked)
       await graph.observe({ subject: contact, identifiers: [...(called ? [] : [`device:s${n}`]), `phone:${hashPhone(from)}`, `email:made-up-${n}`, ...nameKeys(SECRET, ...name, { dob: `19${60 + (n % 40)}-0${1 + (n % 9)}-1${n % 9}` })], at: asked, event: 'inquiry' })
+      await keep(contact, asked, { name: name.join(' '), phone: from })
       if (called) await graph.joinAll([{ a: `caller:${hashPhone(from)}`, b: contact, reason: 'answered by staff' }], { by: 'system:desk' })
       if (called) await graph.observe({ subject: contact, identifiers: [`device:s${n}`], at: asked, event: 'inquiry' })
       const step = async (stage: string, moment: number, value: number = STEPS[stage]!.value) => {
@@ -163,13 +170,14 @@ export function firmHistory(kind: Practice, clock: () => number, writeAt: (at: n
       }
     }
     // Somebody has rung this morning too.
-    await other(graph, start - 40 * 60_000)
+    await other(graph, start - 40 * 60_000, keep)
     writeAt(start)
     // Households: a phone on two contacts of two names, which the preset only relates.
     for (let n = 0; n < (quick ? 3 : 9); n++) {
       const phone = `phone:${hashPhone(phoneOf(900 + n))}`
       const [one, other] = [0, 1].map((side) => ({ subject: contactOf(FIRST[(n + side * 5) % FIRST.length]!, LAST[n % LAST.length]!), identifiers: [phone, `email:home-${n}-${side}`, ...nameKeys(SECRET, FIRST[(n + side * 5) % FIRST.length]!, LAST[n % LAST.length]!, { dob: `19${70 + n}-03-1${side}` })], at: start - (n + 2) * HOUR, event: 'staff entry' }))
       await graph.observe([one!, other!])
+      for (const side of [0, 1]) await keep([one!, other!][side]!.subject, start, { name: `${FIRST[(n + side * 5) % FIRST.length]} ${LAST[n % LAST.length]}`, phone: phoneOf(900 + n) })
     }
     writeAt(undefined)
     await say(`${people} of ${people} people`)

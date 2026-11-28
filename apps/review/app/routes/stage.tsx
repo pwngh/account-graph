@@ -79,9 +79,11 @@ export default function StagePage() {
     if (!currentView || !scene) return
     if (!scene.spot) return
     const rows = [...document.querySelectorAll<HTMLElement>('#stage-view tr, #stage-view .timeline-entry, #stage-view li, #stage-view .inbox-call, #stage-view .queue-pair')]
+    // A row shows a person by name or number, with the ID in a title. A scene names its row by either.
+    const said = rows.map((row) => [row.textContent ?? '', ...[...row.querySelectorAll<HTMLElement>('[title]')].map((each) => each.title)].join('\n'))
     let index = -1
     for (const word of scene.spot) {
-      index = rows.findIndex((row, i) => i > index && row.textContent?.includes(word))
+      index = said.findIndex((text, i) => i > index && text.includes(word))
       if (index < 0) break
     }
     const match = rows[index]

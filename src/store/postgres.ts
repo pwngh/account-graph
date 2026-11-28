@@ -180,6 +180,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       await insert('call', 'id, subject, at, dialed, duration, flags, visitor, recorded_at, direction, tags, line_kind', rows.calls.map(({ call: { to, recorded, ...rest }, lineKind }) => ({ ...rest, dialed: to, recorded_at: recorded, line_kind: lineKind })))
       await insert('call_result', 'id, answered, voicemail, waited, returned_at, recorded_at', rows.results.map(([id, { returned, recorded, ...rest }]) => ({ id, ...rest, returned_at: returned, recorded_at: recorded })))
       await insert('decision', 'seq, at, action, about, actor, reason, hash', rows.decisions.map(({ by, ...rest }) => ({ ...rest, actor: by })))
+      await insert('detail', 'subject, field, value, at, key', rows.details ?? [])
+      if (rows.shown?.length) await db.query(`update ${t('identifier')} i set shown = g.value from unnest($1::text[], $2::text[]) g(id, value) where i.id = g.id and i.fanout > 0`, [rows.shown.map((row) => row.identifier), rows.shown.map((row) => row.value)])
     },
     addAlert: (alert, again, calls) => addAlert(db, alert, again, calls),
     async pendingAlert({ key, text, at }, start) {

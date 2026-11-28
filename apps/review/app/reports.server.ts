@@ -2,7 +2,7 @@ import { subjectPath } from './navigation.ts'
 import { graphTime, inZone, runtime } from './runtime.server'
 import { createHash, randomUUID } from 'node:crypto'
 import { data, redirect } from 'react-router'
-import { checkOrigin, requireReviewer, reviewerZone, reviewGet, signedOut, withGraph } from './auth.server'
+import { checkOrigin, requireReviewer, reviewCalled, reviewerZone, reviewGet, signedOut, withGraph } from './auth.server'
 import { fieldsOf } from './forms.server'
 import { cardModels, daysBefore } from './cards.server.js'
 
@@ -13,7 +13,20 @@ const missing = () => new Response('These details have changed. Open the report 
 const identity = (...values: unknown[]) => createHash('sha256').update(JSON.stringify(values)).digest('base64url').slice(0, 24)
 
 export function loadReport(request: Request, kind: ReportKind, which?: string, selected?: string) {
-  return withGraph(request, async session => inZone(await reviewerZone(request), () => prepareReport(kind, which, new URL(request.url).searchParams, (path, query) => reviewGet(request, session, path, query), selected, graphTime())))
+  return withGraph(request, async session => {
+    const report = await inZone(await reviewerZone(request), () => prepareReport(kind, which, new URL(request.url).searchParams, (path, query) => reviewGet(request, session, path, query), selected, graphTime()))
+    // A card read by itself names nobody. A page names everyone it lists.
+    return selected === undefined ? { ...report, called: await reviewCalled(request, session, listed(report)) } : report
+  })
+}
+
+/** Everyone a report lists, to ask what each is called. */
+function listed(report: Row): string[] {
+  if (report.kind === 'journey') return [report.which, ...Object.keys(report.journey?.subjects ?? {}), ...(report.events ?? []).map((event: Row) => event.entry.subject)]
+  if (report.kind === 'board') return [...report.board.columns.flatMap((column: Row) => column.rows.map((row: Row) => row.subject)), ...report.texts.map(({ text }: Row) => text.subject)]
+  if (report.kind === 'calls') return [...report.open.calls.map((call: Row) => call.subject), ...(report.story?.rows ?? []).map(({ entry }: Row) => entry.subject)]
+  if (report.kind === 'health') return [...report.refused.map((job: Row) => job.subject), ...report.disputes.flatMap(({ a, b }: Row) => [a, b])]
+  return []
 }
 
 export async function loadCard(request: Request, kind?: string, which?: string) {

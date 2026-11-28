@@ -1,7 +1,7 @@
 import './reports.css'
 import { createContext, Fragment, useContext, useEffect, useId, useRef, useState } from 'react'
 import { Form, Link, useFetcher } from 'react-router'
-import { PageHead, Parts, PeriodForm, Table, Tiles, Time, Subject, ZoneContext, stamp } from './shared'
+import { CalledContext, PageHead, Parts, PeriodForm, Table, Tiles, Time, Subject, ZoneContext, knownOf, stamp, useNamed } from './shared'
 import { amount, brief, callTone, cameFrom, dayOf, dayWords, detailReply, hourOf, lasted, percent, subjectHash, ticksOf, tieWords, WHAT } from './report-words'
 import { GLYPHS, Glyph, looksLike } from './marks'
 import { Bars, CallInbox, Change } from './call-panels'
@@ -156,8 +156,12 @@ function Journey({ data }) {
   const zone = useContext(ZoneContext)
   // The server supplies a complete timeline. Its type checkboxes appear after React can act on them.
   useEffect(() => setEnhanced(true), [])
+  const named = useNamed()
+  const called = useContext(CalledContext)
+  // Under a name or a number, the ID it stands for, and whatever else is known of who it is.
+  const known = which && named(which) !== which && <p className="meta"><bdi>{knownOf(which, called[which])}</bdi></p>
   if (!which) return <section><PageHead view="journey" title="Journey"/><p className="muted">Select an ID</p><a href="#find">Search</a></section>
-  if (!journey?.entries.length) return <section><PageHead view="journey" title={<bdi>{which}</bdi>}><Link className="button" to={subjectHash(which)}>Account</Link></PageHead><p className="muted">No events</p></section>
+  if (!journey?.entries.length) return <section><PageHead view="journey" title={<bdi title={which}>{named(which)}</bdi>}><Link className="button" to={subjectHash(which)}>Account</Link></PageHead>{known}<p className="muted">No events</p></section>
   const visible = data.events.filter(event => !hidden.includes(event.entry.kind))
   const dates = data.events.map(event => event.entry.at).filter(at => at > 0)
   const days = new Map()
@@ -166,7 +170,7 @@ function Journey({ data }) {
     if (!days.has(day)) days.set(day, [])
     days.get(day).push(event)
   }
-  return <><section><PageHead view="journey" title={<bdi title={which}>{which}</bdi>}><Link className="button" to={subjectHash(which)}>Account</Link></PageHead>
+  return <><section><PageHead view="journey" title={<bdi title={which}>{named(which)}</bdi>}><Link className="button" to={subjectHash(which)}>Account</Link></PageHead>{known}
     <Tiles items={[[ 'Events', amount(data.events.length) + (journey.next === null ? '' : '+')], [['IDs', 'journeyIds'], amount(Object.keys(journey.subjects).length)], dates.length > 0 && ['First event', <Time at={dates[0]} short/>], dates.length > 0 && ['Last event', <Time at={dates.at(-1)} short/>, dates.at(-1) > dates[0] && lasted(dates.at(-1) - dates[0]) + ' later'] ]}/>{journey.more > 0 && <p className="meta">{amount(journey.more)} more IDs are not shown.</p>}
     <Chart events={visible} groups={data.groups} cards={cards}/></section><section><h2>Timeline</h2>
     {enhanced && <div className="row filters" role="group" aria-label="Show">{kinds.filter(kind => data.events.some(e => e.entry.kind === kind)).map(kind => <label key={kind} className={kind}><input type="checkbox" checked={!hidden.includes(kind)} onChange={() => setHidden(hidden.includes(kind) ? hidden.filter(k => k !== kind) : [...hidden,kind])}/><Glyph kind={kind}/>{WHAT[kind]}<span className="count">{amount(data.events.filter(e => e.entry.kind === kind).length)}</span></label>)}</div>}
@@ -206,5 +210,5 @@ function Calls({ data }) {
 /** @param {{ data: Record<string, any>, openCard?: string }} props */
 export function Report({ data, openCard }) {
   const view = data.kind === 'journey' ? <Journey key={data.which} data={data}/> : data.kind === 'board' ? <Board data={data}/> : data.kind === 'health' ? <Health data={data} Detail={Detail}/> : <Calls data={data}/>
-  return <reportSnapshot.Provider value={data.snapshot}><presentedCard.Provider value={openCard}>{view}</presentedCard.Provider></reportSnapshot.Provider>
+  return <CalledContext.Provider value={data.called ?? {}}><reportSnapshot.Provider value={data.snapshot}><presentedCard.Provider value={openCard}>{view}</presentedCard.Provider></reportSnapshot.Provider></CalledContext.Provider>
 }

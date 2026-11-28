@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Link } from 'react-router'
 import { subjectPath } from '../navigation'
-import { amount, Badge, DecisionForm, DecisionScope, Meter, PageHead, percent, Reasons, Subject, Tiles, Time, type Reason, type WriteContext } from './shared'
-import { idText } from './report-words.js'
+import { amount, Badge, CalledContext, DecisionForm, DecisionScope, Meter, PageHead, percent, Reasons, Subject, Tiles, Time, useNamed, type Called, type Reason, type WriteContext } from './shared'
 import { Term } from './terms'
 
 /** A pair as a row of the queue has it: who, how strong, and the kinds of what they share. */
@@ -13,6 +12,8 @@ export interface MatchesModel {
   view: 'decide', legacy?: string, context: WriteContext
   queue: { pairs: Pair[], total: number, seen: number, window?: { kind: string, older?: boolean, oldest?: number } }
   at: number, reasons?: Reason[], sides?: [Side, Side], effect?: string
+  /** What each person in the queue is called, by ID. */
+  called?: Record<string, Called>
 }
 
 export const pairName = ({ a, b }: { a: string, b: string }) => a + '\n' + b
@@ -43,6 +44,11 @@ function Versus({ left, right, pair }: { left: Side, right: Side, pair: Pair }) 
 
 /** Pairs that share something and were not joined, one at a time, strongest first. */
 export function Matches({ model }: { model: MatchesModel }) {
+  return <CalledContext.Provider value={model.called ?? {}}><MatchesPage model={model}/></CalledContext.Provider>
+}
+
+function MatchesPage({ model }: { model: MatchesModel }) {
+  const named = useNamed()
   const { queue, context, sides, reasons = [] } = model
   const pair = queue.pairs[model.at]
   const deck = useRef<HTMLDivElement>(null)
@@ -61,7 +67,7 @@ export function Matches({ model }: { model: MatchesModel }) {
     {queue.total > queue.pairs.length && <p className="meta">The strongest {amount(queue.pairs.length)} are listed. The rest follow as these are decided.</p>}
     {queue.window?.kind === 'recent' && queue.window.older && <p className="meta older">Pairs among sightings before <Time at={queue.window.oldest}/> are not in this queue. {model.legacy ? <a href={model.legacy}>Check older records on the original reviewer screen</a> : 'Check older records on the original reviewer screen'}.</p>}</section>
     {pair && sides ? <div className="deck" ref={deck}><div className="queue-rail scroll" tabIndex={0} role="region" aria-label="Queue">{groups.map(([name, term, list]) => list.length > 0 && <div key={name}><p className="inbox-age"><Term id={term}>{name}</Term><span className="count">{amount(list.length)}</span></p>
-      {list.slice(0, 40).map(each => <Link key={pairName(each)} className="queue-pair" aria-current={each === pair ? 'true' : undefined} to={pairPath(each)} preventScrollReset><span className="queue-names"><span title={each.a}>{idText(each.a)}</span><span title={each.b}>{idText(each.b)}</span></span><b>{percent(each.score)}</b><span className="meta">{each.kinds}</span><Meter share={each.score}/></Link>)}
+      {list.slice(0, 40).map(each => <Link key={pairName(each)} className="queue-pair" aria-current={each === pair ? 'true' : undefined} to={pairPath(each)} preventScrollReset><span className="queue-names"><span title={each.a}>{named(each.a)}</span><span title={each.b}>{named(each.b)}</span></span><b>{percent(each.score)}</b><span className="meta">{each.kinds}</span><Meter share={each.score}/></Link>)}
       {list.length > 40 && <p className="meta queue-more">{amount(list.length - 40)} more</p>}</div>)}</div>
       <section className="pair" aria-label="Pair"><div className="pair-top"><span className={'chip ' + pair.level}>{pair.level === 'same' ? 'High confidence' : 'Possible'}</span><span className="meta">{amount(model.at + 1)} of {amount(queue.pairs.length)}</span></div>
         <Versus left={sides[0]} right={sides[1]} pair={pair}/>
