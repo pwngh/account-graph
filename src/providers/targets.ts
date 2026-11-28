@@ -49,6 +49,7 @@ export function googleAds(options: GoogleAdsOptions): Target {
             value: 0,
             ...(job.currency && { currency: job.currency }),
             ...(job.source && { source: job.source === 'SYSTEM_GENERATED' ? 'OTHER' : job.source }),
+            ...(job.consent && { consent: job.consent }),
           }
         })
         try {
