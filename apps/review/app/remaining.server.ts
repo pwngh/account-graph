@@ -1,3 +1,4 @@
+import { redirect } from 'react-router'
 import { randomUUID } from 'node:crypto'
 import { graphTime, runtime } from './runtime.server'
 import { reviewCalled, reviewGet, withGraph } from './auth.server'
@@ -12,7 +13,11 @@ export function remaining(request: Request, view: string) {
       // a page before gave, where the queue is otherwise of recent sightings.
       const older = new URL(request.url).searchParams.get('older') ?? ''
       const sweep: Record<string, string> = older === 'all' ? {full: 'true'} : /^[\w-]{1,500}$/.test(older) ? {cursor: older} : {}
-      const found = await reviewGet(request, session, 'undecided', {limit: '500', ...sweep})
+      // A place the graph does not take, from an old bookmark or a typed address, is a check from the start.
+      const found = await reviewGet(request, session, 'undecided', {limit: '500', ...sweep}).catch(error => {
+        if (error instanceof Response && error.status === 400 && 'cursor' in sweep) throw redirect('/decide?older=all', 303)
+        throw error
+      })
       const context = {seen: audit.decisions[0]?.seq ?? 0, key: randomUUID(), at: graphTime()}
       // The pair the address names, or the strongest. A pair decided since is no longer in the queue, and the first takes its place.
       const named = new URL(request.url).searchParams.get('pair')

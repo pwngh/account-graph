@@ -105,7 +105,10 @@ test('Matches says when pairs among older sightings are left out, and where to c
   let older = true
   const upstream = createServer(async (request, response) => {
     if (!request.url.startsWith('/review/api/undecided')) return edge(request, response)
-    const answer = await (await fetch(address(real) + request.url, { headers: { authorization: request.headers.authorization } })).json()
+    const answered = await fetch(address(real) + request.url, { headers: { authorization: request.headers.authorization } })
+    // A refusal goes on as it came.
+    if (!answered.ok) return void response.writeHead(answered.status, { 'content-type': 'application/json' }).end(await answered.text())
+    const answer = await answered.json()
     response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...answer, window: { ...answer.window, oldest: at, older } }))
   })
   const real = createServer(edge)
@@ -130,8 +133,10 @@ test('Matches says when pairs among older sightings are left out, and where to c
   const every = await page('/decide?older=all')
   assert.match(every, /<p class="meta older">Checking every record, <bdi>[^<]+<\/bdi> to <bdi>[^<]+<\/bdi>\. These are the last\. <a href="\/decide"[^>]*>Back to recent<\/a><\/p>/)
   assert.match(every, /class="queue-pair"[^>]*href="\/decide\?older=all&amp;pair=contact%3Aold-a/)
-  // A place that is not one is read as the recent queue.
+  // A place that is not one is read as the recent queue, and one the graph does not take starts the check again.
   assert.doesNotMatch(await page('/decide?older=' + encodeURIComponent('<nope>')), /Checking every record/)
+  const refused = await fetch(origin + '/decide?older=not-a-cursor', { headers: { cookie }, redirect: 'manual' })
+  assert.deepEqual([refused.status, refused.headers.get('location')], [303, '/decide?older=all'])
   // With nothing left out, nothing is said.
   older = false
   assert.doesNotMatch(await page(), /class="older"/)
