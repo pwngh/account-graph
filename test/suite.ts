@@ -1102,7 +1102,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const { columns } = await counted.board({ steps: [{ name: 'signup' }], days: 7, at: day + HOUR })
       assert.ok(columns.some((column) => column.rows.length > 0))
       for (const { rows } of columns) for (const row of rows) assert.deepEqual(row.touch, await own(row.subject, row.at))
-      for (const key of ['shared', 'edgesOn', 'separatedOf', 'touchesOf']) assert.ok(reads.get(key)! <= (key === 'separatedOf' ? 24 : 12), `${key} was read ${reads.get(key)} times`)
+      // Where a search walks on through somebody's further records, their links are read once more for all such searches together.
+      for (const key of ['shared', 'edgesOn', 'separatedOf', 'touchesOf']) assert.ok(reads.get(key)! <= (key === 'separatedOf' ? 25 : 12), `${key} was read ${reads.get(key)} times`)
     })
 
     test('what a decision would do is what it does, and foreseeing it writes nothing', async () => {
@@ -3295,6 +3296,33 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const attribution = await graph.attribute('account:11', { at: T0 + HOUR })
       assert.equal(attribution.credited!.gclid, 'G3')
       assert.ok(Math.abs(attribution.credited!.confidence - 0.97) < 1e-12)
+    })
+
+    test('a sale on any record of one person is credited to what brought any of their records, however long the chain that joined them', async () => {
+      const { graph } = await fresh()
+      // Five records of one person, each joined to the next by an email, as duplicates entered over the years are. The ad brought a browser of the first.
+      const ids = [1, 2, 3, 4, 5].map((n) => `contact:${n}`)
+      await graph.observe(ids.map((subject, i) => ({ subject, identifiers: [`email:e${i}`, `email:e${i + 1}`], at: T0 })))
+      await graph.observe([{ subject: 'visitor:v', identifiers: ['device:d'], at: T0 }, { subject: 'contact:1', identifiers: ['device:d'], at: T0 }])
+      await graph.touch({ subject: 'visitor:v', at: T0 + 1000, source: 'google', campaign: 'spring', campaignId: '111' })
+      assert.equal((await graph.cluster('contact:5'))!.members.length, 6)
+      // Each record is credited, the nearest as before and the farthest too.
+      for (const subject of ids) {
+        const credit = await graph.attribute(subject, { at: T0 + 2000 })
+        assert.deepEqual([credit.reason, credit.touches.map((touch) => [touch.subject, touch.campaign, touch.joined])], ['credited', [['visitor:v', 'spring', true]]], subject)
+      }
+      // A report credits the sale on the last record to the campaign, as it does for one on the first.
+      await graph.outcome({ transactionId: 'sale-5', subject: 'contact:5', at: T0 + 3000, stage: 'sale', value: 100, currency: 'USD' })
+      const day = new Date(T0).toISOString().slice(0, 10)
+      const row = (await graph.report({ from: day, to: day })).rows.find((each) => each.campaignId === '111')
+      assert.deepEqual([row?.outcomes, row?.value], [1, 100])
+      // Only the person's own records are added this way. A browser that is merely like one of the far records is somebody else's, as
+      // far as is known, and what brought it is not credited from the record with the sale, in one search or in a report.
+      await graph.observe([{ subject: 'visitor:like', identifiers: ['canvas:c1'], at: T0 }, { subject: 'contact:1', identifiers: ['canvas:c1'], at: T0 }])
+      await graph.touch({ subject: 'visitor:like', at: T0 + 1500, source: 'meta', campaign: 'other', campaignId: '222' })
+      assert.equal((await graph.cluster('contact:5'))!.members.includes('visitor:like'), false)
+      assert.deepEqual((await graph.attribute('contact:5', { at: T0 + 2000 })).touches.map((touch) => touch.subject), ['visitor:v'])
+      assert.equal((await graph.report({ from: day, to: day })).rows.find((each) => each.campaignId === '222')?.outcomes ?? 0, 0)
     })
 
     test('a touch two links away keeps the product of both scores', async () => {

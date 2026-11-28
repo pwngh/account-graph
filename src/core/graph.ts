@@ -935,6 +935,14 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
   type Reached = Map<Subject, { confidence: number; via: Subject[]; joined?: true; speaks?: true; from?: Subject; earns?: true; anothers?: true }>
 
+  /** The records joined with a subject as one person, where there are any and the cluster is not one to be reviewed for its size. */
+  async function matesOf(tx: Tx, subject: Subject): Promise<ReadonlySet<Subject> | undefined> {
+    const around = await tx.aroundOf([subject])
+    const own = around.get(subject)?.cluster
+    const members = own === undefined ? [] : [...around].filter(([, { cluster }]) => cluster === own).map(([each]) => each)
+    return members.length > 1 && members.length <= policy.review ? new Set(members) : undefined
+  }
+
   /** Every subject within `hops` links of any of those given, with the strength of the best chain to each. With `only`, through those subjects and to them. */
   async function reach(tx: Tx, from: readonly Subject[], hops: number, only?: ReadonlySet<Subject>, last?: Map<Subject, Link>, crediting = false): Promise<Reached> {
     const reached: Reached = new Map(from.map((subject) => [subject, { confidence: 1, via: [] }]))
@@ -946,6 +954,24 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       const links = await neighbors(tx, frontier)
       await borders.load([...from, ...frontier, ...[...links.values()].flat().map((link) => link.subject)], links, from)
       frontier = spread(reached, apart, frontier, links, borders, from, only, last, crediting)
+    }
+    // For credit, one person's records are one, however long the chain of links that joined them. Where the usual number of links
+    // left some of the searcher's own cluster unreached, a second walk goes from the searcher through the cluster alone, and each
+    // record it finds that the first did not is added with the chain and strength the cluster gives it. Nothing is followed out of
+    // a record found this way, and whoever was reached before stands as they were.
+    // Only a search that stopped at one of the searcher's own records can have left any unreached, which one small read tells.
+    const stopped = crediting && from.length === 1 && frontier.length > 0 ? await tx.labelsOf([from[0]!, ...frontier]) : undefined
+    const own = stopped?.get(from[0]!)?.cluster
+    const mates = own !== undefined && frontier.some((each) => stopped!.get(each)?.cluster === own) ? await matesOf(tx, from[0]!) : undefined
+    if (mates && [...mates].some((each) => !reached.has(each))) {
+      const inner: Reached = new Map(from.map((subject) => [subject, { confidence: 1, via: [] }]))
+      let at = [...from]
+      while (at.length > 0) {
+        const links = await neighbors(tx, at)
+        await borders.load([...from, ...at, ...[...links.values()].flat().map((link) => link.subject)], links, from)
+        at = spread(inner, apart, at, links, borders, from, mates, undefined, crediting)
+      }
+      for (const [each, found] of inner) if (!reached.has(each)) reached.set(each, found)
     }
     return reached
   }
@@ -1107,16 +1133,41 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         bySubject.get(b)?.apart.add(a)
       }
       const links = new Map<Subject, Link[]>()
-      for (let hop = 0; hop < hops && searches.some((search) => search.frontier.length > 0); hop++) {
-        const unread = unique(searches.flatMap((search) => search.frontier)).filter((subject) => !links.has(subject))
+      /** Reads the links of whoever the searches stand at and have not read yet. */
+      const read = async (among: typeof searches) => {
+        const unread = unique(among.flatMap((search) => search.frontier)).filter((subject) => !links.has(subject))
         for (let j = 0; j < unread.length; j += TOGETHER) {
           const some = unread.slice(j, j + TOGETHER)
           const found = await neighbors(tx, some)
           for (const subject of some) links.set(subject, found.get(subject) ?? [])
           await borders.load([...bySubject.keys(), ...some, ...[...found.values()].flat().map((link) => link.subject)], found, [...bySubject.keys()])
         }
+      }
+      for (let hop = 0; hop < hops && searches.some((search) => search.frontier.length > 0); hop++) {
+        await read(searches)
         for (const search of searches) search.frontier = spread(search.reached, search.apart, search.frontier, links, borders, [search.subject], undefined, undefined, true)
       }
+      // One person's records are one, however long the chain of links that joined them. Where the usual number of links left some of a
+      // searcher's own cluster unreached, a second walk goes from that searcher through the cluster alone, and each record it finds
+      // that the first did not is added with the chain and strength the cluster gives it. Nothing is followed out of a record found
+      // this way, and whoever was reached before stands as they were. A cluster to be reviewed for its size is not walked.
+      // Only a search that stopped at one of its searcher's own records can have left any unreached, which one small read tells.
+      const stopped = searches.filter((search) => search.frontier.length > 0)
+      const labels = stopped.length > 0 ? await tx.labelsOf(unique(stopped.flatMap((search) => [search.subject, ...search.frontier]))) : new Map<Subject, Labels>()
+      const inside = stopped.filter((search) => search.frontier.some((each) => labels.get(each)?.cluster !== undefined && labels.get(each)!.cluster === labels.get(search.subject)?.cluster))
+      const groups = new Map<Subject, Subject[]>()
+      const around = inside.length > 0 ? await tx.aroundOf(inside.map((search) => search.subject)) : new Map<Subject, Labels>()
+      for (const [each, { cluster }] of around) (groups.get(cluster) ?? groups.set(cluster, []).get(cluster)!).push(each)
+      const walks = inside.flatMap((search) => {
+        const own = groups.get(around.get(search.subject)?.cluster ?? search.subject) ?? []
+        if (own.length <= 1 || own.length > policy.review || own.every((each) => search.reached.has(each))) return []
+        return [{ search, mates: new Set(own), inner: { subject: search.subject, reached: new Map([[search.subject, { confidence: 1, via: [] }]]) as Reached, apart: search.apart, frontier: [search.subject] } }]
+      })
+      while (walks.some(({ inner }) => inner.frontier.length > 0)) {
+        await read(walks.map(({ inner }) => inner))
+        for (const { inner, mates } of walks) inner.frontier = spread(inner.reached, inner.apart, inner.frontier, links, borders, [inner.subject], mates, undefined, true)
+      }
+      for (const { search, inner } of walks) for (const [each, found] of inner.reached) if (!search.reached.has(each)) search.reached.set(each, found)
       for (const { subject, reached } of searches) out.set(subject, reached)
     }
     return out
