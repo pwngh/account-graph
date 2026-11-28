@@ -36,16 +36,17 @@ export function createService(graph: Graph, options: ServiceOptions) {
   const pool = [...new Set((options.pool?.numbers ?? []).map((number) => normalizePhone(number, options.calls?.country)))]
 
   /** Counts an outcome for the report, and sends it to the ad platforms when one is set up and the outcome names an action. */
-  const convert = async (given: Outcome) => {
+  // With `quiet`, as for a load of the past, it is counted and no platform is told.
+  const convert = async (given: Outcome, quiet = false) => {
     const outcome = withStage(options.stages, given)
-    if (options.outbox && outcome.action) return options.outbox.record(outcome)
+    if (options.outbox && outcome.action && !quiet) return options.outbox.record(outcome)
     await graph.outcome(outcome)
     return []
   }
 
   /** How calls are recorded: with the steps' values and, where an ad platform is set up, held and taken back through the outbox. */
-  const calling = (): CallOptions => {
-    const { outbox } = options
+  const calling = (quiet = false): CallOptions => {
+    const outbox = quiet ? undefined : options.outbox
     const staged = (outcome: Outcome) => withStage(options.stages, outcome)
     const sends = (outcome: Outcome) => Boolean(outbox && staged(outcome).action)
     return {
@@ -53,9 +54,9 @@ export function createService(graph: Graph, options: ServiceOptions) {
       ...(options.texts?.codeLife !== undefined && { codeLife: options.texts.codeLife }),
       ...(pool.length > 0 && { pool: { numbers: pool, grace: options.pool!.grace * 60_000, requireTapAfterReassignment: options.pool!.requireTapAfterReassignment === true } }),
       now,
-      convert,
+      convert: (outcome) => convert(outcome, quiet),
       count: (outcome) => graph.outcome(staged(outcome)),
-      release: options.calls?.release ?? convert,
+      release: options.calls?.release ?? ((outcome) => convert(outcome, quiet)),
       ...(outbox && {
         hold: async (outcome: Outcome) => (sends(outcome) ? outbox.hold(staged(outcome)) : []),
         release: async (outcome: Outcome) => (sends(outcome) ? outbox.release(staged(outcome)) : convert(outcome)),
@@ -68,9 +69,9 @@ export function createService(graph: Graph, options: ServiceOptions) {
   }
 
   /** How texts are recorded: with the steps' values, on the tracking numbers calls are recorded on. */
-  const textOptions = (): TextOptions => {
+  const textOptions = (quiet = false): TextOptions => {
     const { exclude, clickWindow, country, numbers } = options.calls ?? {}
-    return { ...(exclude && { exclude }), ...(clickWindow !== undefined && { clickWindow }), ...(country && { country }), ...(numbers && { numbers }), ...options.texts, convert, ...(options.outbox && { withdraw: (transactionId: string) => options.outbox!.withdraw(transactionId) }), ...(lineOf && { lineType: lineOf }) }
+    return { ...(exclude && { exclude }), ...(clickWindow !== undefined && { clickWindow }), ...(country && { country }), ...(numbers && { numbers }), ...options.texts, convert: (outcome) => convert(outcome, quiet), ...(options.outbox && !quiet && { withdraw: (transactionId: string) => options.outbox!.withdraw(transactionId) }), ...(lineOf && { lineType: lineOf }) }
   }
 
   // A number found to come from an internet calling app stops counting as a phone everywhere it was already written,

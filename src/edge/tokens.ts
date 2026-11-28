@@ -87,10 +87,11 @@ const forbidden = () => fault(FAULT_CODES.AUTH.FORBIDDEN, 'The token does not op
 
 /** Shape errors apply to the whole batch. Refused items never reach the receipt or write path, and keep their place in the answer. */
 export async function filterRecord(body: unknown, allow: (entry: RecordEntry) => RecordEntry | undefined, dispatch: (input: unknown) => Promise<unknown>) {
-  const { entries } = checked('record', body)
+  const { entries, history } = checked('record', body)
   const screened = entries.map(allow)
   const accepted = screened.filter((entry): entry is RecordEntry => entry !== undefined)
-  const results = accepted.length ? (await dispatch({ entries: accepted }) as RecordResponse).results : []
+  // Whether the request is a load of the past goes on with the entries that are let through.
+  const results = accepted.length ? (await dispatch({ entries: accepted, ...(history === true && { history }) }) as RecordResponse).results : []
   let index = 0
   return { results: entries.map(({ type, key }, i) => screened[i] ? results[index++] : { type, key, ok: false, reason: 'FORBIDDEN' }) }
 }

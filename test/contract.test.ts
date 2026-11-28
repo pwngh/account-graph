@@ -1105,6 +1105,40 @@ test('a time sent in seconds is refused, and says what to do', async () => {
   }
 })
 
+test('a load of the past is recorded and counted, and nothing of it is sent to an ad platform', async () => {
+  const { createEngine } = await import('../src/core/engine.ts')
+  const { createMemoryStore } = await import('../src/core/memory.ts')
+  const { createSix } = await import('../src/core/six.ts')
+  const { createReceipts } = await import('../src/core/receipts.ts')
+  let sends = 0
+  const target = { name: 'ads', restates: true, batch: 10, maxAge: 90 * 86_400_000, keys: () => ({ email: 'h' }), click: () => undefined, retryable: () => true, deliver: async () => ((sends += 1), { requestId: 'r' }) }
+  const engine = createEngine(createMemoryStore(), { stages: { sale: { action: { ads: 'Sale' } }, call: { value: 12, action: { ads: 'Call' } } }, delivery: { targets: [target] }, now: () => NOW })
+  const six = createSix(engine, { receipts: createReceipts([SECRET]) })
+  const old = NOW - 60 * 86_400_000
+  const sale = (key: string, at: number): RecordEntry => ({ type: 'conversion', key, at, subject: `contact:${key}`, stage: 'sale', value: 100, currency: 'USD', email: `${key}@example.org` })
+  const call = (key: string, at: number): RecordEntry => ({ type: 'call', key, at, direction: 'inbound', from: '+15558675330', to: '+15551230001', duration: 120, result: { answered: true } })
+  const queued = async (id: string) => (await engine.outbox!.get(id)).length
+  // Sixty days old, and within what the platform still takes: recorded in the ordinary way, it is sent.
+  assert.ok((await six.record({ entries: [sale('late', old)] })).results[0]!.ok)
+  await engine.outbox!.run()
+  assert.deepEqual([sends, await queued('late')], [1, 1])
+  // The same kinds of entry in a load of the past: all recorded, none queued, none sent, whatever is recorded of them afterwards in the same load.
+  const loaded = await six.record({ history: true, entries: [sale('past', old), call('past-call', old), { type: 'restatement', key: 'past-fix', at: old + 1000, of: { type: 'conversion', key: 'past' }, change: { kind: 'correct', value: 80 } }, { type: 'payment', key: 'past-paid', at: old + 2000, conversion: 'past', direction: 'received', amount: 70, currency: 'USD' }] })
+  assert.ok(loaded.results.every((result) => result.ok), JSON.stringify(loaded.results))
+  await engine.outbox!.run()
+  assert.deepEqual([sends, await queued('past'), await queued('call:past-call')], [1, 0, 0])
+  // They are on file all the same, the sale at what was paid for it and the call as an outcome of its own.
+  assert.deepEqual([(await engine.graph.outcomeOf('past'))?.value, (await engine.graph.outcomeOf('call:past-call'))?.value], [70, 12])
+  // Through the door a caller uses, `history` is true or false and nothing else.
+  const { graph, close } = await memory()
+  try {
+    await assert.rejects(graph.record({ history: 'yes', entries: [sale('odd', old)] } as never), (error: { code?: string }) => error.code === 'INPUT.MALFORMED')
+    assert.ok((await graph.record({ history: true, entries: [sale('fine', old)] })).results[0]!.ok)
+  } finally {
+    await close()
+  }
+})
+
 test('answers of a report are shared until something is written', async () => {
   let now = NOW
   const { graph, local, close } = await memory({ now: () => now })

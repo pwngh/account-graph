@@ -270,7 +270,7 @@ export function createSix(engine: Engine, options: SixOptions) {
   const readable = (text: string | undefined) => text?.replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim()
 
   /** Writes one entry, or where it was written before says how it stands. */
-  async function write(inside: Inside, entry: RecordEntry, again: boolean): Promise<Values[RecordEntry['type']]> {
+  async function write(inside: Inside, entry: RecordEntry, again: boolean, quiet = false): Promise<Values[RecordEntry['type']]> {
     const { graph, outbox, service } = inside
     switch (entry.type) {
       case 'profile': {
@@ -320,7 +320,7 @@ export function createSix(engine: Engine, options: SixOptions) {
           const fields = [before.subject !== entry.subject && 'subject', before.at !== entry.at && 'at', before.stage !== entry.stage && 'stage'].filter((each) => typeof each === 'string')
           throw Object.assign(malformed(`Conversion "${key}" is another one`), { refusal: { reason: 'KEY_REUSED', fields } })
         }
-        if (!before && !again) await service.convert(outcome)
+        if (!before && !again) await service.convert(outcome, quiet)
         const counted = await graph.outcomeOf(key)
         return { value: { value: counted?.value ?? 0, currency: counted?.currency ?? '', deliveries: await jobsOf(inside, key) }, subjects: [entry.subject], existed: before !== undefined }
       }
@@ -332,7 +332,7 @@ export function createSix(engine: Engine, options: SixOptions) {
           if (!again) {
             const said = await graph.sayLead({ id, key: entry.key, at: entry.at, ...(change.kind === 'not_lead' && { kind: change.why }), ...(change.by !== undefined && { by: change.by }) })
             stands = said.stands
-            await settleLead(graph, id, said.lead, service.calling())
+            await settleLead(graph, id, said.lead, service.calling(quiet))
           } else stands = newest(await inside.tx.saidOf('lead', id))?.key === entry.key
         } else if (!again) {
           const given = 'currency' in change && change.currency ? { ...change, currency: change.currency.toUpperCase() } : change
@@ -352,14 +352,14 @@ export function createSix(engine: Engine, options: SixOptions) {
         let existed = false
         if (!again) {
           const payment = { id: entry.key, transactionId: entry.conversion, amount: entry.amount, kind: entry.direction === 'refunded' ? ('refund' as const) : ('payment' as const), ...(entry.currency && { currency: entry.currency.toUpperCase() }) }
-          existed = (await (outbox ? outbox.pay(payment) : graph.pay(payment))).duplicate
+          existed = (await (outbox && !quiet ? outbox.pay(payment) : graph.pay(payment))).duplicate
         }
         return { value: { value: (await graph.outcomeOf(entry.conversion))?.value ?? null, deliveries: await jobsOf(inside, entry.conversion) }, subjects: [], existed }
       }
       case 'call': {
         const { type: _, key, result, caller, ...rest } = entry
         const call: Call = { id: key, ...rest, ...result }
-        const recorded = await recordCall(graph, call, { ...service.calling(), said: { key: `call ${entry.at} ${canonical(result ?? null)}`, at: entry.at } })
+        const recorded = await recordCall(graph, call, { ...service.calling(quiet), said: { key: `call ${entry.at} ${canonical(result ?? null)}`, at: entry.at } })
         await keepNumber(inside.tx, entry.direction === 'inbound' ? entry.from : entry.to, entry.direction === 'inbound' ? caller : undefined, entry)
         // Of two reports at one time, the same one stands whichever came first.
         const stands = !result || newest(await inside.tx.saidOf('result', key))?.key === `call ${entry.at} ${canonical(result)}`
@@ -378,7 +378,7 @@ export function createSix(engine: Engine, options: SixOptions) {
           stands = (await graph.sayRecording({ call: entry.call, key: entry.key, at: entry.at, id: change.id, state: change.state })).stands
         } else if (change.kind === 'result') {
           stands = (await graph.sayResult({ call: entry.call, key: entry.key, at: entry.at, result: change.result })).stands
-          await settleCall(graph, entry.call, service.calling())
+          await settleCall(graph, entry.call, service.calling(quiet))
         } else stands = (await graph.sayReturn({ call: entry.call, key: entry.key, at: entry.at, ...(change.kind === 'returned' && { reachedAt: change.reachedAt }), ...(change.by !== undefined && { by: change.by }) })).stands
         const kept = await graph.keptCall(entry.call)
         // A return on an outbound call is kept even when the call arrives later, but can never close a callback.
@@ -396,7 +396,7 @@ export function createSix(engine: Engine, options: SixOptions) {
       }
       case 'text': {
         const { type: _, key, ...rest } = entry
-        const recorded = await recordText(graph, { id: key, ...rest }, service.textOptions())
+        const recorded = await recordText(graph, { id: key, ...rest }, service.textOptions(quiet))
         await keepNumber(inside.tx, entry.direction === 'inbound' ? entry.from : entry.to)
         // What they wrote to you is kept. What you wrote to them is yours already.
         // A text reported again keeps what was kept the first time, or nothing where that has gone.
@@ -419,7 +419,7 @@ export function createSix(engine: Engine, options: SixOptions) {
     }
   }
 
-  async function recordUnit(entries: readonly RecordEntry[], checked: Checked, lead = false, paidUpTo?: Asked['paidUpTo']): Promise<RecordResult[]> {
+  async function recordUnit(entries: readonly RecordEntry[], checked: Checked, lead = false, paidUpTo?: Asked['paidUpTo'], quiet = false): Promise<RecordResult[]> {
     let entry = entries[0]!
     const answer = (decided: Decided<object, RecordRefusal>) => ({ type: entry.type, key: entry.key, ...decided }) as unknown as RecordResult
     const lookups = {
@@ -450,7 +450,7 @@ export function createSix(engine: Engine, options: SixOptions) {
             const paid = (await tx.paymentsOf(entry.conversion)).filter(each => each.id.startsWith(paidUpTo.prefix) && each.kind === 'payment').reduce((sum, each) => sum + each.amount, entry.amount)
             if (Math.round(paid * 1e5) > Math.round(paidUpTo.amount * 1e5)) throw refused('The payments would exceed the source\'s cap', { reason: 'OVER_CAP' })
           }
-          const { value, subjects, stands = true, existed = false } = await write(inside, dated, before !== undefined)
+          const { value, subjects, stands = true, existed = false } = await write(inside, dated, before !== undefined, quiet)
           if (!before) await tx.addReceipt(receipts.make(dated, now(), about), subjects)
           // Your own services writing a profile of a forgotten subject bring it back on purpose, so lead webhooks may file under it again.
           if (!lead && entry.type === 'profile') await tx.dropReceipt(SUBJECT_RECEIPT, receipts.mac(SUBJECT_RECEIPT, entry.subject).all)
@@ -464,7 +464,7 @@ export function createSix(engine: Engine, options: SixOptions) {
     }
   }
 
-  async function record({ entries }: RecordRequest, asked: Asked = {}): Promise<RecordResponse> {
+  async function record({ entries, history }: RecordRequest, asked: Asked = {}): Promise<RecordResponse> {
     entries.forEach((entry, i) => preflight(entry, `request.entries[${i}]`))
     const checked = await checks(entries, asked.until === undefined ? TOGETHER * CHECK : (asked.until - now()) / 3, asked.lead)
     // A webhook's profile and conversion share a transaction. Only its first entry can need a line check.
@@ -474,7 +474,7 @@ export function createSix(engine: Engine, options: SixOptions) {
       asked.signal?.throwIfAborted()
       if (asked.until !== undefined && now() >= asked.until) {
         for (const { type, key } of unit) results.push({ type, key, ...no({ reason: 'NOT_ATTEMPTED' as const }) } as RecordResult)
-      } else results.push(...await recordUnit(unit, checked[i]!, asked.lead, asked.paidUpTo))
+      } else results.push(...await recordUnit(unit, checked[i]!, asked.lead, asked.paidUpTo, history === true))
     }
     return { results }
   }
