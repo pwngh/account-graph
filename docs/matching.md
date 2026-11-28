@@ -88,6 +88,13 @@ The default policy has no groups, and one corroborating kind, `named`. [Presets]
 | `opened` | 0 | 0 | none | Note: a browser opened the link sent to this person |
 | `dialed` | 0 | 0 | none | Note: the number a visitor tapped, or a recorded call |
 | `called` | 0 | 0 | none | Note: the whole name a record was given, kept under every policy |
+| `birth` | 0 | 0 | none | Note: a keyed date of birth, which [keeps people apart](#facts-that-keep-people-apart) |
+| `dated` | 0 | 0 | none | Note: the keyed year, or day and month, of a date of birth |
+| `given` | 0 | 0 | none | Note: a keyed full name a first name may stand for |
+| `initial` | 0 | 0 | none | Note: the keyed first letter of a first name |
+| `compound` | 0 | 0 | none | Note: that a first name has several words. Kept where [records have to be confirmed](#records-that-have-to-be-confirmed) |
+| `person` | 0 | 0 | none | Note: one full name and date of birth, as written. Where records have to be confirmed, 0.85 with a cap of 10 |
+| `perhaps` | 0 | 0 | none | Note: a name the first name may stand for, a word of the last name and a date of birth. Where records have to be confirmed, 0.55 with a cap of 10 |
 
 Notes give no evidence and link nothing.
 
@@ -224,7 +231,7 @@ contact:2 { email, born 1984-07-01 } ──┘
 
 The server then keeps a keyed `birth` of each `dob` in a [`profile`](identify.md), as a note that links nothing. Two subjects that would be in one group, both have a `birth`, and share no value of it are kept apart, whatever path joins them.
 
-With `given` it keeps keyed notes of the names a first name may stand for, from the table in `src/core/names.ts`: `Bob` stands for `Robert`, and `Lupe` for `Guadalupe`. Catherine and Katherine, Kaitlyn and Caitlin, and Gerald and Jerry each share a possible full name. Gerald and Jeremiah stay distinct even though both can be called Jerry. Send the name again to record a newly recognized form.
+With `given` it keeps keyed notes of the names a first name may stand for, from the table in `src/core/names.ts`: `Bob` stands for `Robert`, and `Lupita` for `Guadalupe`. Catherine and Katherine, Kaitlyn and Caitlin, and Gerald and Jerry each share a possible full name. Gerald and Jeremiah stay distinct even though both can be called Jerry. Send the name again to record a newly recognized form.
 
 | Two records | Come to |
 | --- | --- |

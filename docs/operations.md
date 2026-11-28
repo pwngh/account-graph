@@ -19,7 +19,7 @@ reviewers none, server cookie off, fingerprint off, maxmind off, server ranges o
 outbox sends to none (no ad platform configured)
 page events: none (set EVENTS); calls from twilio off; texts from twilio off; text codes off; number pool off
 cost sources: none (record cost)
-policy d852bb513c02 (default)
+policy 3547259d739a (default)
 ```
 
 The lines after `collect accepts` list the enabled features. Each provider turns on when its variables are set. [Providers](providers.md) covers where to get the keys.
@@ -34,7 +34,7 @@ GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' RECEIPT_
 
 Compose also reads a `.env` file in the same directory. Use `.env.example` for synthetic local settings. For a credentialed run, inject secrets privately into the selected process. Keep them out of the checkout, shell history and command arguments. Container administrators can inspect the environment. Set `GRAPH_PORT` to publish a different port.
 
-Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE`, `LEADS_FILE`, `SERVICE_TOKENS_FILE` and `SERVER_RANGES_FILE`. It sets `DATABASE_URL` itself. Compose passes the Google key file path but does not mount the file. Supply a separate read-only secret mount and use its path inside the container. A shell running the checker does not read Compose's .env.
+Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE`, `LEADS_FILE`, `SERVICE_TOKENS_FILE`, `SERVER_RANGES_FILE`, `TARGETS`, `PAUSE_AFTER_FAILURES` and `REVIEW_PENDING_LIMIT`. It sets `DATABASE_URL` itself. Compose passes the Google key file path but does not mount the file. Supply a separate read-only secret mount and use its path inside the container. A shell running the checker does not read Compose's .env.
 
 > **Use the compose file for evaluation.** It has a local volume, a fixed database password, the example site's features and placeholders for `LINK_SECRET`, `IDENTIFIER_SECRET` and `RECEIPT_SECRETS`. Replace these before production use. Values in `compose.yaml` that start with `change-me` are public, and the server refuses to start with one when `ORIGINS` contains a site outside your own machine.
 
@@ -68,7 +68,7 @@ account-graph verify
 
 <!-- schema cli -->
 ```json
-{ "changes": [], "policy": { "hash": "d852bb513c02…", "builtWith": "d852bb513c02…", "due": false } }
+{ "changes": [], "policy": { "hash": "3547259d739a…", "builtWith": "3547259d739a…", "due": false } }
 ```
 
 `changes` lists the subjects whose stored cluster differs from a full recompute, and is empty when they agree.
@@ -608,7 +608,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | Variable | Default | Description |
 | --- | --- | --- |
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency`, `action` and `wait`. See [the report](report.md#steps). |
-| `EVENTS` | none | Page events to record, separated by commas: `inquiry,phone_click`. |
+| `EVENTS` | none | Page events to record, separated by commas: `inquiry,phone_click`. The server also records `phone_click` when `CALL_NUMBERS`, `CALL_NUMBERS_FILE`, `POOL_NUMBERS` or `TWILIO_WEBHOOK_URL` is set, and `text_click` when `TEXT_CODES` or `TWILIO_TEXT_WEBHOOK_URL` is set. |
 | `LEADS`, `LEADS_FILE` | none | Named lead webhook sources as a JSON object or a path to a private file containing that object. Set at most one. Empty is the same as unset. See [Mappings and setup](leads.md). |
 | `CALL_NUMBERS` | none | Tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. Each may carry `tags`. |
 | `CALL_NUMBERS_FILE` | none | A file with the same JSON, for a long list. Set one of the two. |

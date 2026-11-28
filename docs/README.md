@@ -14,9 +14,14 @@ One page for each concept.
 10. [Providers](providers.md): where each key comes from, and what is sent to ad platforms.
 11. [Privacy](privacy.md): what is kept, sent and deleted.
 12. [Demo](demo.md): the made-up firm.
-13. [PHP](php.md) covers the six calls, a transactional outbox and a CodeIgniter 3 integration.
-14. [WordPress](wordpress.md) covers the browser tag, form field mapping and background inquiry delivery.
-15. [Connect an intake form](no-code.md) with Zapier, Make or Power Automate using the [OpenAPI description](openapi.json).
+13. [Review app](review-app.md): the reviewer's pages, served from a Node server.
+14. [Lead webhooks](leads.md): posts from chat, intake and payment services, mapped to entries.
+15. [PHP](php.md) covers the six calls, a transactional outbox and a CodeIgniter 3 integration.
+16. [Python](python.md) covers the six calls and a SQLite outbox.
+17. [.NET](dotnet.md) covers the six calls and a SQLite outbox.
+18. [WordPress](wordpress.md) covers the browser tag, form field mapping and background inquiry delivery.
+19. [Tag Manager](gtm.md) installs the browser tag from a Tag Manager web container.
+20. [Connect an intake form](no-code.md) with Zapier, Make or Power Automate using the [OpenAPI description](openapi.json).
 
 ## Who each page is for
 

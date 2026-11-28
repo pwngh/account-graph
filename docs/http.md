@@ -46,7 +46,7 @@ An unknown token gets 401. A known token without the requested call, decision ac
 
 Each record entry type has its own key space. Forget keys and decision keys each have one too. When an allowed decision uses a key occupied by a different action, every caller gets `KEY_REUSED` with only `["action"]`. The answer reveals no signer, action value or other field differences.
 
-An `x-request-id` header of 1 to 200 visible ASCII characters without spaces comes back with the answer of a call.
+An `x-request-id` header of 1 to 200 visible ASCII characters without spaces comes back with the answer of a call. A 404, a 405, and a 503 sent before the database first opens come back without it.
 
 ## Requests
 
@@ -86,7 +86,7 @@ There is one result per entry, in order. Every accepted entry answers two fields
 
 | Field | Meaning |
 | --- | --- |
-| `duplicate` | The key was recorded before. The rest of the answer says how it stands now. |
+| `duplicate` | The key was recorded before. The rest of the answer says how it stands now, except for an inbound `call`. See [idempotency](#idempotency). |
 | `stands` | `false` when something newer already does. See [order](#order). |
 
 ### Entry types
@@ -209,7 +209,7 @@ Put a `profile` before its `conversion`. The other way round, a conversion can b
 
 ### Idempotency
 
-An accepted retry of a recorded key answers `duplicate: true`. The answer is read from the graph as it stands, so a `profile` sent again has no `changes`. A second reporter can supply missing call details or an inbound text opt-out.
+An accepted retry of a recorded key answers `duplicate: true`. The answer is read from the graph as it stands, so a `profile` sent again has no `changes`. An inbound `call` sent again is the exception. Its `flags` are empty and `visitor` is left out unless the retry gives the call a `code` it did not have. `counted` is `false` unless the retry gives it a `result`. A second reporter can supply missing call details or an inbound text opt-out.
 
 The same key with other details answers `KEY_REUSED`. What is compared depends on the type:
 
@@ -221,6 +221,8 @@ The same key with other details answers `KEY_REUSED`. What is compared depends o
 | `call_update` with `kind: "party"` | `at`, `call` and the signed statement | `change.seen` |
 | `decide` | `at`, `by`, `action`, and the pairs or the fact. Pairs may be in any order, and so may the two of a pair. | `reason`, the reason of a pair, `seen` |
 | `forget` | `at`, `by`, `platforms`, and the subjects in any order | `reason`, `seen` |
+| `conversion` | Every other field | `userAgent` |
+| `profile` | Every other field | `message` |
 | Every other entry | Every field | |
 
 Emails and phones are compared as they are normalized, currencies in capitals, identifiers in any order. `Pat.Lee@gmail.com` and `patlee@gmail.com` are one.
@@ -470,7 +472,7 @@ A fault is any answer that is not 200. The library throws it as a `Fault` with t
 
 `retryable` says whether the same call, with the same key, may succeed. Tell a fault by its code, never by its message.
 
-Every other route answers an error as `{ "error": "…" }`<!-- schema RouteError -->. So do two answers under `/v1`: 404 for a call that does not exist, and 405 for a method other than `POST`.
+Every other route answers an error as `{ "error": "…" }`<!-- schema RouteError -->. So do two answers under `/v1`: 404 for a call that does not exist, and 405 for a method other than `POST`. Until the database first opens, every route but `/leads/` answers 503 with a [fault](#faults), `/health` included.
 
 ## Routes for browsers
 
@@ -489,7 +491,7 @@ Browsers post to `/collect` without a token. The [script tag](operations.md#scri
 | 400 | The body is malformed, names an unknown `kind`, or an event that `EVENTS` does not list |
 | 403 | The request's origin is not in `ORIGINS` |
 | 404 | The `kind` is not set up |
-| 405 | A method other than `POST` |
+| 405 | A method other than `POST`, from an origin in `ORIGINS` |
 | 413 | The body is over 1 MB |
 | 429 | Too many requests from one address. `retry-after` gives the wait. |
 
