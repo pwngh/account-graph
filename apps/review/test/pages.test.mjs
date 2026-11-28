@@ -537,6 +537,37 @@ test('the guide of each page is the original screen\'s, and opens from the page 
   }
 })
 
+test('the audit log shows no ID for a deleted record', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const { at } = await (await fetch(firm.graph + '/review/api/board?days=90', { headers: { authorization: 'Bearer demo' } })).json()
+  const api = async (path, body) => (await fetch(firm.graph + path, { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify(body) })).json()
+  const made = await api('/v1/record', { entries: [
+    { type: 'profile', key: 'gone-ash', at: at - 5 * 3600_000, subject: 'contact:ash', facts: { email: 'ash@example.org' } },
+    { type: 'profile', key: 'gone-birch', at: at - 4 * 3600_000, subject: 'contact:birch', facts: { email: 'birch@example.org' } }] })
+  assert.ok(made.results.every(result => result.ok))
+  assert.ok((await api('/v1/decide', { key: 'gone-join', at: at - 3600_000, by: 'dana', action: 'merge', pairs: [{ a: 'contact:ash', b: 'contact:birch' }] })).ok)
+  // The rows of the audit log, as the page words them.
+  const log = async () => {
+    const html = (await (await fetch(firm.graph + '/accounts', { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
+    return [...html.matchAll(/<li><b>([^<]+)<\/b><span class="reason">([\s\S]*?)<\/span>/g)].map(([, action, about]) => action + ': ' + about.replace(/<[^>]+>/g, ''))
+  }
+  assert.deepEqual((await log()).slice(0, 1), ['Joined: contact:ash · contact:birch'])
+  assert.ok((await api('/v1/forget', { key: 'gone-forget', at, by: 'dana', subjects: ['contact:birch'], platforms: 'report' })).ok)
+  // The record of decisions keeps the ID, and the page shows it in neither entry. The record that is still there keeps its name.
+  const after = await log()
+  assert.deepEqual(after.slice(0, 2), ['Deleted data: [Deleted]', 'Joined: contact:ash · [Deleted]'])
+  assert.ok(after.every(row => !row.includes('contact:birch')))
+  // The ID is in no part of the page a browser is sent, and not in what the graph answers a screen.
+  const whole = await (await fetch(firm.graph + '/accounts', { headers: { cookie } })).text()
+  assert.doesNotMatch(whole.slice(whole.indexOf('Audit log')), /contact:birch/)
+  const answer = await (await fetch(firm.graph + '/review/api/decisions?limit=5', { headers: { authorization: 'Bearer demo' } })).text()
+  assert.doesNotMatch(answer, /contact:birch/)
+  assert.deepEqual(JSON.parse(answer).decisions.slice(0, 2).map(decision => decision.about), [['[Deleted]'], ['contact:ash', '[Deleted]']])
+})
+
 test('a term has its definition beside it on every page, in the page from the start', async t => {
   const firm = await startFirm({}, { quick: true })
   t.after(() => firm.close())

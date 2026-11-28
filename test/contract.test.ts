@@ -1043,6 +1043,26 @@ test('the review API reads one column of the Board further on, and refuses half 
   }
 })
 
+test('the review API names no deleted record in the record of decisions, and the record itself keeps the ID', async () => {
+  const { graph, local, base, close } = await http()
+  try {
+    const profile = (n: number): RecordEntry => ({ type: 'profile', key: `p${n}`, at: AT, subject: `contact:${n}`, facts: { email: `p${n}@example.org` } })
+    assert.ok((await graph.record({ entries: [profile(1), profile(2), profile(3)] })).results.every((result) => result.ok))
+    await graph.decide({ key: 'j', at: AT + 1, by: 'dana', action: 'merge', pairs: [{ a: 'contact:1', b: 'contact:2' }] })
+    await graph.decide({ key: 's', at: AT + 2, by: 'dana', action: 'split', pairs: [{ a: 'contact:2', b: 'contact:3' }] })
+    await graph.forget({ key: 'f', at: AT + 4, by: 'dana', subjects: ['contact:2'], platforms: 'report' })
+    const shown = async (query = '') => (((await (await fetch(`${base}/review/api/decisions${query}`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any).decisions as { action: string; about: string[] }[]).map(({ action, about }) => [action, ...about])
+    assert.deepEqual(await shown(), [['forget', '[Deleted]'], ['separate', '[Deleted]', 'contact:3'], ['join', 'contact:1', '[Deleted]']])
+    // An older page read by itself is masked too.
+    assert.deepEqual(await shown('?limit=1&before=2'), [['join', 'contact:1', '[Deleted]']])
+    const { engine } = await internalsOf(local)!()
+    assert.deepEqual((await engine.graph.decisionPage({ limit: 1 }))[0]!.about, ['contact:2'])
+    assert.equal((await engine.graph.audit()).sound, true)
+  } finally {
+    await close()
+  }
+})
+
 test('answers of a report are shared until something is written', async () => {
   let now = NOW
   const { graph, local, close } = await memory({ now: () => now })
