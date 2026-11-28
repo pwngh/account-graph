@@ -248,7 +248,7 @@ export function plainPolicy(policy: Policy) {
 }
 
 /** Raised when the code decides differently under one policy, so that what was stored before is known to be due a rebuild. */
-const RULES = 8
+const RULES = 9
 
 export const REBUILD_NOTICE = 'Groups are due a rebuild. Run account-graph rebuild.'
 
@@ -285,7 +285,9 @@ export function mostOfOneType(subjects: Iterable<string>): number {
     const type = subject.split(':', 1)[0]!
     counts.set(type, (counts.get(type) ?? 0) + 1)
   }
-  return Math.max(0, ...counts.values())
+  let most = 0
+  for (const count of counts.values()) if (count > most) most = count
+  return most
 }
 
 /** Whether an identifier can link subjects at all. */

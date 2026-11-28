@@ -619,10 +619,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const rows = cursor(
         db,
         page,
-        `select x.subject as a, y.subject as b, array_agg(x.identifier) as identifiers, array_agg(i.fanout) as fanouts, array_agg(${peopleOf('i', former)}) as peoples,
+        `select x.subject as a, y.subject as b, array_agg(x.identifier) as identifiers, array_agg(i.fanout) as fanouts, array_agg(p.people) as peoples,
            array_agg(array[x.first_at, x.last_at, x.sightings, y.first_at, y.last_at, y.sightings]) as times
          from ${table} i
          join unnest($1::text[], $2::bigint[]) as rule (kind, cap) on rule.kind = split_part(i.id, ':', 1) and i.fanout <= rule.cap
+         cross join lateral (select ${peopleOf('i', former)} as people) p
          join ${t('edge')} x on x.identifier = i.id
          join ${t('edge')} y on y.identifier = i.id and y.subject > x.subject
          where i.fanout >= 2 and not i.ignored
