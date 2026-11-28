@@ -902,9 +902,12 @@ export function createHandler(core: Core, options: HandlerOptions) {
       }
       case 'POST /called': {
         // What to call the people a page lists. Asked for in a body, so no ID is in an address.
-        const { subjects } = await json(request)
+        const { subjects, every } = await json(request)
         if (!Array.isArray(subjects) || subjects.length > 2000 || subjects.some((each) => typeof each !== 'string' || each.length === 0 || each.length > 512)) throw new Refusal(400, '`subjects` must be up to 2,000 IDs')
-        return graph.called(subjects)
+        // An account page asks for every number and email of the one person it shows.
+        if (every !== undefined && typeof every !== 'boolean') throw new Refusal(400, '`every` must be true or false')
+        if (every && subjects.length > 10) throw new Refusal(400, '`every` takes up to 10 IDs')
+        return graph.called(subjects, every === true)
       }
       case 'GET /clusters':
         return graph.clusters(50, Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(Number(url.searchParams.get('offset')) || 0))))

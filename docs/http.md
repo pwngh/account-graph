@@ -354,7 +354,7 @@ POST /v1/lookup
 | --- | --- | --- |
 | `person` | `subjects`, 1 to 100, `at` | `decisions`, `people`: each one's cluster, the arrival that can be credited, the strongest one that cannot, as `possible`, consent, and whether they asked for no texts |
 | `journey` | `subject`, `before?` | `subjects`, `entries`, `next`, `more`: everything recorded about the person, oldest first, the newest 200. Pass `next` as `before` for earlier ones. |
-| `find` | `text` | `by`, `subjects`: a full email or phone, the start of a subject's id, or a full ad click id. At most 20. |
+| `find` | `text` | `by`, `subjects`: a full email or phone, the start of a subject's id, a full ad click id, or any part of a name the graph keeps. At most 20. |
 | `match` | `facts`, `at` | `candidates`, `notes`: who somebody may be, before you save them |
 | `caller` | `from?`, `to`, `at` | Who is calling, [while the phone rings](calls.md#while-the-phone-rings) |
 | `party` | `call` | The standing party statement with its `role`, `subject` when named, `by`, `at` and `key`, or `null`. A reviewer token gets no `subject` with `excluded`. |

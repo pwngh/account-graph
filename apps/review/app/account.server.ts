@@ -38,6 +38,13 @@ export function loadAccounts(request: Request, subject?: string) {
     const wanted = Math.max(0, Math.floor(Number(query.get('links')) || 0))
     const page = !subject ? undefined : profile?.known ? pageOf(profile, wanted) : profile
     const called = await reviewCalled(request, session, [subject, ...clusters.map((cluster: {id: string}) => cluster.id), ...recent.flatMap((row: {subject: string, to?: string}) => [row.subject, row.to]), ...(page?.known ? [...page.links.map((link: {subject: string}) => link.subject), ...page.separated, ...(page.flows ?? []).map((flow: {subject: string}) => flow.subject), ...(page.rings ?? []).flatMap((ring: {subjects: string[]}) => ring.subjects)] : [])])
+    // The account that is open lists every number and email of its person, not only the newest.
+    if (subject) {
+      // The later read stands. A person forgotten between the two is not shown by what the first one said.
+      const every = (await reviewCalled(request, session, [subject], true))[subject]
+      if (every) called[subject] = every
+      else delete called[subject]
+    }
     return { subject, called, profile: page, layout: profile?.known ? clusterLayout(profile) : undefined, audit, clusters, recent, decisions, retraction: session.retraction, key: randomUUID(), at: graphTime(), offset, author }
   })
 }

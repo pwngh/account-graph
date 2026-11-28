@@ -455,6 +455,27 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         and exists (select from ${t('edge')} e where e.subject = $1 and e.identifier = i.id)`, [subject, [...given.keys()], [...given.values()]])
     },
 
+    async contactsOf(subjects) {
+      const found = new Map<Subject, { field: 'phone' | 'email'; value: string; last: number }[]>()
+      if (subjects.length === 0) return found
+      const { rows } = await db.query(
+        `select e.subject, starts_with(i.id, 'email:') as email, i.shown, e.last_at from ${t('edge')} e join ${t('identifier')} i on i.id = e.identifier
+         where e.subject = any($1::text[]) and i.shown is not null order by e.last_at desc, i.id collate "C"`, [subjects])
+      for (const row of rows) {
+        const contact = { field: row.email ? 'email' as const : 'phone' as const, value: row.shown as string, last: Number(row.last_at) }
+        const list = found.get(row.subject)
+        if (list) list.push(contact)
+        else found.set(row.subject, [contact])
+      }
+      return found
+    },
+
+    async namedLike(text, limit) {
+      // Asked of the names alone, which are few beside the sightings. A name is found by any part of it.
+      const { rows } = await db.query(`select subject from ${t('detail')} where field = 'name' and position(lower($1) in lower(value)) > 0 order by subject collate "C" limit $2`, [text, limit])
+      return rows.map((row) => row.subject)
+    },
+
     async detailsOf(subjects) {
       const found = new Map<Subject, Details>()
       if (subjects.length === 0) return found

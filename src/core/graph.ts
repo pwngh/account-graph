@@ -190,7 +190,7 @@ export interface Graph {
   /** Several people at once, as a list shows them, in the order given. */
   people(subjects: readonly Subject[], options?: { at?: number }): Promise<Person[]>
   /** What to call each of these subjects, from the name, phone and email kept of the records in their group. One nothing is kept of is left out. */
-  called(subjects: readonly Subject[]): Promise<Record<Subject, Called>>
+  called(subjects: readonly Subject[], every?: boolean): Promise<Record<Subject, Called>>
   /** Takes a recorded outcome out of the report because it turned out not to have happened. Resolves to false for an unknown id. */
   withdraw(transactionId: string): Promise<boolean>
   /**
@@ -369,6 +369,8 @@ export interface Graph {
   foresee(decision: Supposed): Promise<Foreseen>
   /** Subjects with an arrival that carries this ad click id, whole, in order. */
   clicked(id: string, limit?: number): Promise<Subject[]>
+  /** Records whose kept name contains the text, whatever the case, in ID order. */
+  named(text: string, limit?: number): Promise<Subject[]>
   /** Subjects whose id starts with the text, in order. */
   search(text: string, limit?: number): Promise<Subject[]>
   /** The newest cluster changes, newest first: who joined or left which cluster, and when. */
@@ -1915,7 +1917,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       })
     },
 
-    called(subjects) {
+    called(subjects, every = false) {
       return store.read(async (tx) => {
         const asked = unique(subjects)
         const labels = await tx.labelsOf(asked)
@@ -1927,11 +1929,24 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         }
         // A group far larger than a person is a fault in the matching. Fifty of it are enough to name one, your own records before those the graph made.
         for (const [cluster, group] of groups) groups.set(cluster, [...group.filter((each) => !madeByGraph(each)).sort(), ...group.filter(madeByGraph).sort()].slice(0, 50))
-        const members = (subject: Subject) => groups.get(labels.get(subject)?.cluster ?? '') ?? [subject]
+        const members = (subject: Subject) => {
+          const group = groups.get(labels.get(subject)?.cluster ?? '') ?? [subject]
+          // The record asked about is always read, even where its group was cut short.
+          return group.includes(subject) ? group : [subject, ...group.slice(0, 49)]
+        }
         const kept = await tx.detailsOf(unique([...asked, ...asked.flatMap(members)]))
+        // Asked for an account page: every number and email of the person's group, the newest first, each once.
+        const contacts = every ? await tx.contactsOf(unique(asked.flatMap(members))) : undefined
+        const all = (subject: Subject, field: 'phone' | 'email') => unique(members(subject).flatMap((each) => contacts?.get(each) ?? []).filter((each) => each.field === field)
+          .sort((a, b) => b.last - a.last || (a.value < b.value ? -1 : 1)).map((each) => each.value))
         // Made from entries, so an ID such as `__proto__` is a name like any other.
         return Object.fromEntries(asked.flatMap((subject) => {
-          const name = called(subject, members(subject), kept)
+          const name: Called = called(subject, members(subject), kept)
+          if (contacts) {
+            const [phones, emails] = [all(subject, 'phone'), all(subject, 'email')]
+            if (phones.length > 0) name.phones = phones
+            if (emails.length > 0) name.emails = emails
+          }
           return Object.keys(name).length > 0 ? [[subject, name] as const] : []
         }))
       })
@@ -2899,6 +2914,10 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
     clicked(id, limit = 20) {
       return store.read((tx) => tx.clicked(id, limit))
+    },
+
+    named(text, limit = 20) {
+      return store.read((tx) => tx.namedLike(text, limit))
     },
 
     search(text, limit = 20) {

@@ -8,7 +8,7 @@ export type Details = Partial<Record<DetailField, string>>
 export type DetailSaid = { value: string; at: number; key: string }
 
 /** What a person is called: the values kept of their group, and for a record the graph made, the record of your own system that stands for them. */
-export type Called = Details & { record?: Subject }
+export type Called = Details & { record?: Subject; phones?: string[]; emails?: string[] }
 
 /** A phone number as a person writes it, where it is a North American one, and as given otherwise. */
 export function shownPhone(phone: string): string {

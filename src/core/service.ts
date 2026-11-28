@@ -241,10 +241,11 @@ export function createService(graph: Graph, options: ServiceOptions) {
   }
 
   /**
-   * Who a text may mean: an email address or a phone number, hashed here and looked up whole, or how a subject's id begins.
+   * Who a text may mean: an email address or a phone number, hashed here and looked up whole, how a subject's id begins,
+   * an ad click id, or any part of a name the graph keeps.
    * Neither is kept, and neither is ever part of an address, which servers and browsers write down.
    */
-  async function find(given: unknown): Promise<{ by: 'email' | 'phone' | 'click' | 'subject'; subjects: Subject[] }> {
+  async function find(given: unknown): Promise<{ by: 'email' | 'phone' | 'click' | 'subject' | 'name'; subjects: Subject[] }> {
     if (typeof given !== 'string' || !given.trim() || given.length > 512) throw malformed('`text` is required, up to 512 characters')
     const text = given.trim()
     const holding = async (identifiers: Identifier[]) => [...new Set((await graph.holders(identifiers)).map((edge) => edge.subject))].sort().slice(0, 20)
@@ -260,7 +261,10 @@ export function createService(graph: Graph, options: ServiceOptions) {
     const subjects = await graph.search(text)
     // An ad click id is looked up whole, once no subject's id begins like it.
     const clicked = subjects.length === 0 ? await graph.clicked(text) : []
-    return clicked.length > 0 ? { by: 'click', subjects: clicked } : { by: 'subject', subjects }
+    if (clicked.length > 0) return { by: 'click', subjects: clicked }
+    // A name is looked for last, once the text is no ID and no click.
+    const named = subjects.length === 0 ? await graph.named(text) : []
+    return named.length > 0 ? { by: 'name', subjects: named } : { by: 'subject', subjects }
   }
 
   return { pool, convert, calling, textOptions, identify, factsIn, named, find, lineOf }

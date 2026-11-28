@@ -93,6 +93,13 @@ test('a named service signs a return with its own name or none, never with anoth
   assert.deepEqual(answer.results.map((each: any) => [each.key, each.ok, each.reason]), [['own', true, undefined], ['none', true, undefined], ['other', false, 'FORBIDDEN'], ['own-spam', true, undefined], ['other-spam', false, 'FORBIDDEN'], ['own-sale', true, undefined], ['other-sale', false, 'FORBIDDEN']])
 })
 
+test('a named service that may find is not answered a search by name', async () => {
+  const owner = { role: 'limited', name: 'intake', calls: { lookup: ['find'] } } as const
+  const asked = (answer: object) => limitedCall(owner, 'lookup', { kind: 'find', text: 'casey' }, async () => answer)
+  assert.deepEqual(await asked({ by: 'name', subjects: ['contact:one'] }), { by: 'subject', subjects: [] })
+  for (const exact of [{ by: 'email', subjects: ['contact:one'] }, { by: 'subject', subjects: ['contact:one'] }]) assert.deepEqual(await asked(exact), exact)
+})
+
 test('the bearer scheme is read in any case and with any spacing, as HTTP allows', () => {
   const owner = credentials('s'.repeat(32), { ann: 'r'.repeat(32) })
   for (const header of [`Bearer ${'s'.repeat(32)}`, `bearer ${'s'.repeat(32)}`, `BEARER ${'s'.repeat(32)}`, `Bearer  ${'s'.repeat(32)}`, `Bearer\t${'s'.repeat(32)}`]) assert.deepEqual(owner(header), { role: 'service' }, header)

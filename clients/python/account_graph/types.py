@@ -928,7 +928,7 @@ class JourneyPage(TypedDict):
 
 
 class FindValue(TypedDict):
-    by: Literal["email", "phone", "click", "subject"]
+    by: Literal["email", "phone", "click", "subject", "name"]
     subjects: list[str]
 
 
