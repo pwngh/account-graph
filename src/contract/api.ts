@@ -154,6 +154,8 @@ export interface CallEntry extends Keyed<'call'> {
   /** The code the caller read out or entered, from the page they saw. Pages are given codes where the server has `textCodes` on. Never kept. */
   readonly code?: string
   readonly tags?: Readonly<Record<string, string>>
+  /** What the phone company says of an inbound caller: the name on its caller ID, and the place the number is from. Kept on the record of the number for staff to read. Never used to match, because it is often the account holder or a carrier's placeholder. */
+  readonly caller?: { readonly name?: string; readonly place?: string }
 }
 
 export interface CallResult {

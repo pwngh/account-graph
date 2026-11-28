@@ -813,6 +813,9 @@ test('a Twilio request is checked against its signature and read as a call', () 
   assert.deepEqual(twilioCall(ended, 0), { id: 'CA9', from: '+15558675309', to: '+15551230001', at: Date.parse('2010-08-20T01:13:42Z') - 95_000, duration: 95 })
   // Nobody answered: recorded as a call of no length. Still ringing, or placed by the account: not a call to record.
   assert.deepEqual(twilioCall({ ...ended, CallStatus: 'no-answer', Timestamp: '' }, 5000), { id: 'CA9', from: '+15558675309', to: '+15551230001', at: 5000, duration: 0, answered: false })
+  // What Twilio says of the caller comes along where it says it: the name on the caller ID, and the city and state of the number.
+  assert.deepEqual(twilioCall({ ...ended, CallerName: 'WIRELESS CALLER', FromCity: 'SPRINGFIELD', FromState: 'IL' }, 0)?.caller, { name: 'WIRELESS CALLER', place: 'SPRINGFIELD, IL' })
+  assert.deepEqual(twilioCall({ ...ended, FromState: 'IL' }, 0)?.caller, { place: 'IL' })
   assert.equal(twilioCall({ ...ended, CallStatus: 'ringing' }, 0), undefined)
   assert.equal(twilioCall({ ...ended, Direction: 'outbound-api' }, 0), undefined)
 })

@@ -48,6 +48,8 @@ export function twilioCall(fields: Readonly<Record<string, string>>, now: number
     duration,
     // Anything but "completed" never connected. "completed" only says the phone system picked up, so it answers nothing.
     ...(fields.CallStatus !== 'completed' && { answered: false }),
+    // Twilio sends these where the account has caller name lookup on, and for numbers it can place.
+    ...((fields.CallerName || fields.FromCity || fields.FromState) && { caller: { ...(fields.CallerName && { name: fields.CallerName.slice(0, 120) }), ...((fields.FromCity || fields.FromState) && { place: [fields.FromCity, fields.FromState].filter(Boolean).join(', ').slice(0, 120) }) } }),
   }
 }
 

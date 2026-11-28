@@ -18,6 +18,9 @@ export function loadReport(request: Request, kind: ReportKind, which?: string, s
     // A card read by itself names nobody. A page names everyone it lists.
     if (selected !== undefined) return report
     const called = await reviewCalled(request, session, listed(report))
+    // The open call says what the phone company says of its caller, which is asked for with everything else kept of that one record.
+    const open = report.kind === 'calls' ? report.open?.calls[report.picked]?.subject : undefined
+    if (open) Object.assign(called, { [open]: { ...called[open], ...(await reviewCalled(request, session, [open], true))[open] } })
     if (report.kind !== 'journey' || !report.which || !report.journey?.entries.some((entry: Row) => entry.kind === 'call')) return { ...report, called }
     // The records a call in this history can be named for: this one, where the firm made it, and whoever holds the number read for it.
     const records = new Set<string>(madeByGraph(report.which) ? [] : [report.which])
