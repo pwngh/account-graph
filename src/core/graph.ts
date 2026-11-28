@@ -3312,11 +3312,12 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         }
         const recorded = await tx.callsOf(people)
         // A call that names nobody, because staff said it was not the record's or took a name back, stays under its call ID.
-        const asked = subject.startsWith('call:') ? await tx.callOf(subject.slice('call:'.length)) : undefined
-        if (asked && !recorded.some((call) => call.id === asked.id)) recorded.push(asked)
         // A guessed link may still put two records in one cluster. A staff statement is for the exact record it names. One that names
-        // nobody is shown under the call's ID, and to no record.
+        // nobody is shown under the call's ID, and to no record. A call nobody has named is in the history of its number.
         const namesNobody = (call: KeptCall) => call.party?.role === 'excluded' || call.party?.role === 'unknown'
+        const ofCallId = subject.startsWith('call:') ? await tx.callOf(subject.slice('call:'.length)) : undefined
+        const asked = ofCallId && namesNobody(ofCallId) ? ofCallId : undefined
+        if (asked && !recorded.some((call) => call.id === asked.id)) recorded.push(asked)
         const visible = (call: KeptCall) => !call.party || ((call.party.role === 'self' || call.party.role === 'representative') && call.party.subject === subject) || (namesNobody(call) && subject === callId(call))
         const hidden = new Set(recorded.filter((call) => !visible(call)).map(callId))
         const calls = recorded.filter(visible).map(namingOwn)

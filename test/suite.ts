@@ -1647,8 +1647,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.observe({ subject: 'contact:1', identifiers: [`phone:${hashPhone(from)}`], at: T0 - 1000 })
       await recordCall(graph, { id: 'C1', from, to: '+12025550109', at: T0 })
       const calls = async (subject: string) => (await graph.journey(subject)).entries.filter((entry) => entry.kind === 'call').map((entry) => (entry as { call: { id: string } }).call.id)
-      // Before anybody names it, it is under its ID and its number's records alike.
-      assert.deepEqual([await calls('call:C1'), await calls('contact:1')], [['C1'], ['C1']])
+      // Before anybody names it, it is in the history of its number's records, and not under its ID.
+      assert.deepEqual([await calls('call:C1'), await calls('contact:1')], [[], ['C1']])
       for (const [n, party] of [{ role: 'excluded', subject: 'contact:1', by: 'desk' }, { role: 'unknown', by: 'desk' }].entries()) {
         await graph.sayParty({ call: 'C1', key: `k${n}`, at: T0 + 1 + n, party: party as never })
         assert.deepEqual([await calls('call:C1'), await calls('contact:1')], [['C1'], []])

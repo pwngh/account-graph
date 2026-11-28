@@ -266,7 +266,7 @@ export async function sayOfCall(request: Request) {
       const nobody = role === 'unknown'
       if (!nobody && !picked && !typed) return wrong('Choose a record, or give its ID, then save again.')
       // A typed ID is the choice where the list was left as the page had it. A record chosen from the list and another typed are two choices.
-      if (picked && typed && picked !== typed && picked !== field('was')) return wrong('Choose a record from the list or give an ID, not both.')
+      if (!nobody && picked && typed && picked !== typed && picked !== field('was')) return wrong('Choose a record from the list or give an ID, not both.')
       const subject = nobody ? undefined : typed || picked
       // A call named for an ID nobody has would be in no history at all.
       if (subject !== undefined && (subject.length > 300 || madeByGraph(subject) || !(await reviewGet(request, session, 'subject', { subject })).known)) return wrong('No record has this ID. Check it and save again.')
