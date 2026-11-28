@@ -40,11 +40,14 @@ export function remaining(request: Request, view: string) {
         if (decision.by === session.name && decision.at >= session.since && (decision.action === 'join' || decision.action === 'separate')) mine.push({action: decision.action, a: decision.about[0]!, b: decision.about[1]!, at: decision.at})
       }
       // The pair the address names, where another reviewer decided it since it was opened: who, how and when, so the page says why it is gone.
-      const [x, y] = named?.split('\n') ?? []
-      const latest = named && x && y && !passed.has(named) && !found.pairs.some((each: {a: string, b: string}) => each.a + '\n' + each.b === named)
-        ? (audit.decisions as {action: string, about: string[], at: number, by?: string}[]).find(decision => decision.about.length === 2 && decision.about.includes(x) && decision.about.includes(y))
+      // Two distinct IDs, in either order. Only a join or a separation takes a pair out of the queue, and only a signed one says who.
+      const ends = named?.split('\n') ?? []
+      const [x, y] = ends
+      const either = (a: string, b: string) => (a === x && b === y) || (a === y && b === x)
+      const latest = ends.length === 2 && x && y && x !== y && !passed.has(x + '\n' + y) && !passed.has(y + '\n' + x) && !found.pairs.some((each: {a: string, b: string}) => either(each.a, each.b))
+        ? (audit.decisions as {action: string, about: string[], at: number, by?: string}[]).find(decision => decision.about.length === 2 && either(decision.about[0]!, decision.about[1]!))
         : undefined
-      const gone = latest && latest.by !== session.name ? {action: latest.action, by: latest.by ?? '', at: latest.at, a: x!, b: y!} : undefined
+      const gone = latest && latest.by && latest.by !== session.name && (latest.action === 'join' || latest.action === 'separate') ? {action: latest.action, by: latest.by, at: latest.at, a: x!, b: y!} : undefined
       const session_ = {skipped, passed: listed - found.pairs.length, mine, ...(gone && {gone})}
       // A row of the queue shows the kinds of what a pair shares. The identifiers themselves go to the page for the open pair only.
       const kindsOf = (each: {reasons: {identifier: string, counted?: false}[]}) => [...new Set(each.reasons.filter(reason => reason.counted !== false).map(reason => reason.identifier.split(':')[0]))].join(', ')
@@ -52,7 +55,9 @@ export function remaining(request: Request, view: string) {
       // The page draws forty pairs of each kind. Each row needs only what to call its two sides. A number and an email go to the page for the open pair only.
       const drawn = [...found.pairs.filter((each: {level: string}) => each.level === 'same').slice(0, 40), ...found.pairs.filter((each: {level: string}) => each.level !== 'same').slice(0, 40), ...(pair ? [pair] : [])]
       const known = await reviewCalled(request, session, [...drawn, ...mine, ...(gone ? [gone] : [])].flatMap((each: {a: string, b: string}) => [each.a, each.b]))
-      const called = Object.fromEntries(Object.entries(known).map(([id, each]) => [id, pair && (id === pair.a || id === pair.b) ? each : each.name ? {name: each.name} : each.phone ? {phone: each.phone} : each.record ? {record: each.record} : {}]))
+      // The pair someone else decided is called by name or record only, with no number, unless it is also in a row.
+      const rowed = new Set([...drawn, ...mine].flatMap((each: {a: string, b: string}) => [each.a, each.b]))
+      const called = Object.fromEntries(Object.entries(known).map(([id, each]) => [id, pair && (id === pair.a || id === pair.b) ? each : each.name ? {name: each.name} : each.phone && rowed.has(id) ? {phone: each.phone} : each.record ? {record: each.record} : {}]))
       const sweeping = 'full' in sweep || 'cursor' in sweep ? older : undefined
       if (!pair) return {...base, queue, context, at, called, older: sweeping, ...session_}
       const sides = await Promise.all([pair.a, pair.b].map(async subject => sideOf(subject, await reviewGet(request, session, 'subject', {subject}))))

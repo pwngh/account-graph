@@ -16,14 +16,11 @@ export interface MatchesModel {
   /** The pairs skipped in this visit, how many of the queue that leaves out, and what this reviewer joined or separated since signing in, the newest first. */
   skipped: string[], passed: number, mine: { action: 'join' | 'separate', a: string, b: string, at: number }[]
   /** The pair the address names, where another reviewer decided it since: who, how and when. */
-  gone?: { action: string, by: string, at: number, a: string, b: string }
+  gone?: { action: 'join' | 'separate', by: string, at: number, a: string, b: string }
   at: number, reasons?: Reason[], sides?: [Side, Side], effect?: string
   /** What each person in the queue is called, by ID. */
   called?: Record<string, Called>
 }
-
-/** What a decision on a pair did, as a sentence says it after who made it. */
-const didTo: Record<string, string> = { join: 'joined', separate: 'separated', unjoin: 'took back the join of', rejoin: 'took back the separation of' }
 
 export const pairName = ({ a, b }: { a: string, b: string }) => a + '\n' + b
 /** The address of a pair in the queue. What is skipped and where a check of every record is go along. */
@@ -82,11 +79,12 @@ function MatchesPage({ model }: { model: MatchesModel }) {
   }, [])
   const groups: [string, string, Pair[]][] = [['High confidence', 'confident', queue.pairs.filter(each => each.level === 'same')], ['Possible', 'possible', queue.pairs.filter(each => each.level !== 'same')]]
   const next = queue.pairs[(model.at + 1) % queue.pairs.length]
-  return <DecisionScope key={pair ? pairName(pair) : 'none'}><section><PageHead view="decide" title="Matches">{model.passed > 0 && <Link className="button" to={pairPath(undefined, model.older)}>Restore skipped</Link>}</PageHead><Tiles items={[[['Pending', 'pending'], amount(queue.total)], [['IDs checked', 'checked'], amount(queue.seen)], model.passed > 0 && ['Skipped', amount(model.passed), 'This session']]}/>
+  // The status region stays on the page as pairs change, so a screen reader reads what comes into it.
+  return <><div role="status">{model.gone && <p className="banner"><b>{model.gone.by}</b> {model.gone.action === 'join' ? 'joined' : 'separated'} <bdi title={model.gone.a}>{named(model.gone.a)}</bdi> and <bdi title={model.gone.b}>{named(model.gone.b)}</bdi> <Time at={model.gone.at} now={context.at}/>. {pair ? 'The next pair is open.' : ''}</p>}</div>
+  <DecisionScope key={pair ? pairName(pair) : 'none'}><section><PageHead view="decide" title="Matches">{model.passed > 0 && <Link className="button" to={pairPath(undefined, model.older)}>Restore skipped</Link>}</PageHead><Tiles items={[[['Pending', 'pending'], amount(queue.total)], [['IDs checked', 'checked'], amount(queue.seen)], model.passed > 0 && ['Skipped', amount(model.passed), 'This session']]}/>
     {queue.total > queue.pairs.length && <p className="meta">The strongest {amount(queue.pairs.length)} are listed. The rest follow as these are decided.</p>}
     {queue.window?.kind === 'recent' && queue.window.older && <p className="meta older">Pairs among sightings before <Time at={queue.window.oldest}/> are not in this queue. <Link to="/decide?older=all">Check older records</Link></p>}
     {queue.window?.kind === 'full' && <p className="meta older">{queue.window.first == null ? 'Checking every record.' : <>Checking every record, <bdi>{named(queue.window.first)}</bdi> to <bdi>{named(queue.window.last ?? '')}</bdi>.</>} {queue.more && queue.next ? <Link to={'/decide?' + new URLSearchParams({ older: queue.next })}>Next records</Link> : 'These are the last.'} <Link to="/decide">Back to recent</Link></p>}</section>
-    {model.gone && <p className="banner" role="status"><b>{model.gone.by || 'Another reviewer'}</b> {didTo[model.gone.action] ?? 'decided'} <bdi title={model.gone.a}>{named(model.gone.a)}</bdi> and <bdi title={model.gone.b}>{named(model.gone.b)}</bdi> <Time at={model.gone.at} now={context.at}/>. {pair ? 'The next pair is open.' : ''}</p>}
     {pair && sides ? <div className="deck" ref={deck}><div className="queue-rail scroll" tabIndex={0} role="region" aria-label="Queue">{groups.map(([name, term, list]) => list.length > 0 && <div key={name}><p className="inbox-age"><Term id={term}>{name}</Term><span className="count">{amount(list.length)}</span></p>
       {list.slice(0, 40).map(each => <Link key={pairName(each)} className="queue-pair" aria-current={each === pair ? 'true' : undefined} to={pairPath(each, model.older, model.skipped)} preventScrollReset><span className="queue-names"><span title={each.a}>{named(each.a)}</span><span title={each.b}>{named(each.b)}</span></span><b>{percent(each.score)}</b><span className="meta">{each.kinds}</span><Meter share={each.score}/></Link>)}
       {list.length > 40 && <p className="meta queue-more">{amount(list.length - 40)} more</p>}</div>)}</div>
@@ -99,5 +97,5 @@ function MatchesPage({ model }: { model: MatchesModel }) {
     {model.mine.length > 0 && <section><h2>This session</h2><ul className="decided">{model.mine.map((entry, i) => <li key={entry.action + entry.a + entry.b}>
       <span className={'chip ' + (entry.action === 'join' ? 'same' : 'apart')}>{entry.action === 'join' ? 'Joined' : 'Separated'}</span> <Link to={subjectPath(entry.a)}><bdi title={entry.a}>{named(entry.a)}</bdi></Link> and <Link to={subjectPath(entry.b)}><bdi title={entry.b}>{named(entry.b)}</bdi></Link>{' '}
       {/* Undo takes the decision back with a new one, as the original screen does. U undoes the newest. */}
-      <DecisionForm context={context} intent={entry.action === 'join' ? 'unjoin' : 'rejoin'} subject={entry.a} other={entry.b} look="link" label="Undo" keys={i === 0 ? 'u' : undefined}/></li>)}</ul></section>}</DecisionScope>
+      <DecisionForm context={context} intent={entry.action === 'join' ? 'unjoin' : 'rejoin'} subject={entry.a} other={entry.b} look="link" label="Undo" keys={i === 0 ? 'u' : undefined}/></li>)}</ul></section>}</DecisionScope></>
 }
