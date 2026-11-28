@@ -2,7 +2,7 @@
 import type { Subject } from '../contract/types.ts'
 
 /** The plain values kept of a record. Matching never reads them: it works from the hashes. */
-export type DetailField = 'name' | 'phone' | 'email'
+export type DetailField = 'name' | 'phone' | 'email' | 'dob' | 'address'
 export type Details = Partial<Record<DetailField, string>>
 /** One of them as kept: the value, and the entry that said it. The newest by (`at`, `key`) stands. */
 export type DetailSaid = { value: string; at: number; key: string }
@@ -29,6 +29,15 @@ export function called(subject: Subject, members: readonly Subject[], kept: Read
   const order = [subject, ...members.filter((each) => each !== subject && !made(each)), ...members.filter((each) => each !== subject && made(each))]
   const first = (field: DetailField) => order.map((each) => kept.get(each)?.[field]).find((value) => value !== undefined)
   const [name, phone, email] = [first('name'), first('phone'), first('email')]
+  // A date of birth and an address are for the account page alone, and `born` adds them there.
   const record = made(subject) ? order.find((each) => !made(each)) : undefined
   return { ...(name !== undefined && { name }), ...(phone !== undefined && { phone }), ...(email !== undefined && { email }), ...(record !== undefined && { record }) }
+}
+
+/** A person's date of birth and address, from the first record of their group that has each: for the account page, and nowhere else. */
+export function born(subject: Subject, members: readonly Subject[], kept: ReadonlyMap<Subject, Details>): { dob?: string; address?: string } {
+  const order = [subject, ...members.filter((each) => each !== subject && !madeByGraph(each))]
+  const first = (field: 'dob' | 'address') => order.map((each) => kept.get(each)?.[field]).find((value) => value !== undefined)
+  const [dob, address] = [first('dob'), first('address')]
+  return { ...(dob !== undefined && { dob }), ...(address !== undefined && { address }) }
 }

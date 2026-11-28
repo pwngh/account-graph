@@ -281,9 +281,15 @@ export function createSix(engine: Engine, options: SixOptions) {
         // What they are called. The name is kept of the record, as given. A number and an email are kept once, beside their hash,
         // in the normalized form the hash was made of, so nothing of one holder's spelling is left for another.
         // What somebody else said of themselves, as a speaker, is not this record's.
-        const { name, phone, email: address } = entry.facts
-        const full = name && `${name.first} ${name.last}`.replace(/\s+/g, ' ').trim()
-        if (full) await inside.tx.setDetails(entry.subject, { name: full }, entry.at, entry.key)
+        const { name, phone, email: address, dob, address: lives } = entry.facts
+        // For people to read: one line, with no character that hides or reorders what is beside it on a page.
+        const plain = (text: string | undefined) => text?.replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim()
+        const full = name && plain(`${name.first} ${name.last}`)
+        // An address is kept as it was written, whether or not the postal service confirmed it. Only a confirmed one makes an identifier.
+        const home = lives && [lives.street, lives.street2, lives.secondary, lives.city, [lives.state, lives.zipcode].filter(Boolean).join(' ')].map(plain).filter(Boolean).join(', ')
+        // A date of birth is kept where it is written as a day.
+        const day = dob !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(dob) ? dob : undefined
+        await inside.tx.setDetails(entry.subject, { ...(full && { name: full }), ...(day && { dob: day }), ...(home && { address: home }) }, entry.at, entry.key)
         await inside.tx.setShown(entry.subject, new Map([...shownNumber(phone).shown, ...(address === undefined ? [] : [[email(address), normalizeEmail(address)] as [Identifier, string]])]))
         // Of whoever speaks too. Once they are deleted, a late retry must not bring them back.
         return { value: { changes: inside.changes, notes }, subjects: [entry.subject, ...speakers], stands }

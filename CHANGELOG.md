@@ -196,6 +196,7 @@
 
 ### Reviewer screen
 
+- A `profile`'s date of birth and address are kept as written on its record, and shown on the account page only. `POST /review/api/called` with `every: true` adds `dob` and `address`.
 - Search finds a person by any part of their name. `lookup` `find` answers `by: "name"` for it, once the text is no ID and no ad click.
 - The account page lists every number and email read for its person, the newest first. `POST /review/api/called` takes `every: true` for up to 10 IDs and adds `phones` and `emails`.
 - The review app shows each person by name, else by phone number, on every page. The ID, the record of yours that stands for a caller, the number and the email are in the title, and beneath the heading of the account page.

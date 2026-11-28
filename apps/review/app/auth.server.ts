@@ -121,7 +121,7 @@ export async function reviewGet(request: Request, session: Pick<Reviewer, 'token
 }
 
 /** What a person is called: the values the graph keeps of their group, and the record of the firm's own that stands for one the graph made. */
-export interface Called { name?: string, phone?: string, email?: string, record?: string, phones?: string[], emails?: string[] }
+export interface Called { name?: string, phone?: string, email?: string, record?: string, phones?: string[], emails?: string[], dob?: string, address?: string }
 
 /**
  * What to call the people a page lists. Where the graph cannot say, the page shows IDs, as it did.

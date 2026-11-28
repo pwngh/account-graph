@@ -126,6 +126,7 @@ function ProfileView({ profile, data, context }: { profile: Profile, data: Accou
   const indices = Array.from({ length: Math.min(50, count - start) }, (_, i) => i)
   return <><section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi title={subject}>{headed(subject, data.called?.[subject])}</bdi></h2><div className="row"><Link className="button" to={subjectPath(subject, 'journey')}>Journey</Link><DecisionForm context={context} subject={subject} intent="join" label="Join with…"/><DecisionForm context={context} subject={subject} intent="forget" label="Delete…" targets={data.retraction?.always ? undefined : data.retraction?.targets}/></div></div>
   <p className="meta" id="known"><bdi>{knownOf(subject, data.called?.[subject])}</bdi></p>
+  {(data.called?.[subject]?.dob || data.called?.[subject]?.address) && <p className="meta" id="born"><bdi>{[data.called[subject].dob && 'Born ' + data.called[subject].dob, data.called[subject].address].filter(Boolean).join(' · ')}</bdi></p>}
     <DatesOf id={subject} dates={dates}/><Tiles items={[
       [['Linked IDs', 'linkedIds'], amount(profile.memberCount), profile.cluster.oversized && 'Above review limit'],
       profile.linkCount > 0 && [['Strongest link', 'strongest'], percent(profile.strongest), amount(profile.linkCount) + (profile.linkCount === 1 ? ' link' : ' links')],
