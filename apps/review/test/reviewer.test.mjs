@@ -337,6 +337,44 @@ test('the original screen is linked only at REVIEW_LEGACY_URL, never at the grap
   await assert.rejects(reviewServer({ port: 0, host: '127.0.0.1', legacyUrl: 'javascript:alert(1)' }).then(async server => { await close(server); return server }), /REVIEW_LEGACY_URL/)
 })
 
+test('the Links and Sightings tables are grouped and narrowed by the values of their columns, as on the original screen', async t => {
+  const kept = { links: account.links, separated: account.separated, history: account.history, members: account.cluster.members }
+  t.after(() => Object.assign(account, { links: kept.links, separated: kept.separated, history: kept.history }, { cluster: { ...account.cluster, members: kept.members } }))
+  const link = (n, level, score, kind) => ({ subject: (n % 2 ? 'contact:' : 'lead:') + n, level, score, reasons: [{ identifier: kind + ':h' + n, evidence: score, fanout: 2, gap: 0 }] })
+  account.links = [link(1, 'same', 0.97, 'email'), link(2, 'same', 0.95, 'phone'), link(3, 'same', 0.93, 'email'), link(4, 'related', 0.61, 'phone'), link(5, 'related', 0.55, 'ip'), link(6, 'related', 0.52, 'phone')]
+  account.separated = ['contact:9']
+  account.cluster = { ...account.cluster, members: [subject, 'contact:1'] }
+  account.history = Array.from({ length: 10 }, (_, i) => ({ at: observed - i * 60_000, event: i < 4 ? 'visit' : 'signup', identifier: (i % 2 ? 'email:' : 'device:') + i }))
+  const cookie = await signin()
+  const read = async query => (await (await fetch(origin + path + query, { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
+  const groups = page => [...page.matchAll(/<tr class="fold"><th scope="rowgroup" colSpan="5"><button type="button" aria-expanded="true"><i class="chevron"[^>]*><\/i><i class="dot (\w+)"[^>]*><\/i>([^<]+)<span class="count">(\d+)<\/span><span class="meta">([^<]*)<\/span>/g)].map(([, tone, name, count, range]) => [name, tone, Number(count), range])
+  const all = await read('')
+  assert.deepEqual(groups(all), [['Same person', 'same', 1, '97%'], ['High confidence', 'same', 2, '93% – 95%'], ['Related', 'related', 3, '52% – 61%'], ['Separated', 'apart', 1, '']])
+  // The menu lists each column's values with how many rows have them, the most first, as links that keep the page's other values.
+  const menu = all.match(/<div class="filter-menu" id="filter-links" popover="auto">([\s\S]*?)<\/div><\/div>/)[1]
+  assert.deepEqual([...menu.matchAll(/<legend>([^<]+)<\/legend>/g)].map(([, name]) => name), ['Status', 'Identifier', 'Type'])
+  assert.match(menu, /href="[^"]*\?status=Related#links"[^>]*><span>Related<\/span><span class="count">3<\/span>/)
+  assert.match(menu, /<span>phone<\/span><span class="count">3<\/span>/)
+  // Narrowed, the table holds those rows, says how many of all, and the chip takes the value away.
+  const related = await read('?status=Related')
+  assert.deepEqual(groups(related).map(([name, , count]) => [name, count]), [['Related', 3]])
+  assert.match(related, /<span class="meta" role="status">3 of 7<\/span>/)
+  assert.match(related, /<a[^>]*class="filter-chip button"[^>]*href="\/accounts\/account%3A42#links"[^>]*><span>Status<\/span>Related<i aria-hidden="true">×<\/i><\/a>|<a[^>]*href="\/accounts\/account%3A42#links"[^>]*class="filter-chip button"/)
+  assert.deepEqual(groups(await read('?status=Related&kind=phone')).map(([name, , count]) => [name, count]), [['Related', 2]])
+  assert.deepEqual(groups(await read('?type=lead')).map(([name, , count]) => [name, count]), [['High confidence', 1], ['Related', 2]])
+  // The tiles still count every link.
+  assert.match(related, /6 links/)
+  // Words narrow it too, kept beside the values chosen, and the box keeps them.
+  const typed = await read('?status=Related&words=contact')
+  assert.deepEqual(groups(typed).map(([name, , count]) => [name, count]), [['Related', 1]])
+  assert.match(typed, /<input type="hidden" name="status" value="Related"\/><input type="search" class="filter-words"[^>]* name="words" value="contact"\/>/)
+  assert.match(await read('?saw=device'), /<span class="meta" role="status">5 of 10<\/span>/)
+  // Sightings by event and by kind of identifier.
+  const visits = await read('?event=visit#sightings')
+  assert.match(visits, /<span class="meta" role="status">4 of 10<\/span>/)
+  assert.match(await read('?seen=email'), /<span class="meta" role="status">5 of 10<\/span>/)
+})
+
 test('pasted and linked subjects reopen the same record with their ID preserved', async () => {
   const cookie = await signin()
   const headers = { cookie }
