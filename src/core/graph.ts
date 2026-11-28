@@ -3430,7 +3430,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           // Counted inside the write, which is then undone.
           counted = pruned
           throw undo
-        })
+        }, { whole: true })
       } catch (error) {
         if (error !== undo) throw error
         return counted

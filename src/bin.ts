@@ -509,7 +509,7 @@ export async function command(env: Env, args: readonly string[], log: (line: str
             if (!dryRun) return found
             counted = found
             throw undo
-          })
+          }, { whole: true })
         } catch (error) {
           if (error !== undo) throw error
         }
