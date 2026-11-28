@@ -11,6 +11,23 @@ test('the session secret from compose.yaml is refused at an address outside this
   ;(await reviewListener({ secret: 'a'.repeat(40), origin: 'https://review.example.org' })).stop()
 })
 
+test('a record links to the firm\'s own system only by an https pattern with the ID in it', async () => {
+  const secret = 'a'.repeat(40)
+  for (const recordLinks of ['not json', '[]', '{"contact":"http://crm.example.org/{id}"}', '{"contact":"https://crm.example.org/contacts"}', '{"contact":"javascript:alert({id})"}', '{"con tact":"https://crm.example.org/{id}"}', { contact: 7 }]) await assert.rejects(reviewListener({ secret, recordLinks }), /Set REVIEW_RECORD_LINKS to JSON/, JSON.stringify(recordLinks))
+  const listener = await reviewListener({ secret, recordLinks: '{"contact":"https://crm.example.org/contacts/{id}"}' })
+  try {
+    const { recordLink } = listener.config
+    // The rest of the ID is one part of the address, whatever is in it.
+    assert.deepEqual(recordLink('contact:a b/7?x#y'), { href: 'https://crm.example.org/contacts/a%20b%2F7%3Fx%23y', host: 'crm.example.org' })
+    assert.deepEqual([recordLink('lead:9'), recordLink('contact'), recordLink('__proto__:1')], [undefined, undefined, undefined])
+  } finally {
+    listener.stop()
+  }
+  // With nothing set, nothing links.
+  const plain = await reviewListener({ secret })
+  try { assert.equal(plain.config.recordLink('contact:7'), undefined) } finally { plain.stop() }
+})
+
 test('behind a proxy the sender is whoever the outermost proxy took the request from, and without one it is the connection', async () => {
   const secret = 'a'.repeat(40)
   // The setting of whoever runs the tests is not the one under test.

@@ -20,6 +20,8 @@ interface Settings {
   secret?: string
   origin?: string
   legacyUrl?: string
+  /** Where a record of the firm's is in the firm's own system, by the kind its ID begins with: `{"contact":"https://crm.example.org/contacts/{id}"}`. As JSON text or as an object. */
+  recordLinks?: string | Record<string, string>
   /** How many proxies of your own stand in front: `true` for one, or a number. Each appends the address it took the request from. */
   trustProxy?: boolean | number | string
 }
@@ -54,6 +56,26 @@ export function configure(settings: Settings = {}) {
   // The graph's address can be internal. Link to the original screen only where the operator says reviewers can reach it.
   const legacyUrl = settings.stage ? '/legacy' : (settings.legacyUrl ?? process.env.REVIEW_LEGACY_URL) || undefined
   if (legacyUrl && !legacyUrl.startsWith('/') && !/^https?:$/.test(new URL(legacyUrl).protocol)) throw new Error('Set REVIEW_LEGACY_URL to an http or https address')
+  // A record's page links to the same record in the firm's own system, where the firm says how its addresses are made.
+  // Each pattern is an https address with {id} where the rest of the ID goes, so a pattern cannot be turned into a link of another kind.
+  let patterns: Record<string, string> = {}
+  const given = settings.recordLinks ?? process.env.REVIEW_RECORD_LINKS
+  const wrong = new Error('Set REVIEW_RECORD_LINKS to JSON such as {"contact":"https://crm.example.org/contacts/{id}"}: a kind of ID, and an https address with {id} in it')
+  if (given) {
+    try { patterns = typeof given === 'string' ? JSON.parse(given) : given } catch { throw wrong }
+    if (patterns === null || typeof patterns !== 'object' || Array.isArray(patterns)) throw wrong
+    for (const [kind, pattern] of Object.entries(patterns)) {
+      if (!/^[\w-]+$/.test(kind) || typeof pattern !== 'string' || !pattern.includes('{id}') || !URL.canParse(pattern.replace('{id}', 'x')) || new URL(pattern.replace('{id}', 'x')).protocol !== 'https:') throw wrong
+    }
+  }
+  /** The address of a record in the firm's own system, and the host to name it by. Nothing for an ID of a kind with no pattern. */
+  const recordLink = (subject: string): { href: string, host: string } | undefined => {
+    const colon = subject.indexOf(':')
+    const pattern = colon > 0 && Object.hasOwn(patterns, subject.slice(0, colon)) ? patterns[subject.slice(0, colon)] : undefined
+    if (pattern === undefined) return undefined
+    const href = pattern.replaceAll('{id}', encodeURIComponent(subject.slice(colon + 1)))
+    return { href, host: new URL(href).host }
+  }
   // Behind a proxy every request comes from the proxy's address. With this set, the sender's own address is read from what the proxy wrote.
   const trusted = settings.trustProxy ?? process.env.REVIEW_TRUST_PROXY ?? ''
   const proxies = trusted === true || trusted === 'true' ? 1 : trusted === false || trusted === '' || trusted === 'false' ? 0 : Number(trusted)
@@ -65,7 +87,7 @@ export function configure(settings: Settings = {}) {
     const said = (Array.isArray(forwarded) ? forwarded.join(',') : forwarded ?? '').split(',')
     return plainAddress(said.at(-proxies)) ?? socket
   }
-  return { addressOf, graphUrl, stage: settings.stage, origin, secret, eventsToken, legacy: legacyUrl || undefined, sessions: new Map<string, Reviewer>(), attempts: new Map<string, { count: number, since: number }>(), reportZone: undefined as string | undefined, stopped: new AbortController() }
+  return { addressOf, recordLink, graphUrl, stage: settings.stage, origin, secret, eventsToken, legacy: legacyUrl || undefined, sessions: new Map<string, Reviewer>(), attempts: new Map<string, { count: number, since: number }>(), reportZone: undefined as string | undefined, stopped: new AbortController() }
 }
 type Runtime = ReturnType<typeof configure>
 const scope = new AsyncLocalStorage<Runtime>()

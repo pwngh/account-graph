@@ -293,6 +293,24 @@ test('a GET to /signout answers 405 without logging a server error', async () =>
   assert.equal((await fetch(origin + path, { headers: { cookie } })).status, 200, 'a GET leaves the session signed in')
 })
 
+test('an account page links to the same record in the system of the firm, where the firm said how its addresses are made', async () => {
+  const { reviewServer } = await import('../server.mjs')
+  const page = async settings => {
+    const standalone = await reviewServer({ port: 0, host: '127.0.0.1', ...settings })
+    try {
+      const url = address(standalone)
+      const headers = { cookie: cookieFrom(await fetch(url + '/signin', post({ token: reviewer }, undefined, url))) }
+      return (await (await fetch(url + path, { headers })).text()).replaceAll('<!-- -->', '').replaceAll('&amp;', '&')
+    } finally {
+      await close(standalone)
+    }
+  }
+  // The ID is whatever follows the kind, and the link opens apart from the app.
+  assert.ok((await page({ recordLinks: { account: 'https://crm.example.org/accounts/{id}?from=review' } })).includes('<a class="button" href="https://crm.example.org/accounts/42?from=review" target="_blank" rel="noopener noreferrer">Open in crm.example.org</a>'))
+  // A firm that said nothing, or only of another kind of ID, gets no link.
+  for (const settings of [{}, { recordLinks: { contact: 'https://crm.example.org/contacts/{id}' } }]) assert.doesNotMatch(await page(settings), /Open in /)
+})
+
 test('the original screen is linked only at REVIEW_LEGACY_URL, never at the graph address', async () => {
   const { reviewServer } = await import('../server.mjs')
   const pages = async settings => {
