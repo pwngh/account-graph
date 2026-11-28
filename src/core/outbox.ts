@@ -269,7 +269,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 
   /** Marks a job failed for good and remembers it for `onFailed`. */
   async function fail(job: Job, note: string, pass: Pass, failed: Job[]): Promise<void> {
-    const { metaUserAgent, ...kept } = job
+    const { metaUserAgent, ...kept } = reached(job) ? job : unfiled(job)
     const dead: Job = { ...kept, state: 'failed', note: privateNote(job, note) }
     if (!(await store.swap(job, dead))) return
     failed.push({ ...dead, rev: job.rev! + 1 })
@@ -287,7 +287,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         if (!sent) return current
         // An acknowledgment can arrive after a refund, a withdrawal or a correction of its owner.
         const target = targets.get(sent.target)
-        const match = target?.restates || target?.forget ? { keys: sent.keys, ...(sent.click && { click: sent.click }), ...(sent.consent && { consent: sent.consent }) } : {}
+        const match = target?.restates || target?.forget ? { keys: sent.keys, ...(sent.filed && { filed: sent.filed }), ...(sent.click && { click: sent.click }), ...(sent.consent && { consent: sent.consent }) } : {}
         const { value, currency, ...original } = current
         next = { ...original, ...match, ...(sent.value !== undefined && { value: sent.value }), ...(sent.currency && { currency: sent.currency }), delivered: true, state: 'sent' }
       } else next = await make(current)
@@ -342,7 +342,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     // Already known to have arrived, with the value it has now. There is nothing to put right.
     if (current.delivered && current.value === sent.value) return undefined
     const { metaUserAgent, ...kept } = current
-    const arrived: Job = { ...kept, delivered: true, ...(sent.click && { click: sent.click }) }
+    const arrived: Job = { ...kept, delivered: true, ...(sent.click && { click: sent.click }), ...(sent.filed && { keys: sent.keys, filed: sent.filed }) }
     if (current.withdrawn) return takenBack(arrived)
     if (!target.restates || current.value === sent.value) return arrived
     return { ...arrived, restated: true, state: 'pending', attempts: 0, due: now() }
@@ -357,7 +357,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     let request: ReturnType<Target['deliver']> | undefined
     try {
       const subjects = new Set<Subject>()
-      for (const { job, touch } of claimed) if (job.metaUserAgent) {
+      for (const { job, touch } of claimed) if (job.metaUserAgent || job.filed) {
         subjects.add(job.subject)
         if (touch) subjects.add(touch.subject)
       }
@@ -372,7 +372,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
           if (!kept.has(job)) return false
           // A refusal since selection can belong to the person or the browser whose click was credited.
           const since = job.consent ? job.at : 0
-          if (job.metaUserAgent && ((refusals.get(job.subject) ?? -Infinity) >= since || (touch && (refusals.get(touch.subject) ?? -Infinity) >= since))) {
+          if ((job.metaUserAgent || job.filed) && ((refusals.get(job.subject) ?? -Infinity) >= since || (touch && (refusals.get(touch.subject) ?? -Infinity) >= since))) {
             selection.again.add(jobKey(job))
             return false
           }
@@ -402,7 +402,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       if (target.retryable(error)) {
         for (const { job } of items) {
           if (job.attempts >= maxAttempts) await fail(job, note, pass, failed)
-          else if (await store.swap(job, { ...job, due: now() + backoff(job.attempts), note: privateNote(job, note) })) pass.retried += 1
+          else if (await store.swap(job, { ...(reached(job) ? job : unfiled(job)), due: now() + backoff(job.attempts), note: privateNote(job, note) })) pass.retried += 1
         }
       } else if (items.length > 1) {
         // A platform rejects a whole request for one bad event. Send each alone to find it.
@@ -426,8 +426,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       }
     }
     for (const stored of claimed) {
-      // One that was sent with keys from the record, or waits to be sent again, has them made anew below.
-      const job = stored.note === 'call_party' ? stored : unfiled(stored)
+      // Keys made from the record are made anew for a first send. One the platform has is told again by the match it was sent with, as with its click.
+      const job = stored.note === 'call_party' || reached(stored) ? stored : { ...unfiled(stored) }
       // Said to be no lead before it was queued. It waits, and one that is taking a conversion back goes out.
       if (spurned.has(job.transactionId) && !job.withdrawn) {
         await change(job, (current) => (current.withdrawn ? undefined : takenBack(current)))
@@ -489,7 +489,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         if (known.length === subjects.length) consent = { adUserData: true, adPersonalization: known.every((each) => each.adPersonalization) }
       }
       // The outcome named no email or phone, the record has one, and the person agreed to their data going to ad platforms.
-      if (consent?.adUserData) {
+      if (consent?.adUserData && !reached(job)) {
         if (!contacts.has(job.subject)) contacts.set(job.subject, await graph.contactOf(job.subject))
         const { email, phone } = contacts.get(job.subject)!
         const made = { ...(email !== undefined && hashed(target, { email })), ...(phone !== undefined && hashed(target, { phone })) }

@@ -782,6 +782,23 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       // The same sale recorded again is the same sale, though its jobs now hold keys it did not name.
       assert.deepEqual((await outbox.record(sale)).map((job) => job.state), ['sent', 'sent', 'sent', 'sent'])
 
+      // A value restated later goes with the match the platform was sent, whatever the record holds by then.
+      await graph.withdrawFact('contact:1', [byMail], T0 + 2 * HOUR, 'no-mail', { by: 'desk' })
+      assert.deepEqual((await outbox.restate('enroll-1', 50)).map((job) => job.target), ['google'])
+      assert.equal((await outbox.run()).sent, 1)
+      assert.deepEqual(remote.requests.at(-1)!.events[0]!.userData, { userIdentifiers: [{ emailAddress: hashEmail(mail) }, { phoneNumber: hashPhone(number) }] })
+      await graph.observe({ subject: 'contact:1', identifiers: [byMail], at: T0 + 2 * HOUR })
+      await next.store.write((tx) => tx.setShown('contact:1', new Map([[byMail, mail]])))
+
+      // A send the platform refuses for now is kept without the keys, and they are made again for the next try.
+      remote.refuseWith(() => new GoogleError(503, 'busy'))
+      await outbox.record({ ...outcome(1), transactionId: 'enroll-busy', action: { google: '900' } })
+      assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 0, retried: 1 })
+      assert.deepEqual((await outbox.get('enroll-busy')).map((job) => [job.state, job.keys, job.filed]), [['pending', {}, undefined]])
+      remote.refuseWith(undefined)
+      clock.now += HOUR
+      assert.equal((await outbox.run()).sent, 1)
+
       // An email on the sale itself is used as given, and the record adds only the number.
       await outbox.record({ ...sale, transactionId: 'enroll-named', email: 'other@example.com' })
       assert.equal((await outbox.run()).sent, 4)
