@@ -77,7 +77,8 @@ test('Matches has the queue beside the strongest pair, the two records side by s
   const second = await get('/decide?pair=' + queue[1][2].replaceAll('&amp;', '&'))
   assert.match(second, new RegExp('<span class="meta">2 of ' + queue.length + '</span>'))
   const last = await get('/decide?pair=' + queue.at(-1)[2].replaceAll('&amp;', '&'))
-  assert.match(last, new RegExp('<a class="button choice"[^>]* href="/decide\\?pair=' + queue[0][2].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"'))
+  // Skip goes to the next pair and carries the one skipped, so the queue leaves it out until Restore skipped.
+  assert.match(last, new RegExp('<a class="button choice"[^>]* href="/decide\\?skip=[^"&]+&amp;pair=' + queue[0][2].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"'))
   assert.match(last, /<a class="button choice"[^>]*aria-keyshortcuts="s"/)
 })
 
