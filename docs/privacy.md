@@ -113,16 +113,16 @@ The setting is off by default, because it sends the platform the click id and th
 
 To ask for one deletion only, send `"platforms": "retract"`, or select the option in the Delete dialog. It is the fault `CONFIG.UNSUPPORTED`, before anything is deleted, when no configured platform accepts retractions.
 
-A retraction removes the conversion from the platform's reports. Microsoft does not state that it deletes the data.
+Microsoft's retraction removes the conversion from its reports. Google is told that the conversion is worth nothing, and it stays counted. Neither states that it deletes the data.
 
 | Platform | Documented method | Support |
 | --- | --- | --- |
 | Microsoft Advertising | [A retraction](https://learn.microsoft.com/en-us/advertising/campaign-management-service/offlineconversionadjustment), up to 90 days after the conversion | Asked, with `FORGET_ADS` or `"platforms": "retract"` |
-| Google Ads | [Removing users](https://developers.google.com/data-manager/api/reference/rest/v1/users/remove), for accounts on a list Google keeps. [A retraction](https://developers.google.com/google-ads/api/docs/conversions/upload-adjustments) in the Google Ads API removes a conversion from reports, without a stated deletion | Not asked |
+| Google Ads | The conversion sent again with a value of zero, through the Data Manager API that sent it. It stays counted. [Removing users](https://developers.google.com/data-manager/api/reference/rest/v1/users/remove) is for accounts on a list Google keeps. [A retraction](https://developers.google.com/google-ads/api/docs/conversions/upload-adjustments) in the Google Ads API removes a conversion from reports, without a stated deletion | The value of zero is sent, with `FORGET_ADS` or `"platforms": "retract"`. The other two are not asked |
 | Meta | Removing people from audiences. The pages on sending events name no way to delete one | Not asked |
 | TikTok | Unknown, because its documentation could not be read | Not asked |
 
-To answer a person's request, write to the platform yourself and name the conversions in `sent`.
+Meta and TikTok are told nothing, because neither documents a way to take an event back. To answer a person's request, write to the platform yourself and name the conversions in `sent`.
 
 ## Consent
 

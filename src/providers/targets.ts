@@ -15,9 +15,15 @@ export interface GoogleAdsOptions {
 /**
  * Google Ads, through the Data Manager API. An outcome's action is the id of
  * a conversion action of type "Import from clicks". Sending an id again with
- * a new value restates it; Google has no way to retract one.
+ * a new value restates it. This API has no way to retract one, so somebody
+ * who is forgotten has theirs restated to no value, and it stays counted.
  */
 export function googleAds(options: GoogleAdsOptions): Target {
+  const destinationOf = (action: string) => ({
+    customerId: options.customerId,
+    conversionActionId: action,
+    ...(options.loginCustomerId && { loginCustomerId: options.loginCustomerId }),
+  })
   return {
     name: 'google',
     batch: 2000,
@@ -27,12 +33,35 @@ export function googleAds(options: GoogleAdsOptions): Target {
       ...(outcome.phone && { phone: hashPhone(outcome.phone) }),
     }),
     click: googleClick,
-    async deliver(action, items) {
-      const destination = {
-        customerId: options.customerId,
-        conversionActionId: action,
-        ...(options.loginCustomerId && { loginCustomerId: options.loginCustomerId }),
+    async forget(jobs) {
+      const refusals: (string | undefined)[] = jobs.map((job) => (job.click || job.keys.email || job.keys.phone ? undefined : 'nothing it was matched by is kept'))
+      const actions = new Set(jobs.filter((_, i) => refusals[i] === undefined).map((job) => job.action))
+      for (const action of actions) {
+        const theirs = jobs.flatMap((job, i) => (job.action === action && refusals[i] === undefined ? [i] : []))
+        const conversions = theirs.map((i): Conversion => {
+          const job = jobs[i]!
+          return {
+            transactionId: job.transactionId,
+            at: job.at,
+            ...(job.click && { click: job.click }),
+            ...(job.keys.email && { emailHash: job.keys.email }),
+            ...(job.keys.phone && { phoneHash: job.keys.phone }),
+            value: 0,
+            ...(job.currency && { currency: job.currency }),
+            ...(job.source && { source: job.source === 'SYSTEM_GENERATED' ? 'OTHER' : job.source }),
+            ...(job.consent && { consent: job.consent }),
+          }
+        })
+        try {
+          await options.send(ingestRequest(destinationOf(action), conversions, false))
+        } catch (error) {
+          for (const i of theirs) refusals[i] = String((error as Error)?.message ?? error)
+        }
       }
+      return refusals
+    },
+    async deliver(action, items) {
+      const destination = destinationOf(action)
       const conversions = items.map(({ job, touch, consent }): Conversion => {
         const click = touch && (touch.gclid ? { gclid: touch.gclid } : touch.gbraid ? { gbraid: touch.gbraid } : { wbraid: touch.wbraid! })
         if (click) job.click = click

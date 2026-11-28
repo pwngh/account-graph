@@ -394,6 +394,9 @@ test('a decision is signed with the name its token belongs to, and one made on a
   try {
     assert.deepEqual((await call('dana-new', '/me')).answer, { reviewer: 'dana', retraction: { targets: [], always: false }, targets: {}, limits: { returnHours: null, openHours: false } })
     assert.deepEqual((await call('service', '/me')).answer.reviewer, null)
+    // With no ad platform that takes one, a retraction is refused before anything is deleted.
+    assert.equal((await call('dana-new', '/forget', { subject: 'account:3', retract: true })).status, 400)
+    assert.equal((await graph.cluster('account:3'))?.members.length, 3)
     for (const path of ['/me', '/nowhere']) {
       const { headers } = await fetch(base + path, { headers: { authorization: 'Bearer service' } })
       assert.deepEqual([headers.get('cache-control'), headers.get('x-content-type-options')], ['no-store', 'nosniff'])
@@ -1401,8 +1404,8 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     const caller = (await outbox.get('call:CA1'))[0]!.subject
     assert.equal((await post('/forget', { subject: caller, ads: 'yes' })).status, 400)
     assert.equal((await outbox.get('call:CA1')).length, 1)
-    // Nor is a retraction, in words, or where no platform takes one, before anything is deleted.
-    for (const retract of ['yes', 1, true]) assert.equal((await post('/forget', { subject: caller, retract })).status, 400)
+    // Nor is a retraction asked for in words, before anything is deleted.
+    for (const retract of ['yes', 1]) assert.equal((await post('/forget', { subject: caller, retract })).status, 400)
     assert.equal((await outbox.get('call:CA1')).length, 1)
     const forgotten = (await (await post('/forget', { subject: caller, ads: true })).json()) as any
     assert.deepEqual(forgotten.sent, [{ transactionId: 'call:CA1', target: 'google', action: '222', at, state: 'not_requested' }])

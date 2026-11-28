@@ -813,6 +813,31 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual((await outbox.get('enroll-after')).map((job) => [job.note, job.keys, job.filed]), Array(4).fill(['consent_denied', {}, undefined]))
     })
 
+    test('Google is told that the conversion of somebody forgotten is worth nothing, by the click and the keys it was sent', async () => {
+      const { graph, outbox, remote } = await fresh()
+      for (const n of [1, 2, 3]) await enroll(graph, n)
+      await outbox.record(outcome(1, { email: 'Pat.Lee@gmail.com' }))
+      await outbox.record(outcome(2))
+      await outbox.record(outcome(3, { action: '901' }))
+      assert.equal((await outbox.run()).sent, 3)
+      assert.deepEqual(outbox.retraction, { targets: ['google'], always: false })
+      // Not asked to, it tells Google nothing.
+      assert.deepEqual((await outbox.forget('contact:3')).sent.map((each) => each.state), ['not_requested'])
+      assert.equal(remote.requests.length, 2)
+
+      const { sent } = await outbox.forget('contact:1', undefined, { retract: true })
+      assert.deepEqual(sent, [{ transactionId: 'enroll-1', target: 'google', action: '900', at: T0 + HOUR, state: 'accepted' }])
+      const event = remote.requests.at(-1)!.events[0]!
+      assert.deepEqual([event.transactionId, event.conversionValue, event.adIdentifiers, event.userData], ['enroll-1', 0, { gclid: 'G1' }, { userIdentifiers: [{ emailAddress: hashEmail('patlee@gmail.com') }] }])
+      assert.deepEqual(await outbox.get('enroll-1'), [])
+
+      // Refused, it says so, and the person is gone here all the same.
+      remote.refuseWith(() => new GoogleError(400, 'not allowed'))
+      const refused = (await outbox.forget('contact:2', undefined, { retract: true })).sent
+      assert.deepEqual(refused.map((each) => [each.state, each.note]), [['rejected', 'Google refused the request with 400: not allowed']])
+      assert.deepEqual(await outbox.get('enroll-2'), [])
+    })
+
     test('Microsoft gets its own request shape, and a part-refused request is retried one by one', async () => {
       const next = await open()
       opened.push(next)
