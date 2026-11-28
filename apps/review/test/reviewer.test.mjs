@@ -23,7 +23,7 @@ const requests = []
 const changes = []
 const decisions = new Map()
 const audited = []
-let eventsRevoked = false, interrupted, beforeDecision, app, graph, origin, routes, revoked = false, failure = 0
+let eventsRevoked = false, interrupted, beforeDecision, app, graph, origin, routes, revoked = false, failure = 0, lostReply = false
 async function handler(req, res) {
   const url = new URL(req.url, 'http://localhost')
   const send = (status, body) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
@@ -67,6 +67,8 @@ async function handler(req, res) {
       const previous = decisions.get(input.key)
       if (previous) assert.deepEqual(input, previous, 'reposting the same form must preserve its decision key and timestamp')
       decisions.set(input.key, input)
+      // The graph took the decision and its answer never arrived.
+      if (lostReply) return req.socket.destroy()
       return send(200, { ok: true, value: { duplicate: Boolean(previous), recorded: previous ? 0 : 1, already: 0, changes: [], notAsAsked: [] } })
     }
     default: return send(404, { error: 'Unhandled stub route ' + url.pathname })
@@ -372,6 +374,80 @@ test('a graph refusal clears the session, a temporary outage renders an actionab
     revoked = false
   }
   redirectToLogin(await fetch(origin + path, { redirect: 'manual', headers: { cookie } }))
+})
+
+test('a form sent while the graph is away is answered, so its page is not replaced', async () => {
+  const cookie = await signin()
+  const form = { intent: 'join', subject, other: 'contact:73', reason: 'Met at intake', key: crypto.randomUUID(), at: String(observed), seen: '0', _enhanced: '1' }
+  const sent = () => requests.filter(call => call.path === '/v1/decide').length
+  // What a page with scripts sends: the action alone, with no page around it.
+  const send = async (address, fields) => { const answer = await fetch(address, post(fields, cookie)); return [answer.status, await answer.text()] }
+  try {
+    failure = 503
+    const before = sent()
+    const [status, said] = await send(origin + path + '.data', form)
+    assert.equal(status, 503)
+    assert.match(said, /The graph did not answer, so this may not have been saved\. What you entered is still here\./)
+    assert.doesNotMatch(said, /could not be opened|sample-reviewer-token/)
+    const [searched, found] = await send(origin + '/search.data', { text: 'Ana' })
+    assert.equal(searched, 503)
+    assert.doesNotMatch(found, /could not be opened/)
+    assert.equal(sent(), before)
+    // The graph takes the decision and its answer is lost. The reviewer is told the same, because the app cannot know which it was.
+    failure = 0
+    lostReply = true
+    const lost = { ...form, key: crypto.randomUUID(), reason: 'Answer lost on the way' }
+    const [dropped, unsure] = await send(origin + path + '.data', lost)
+    assert.equal(dropped, 503)
+    assert.match(unsure, /may not have been saved/)
+    assert.equal(decisions.get(lost.key)?.reason, 'Answer lost on the way')
+    // The same form sent again reaches the graph with the same key and time, which the graph records once.
+    lostReply = false
+    const [again, saved] = await send(origin + path + '.data', lost)
+    assert.equal(again, 200)
+    assert.match(saved, /Decision saved/)
+    assert.deepEqual([...decisions.values()].filter(decision => decision.reason === 'Answer lost on the way').length, 1)
+  } finally {
+    failure = 0
+    lostReply = false
+  }
+})
+
+test('Chrome keeps a form open with what was typed when the graph does not answer, and sends it once the graph is back', { skip: !process.env.CHROME && 'set CHROME to check a form through an outage', timeout: 40000 }, async t => {
+  const { browse, until } = await import('../../../test/chrome.ts')
+  const { run, close: closeBrowser } = await browse(origin + path)
+  t.after(closeBrowser)
+  t.after(() => { failure = 0 })
+  await until('the sign-in form', () => run("Boolean(document.querySelector('input[name=token]'))").catch(() => false))
+  await run(`{
+    const input = document.querySelector('input[name=token]')
+    input.value = ${JSON.stringify(reviewer)}
+    input.form.requestSubmit()
+  }`)
+  await until('enhanced account', () => run("Boolean(document.querySelector('input[type=range]'))").catch(() => false))
+  // On its first load a page stores the browser's zone and reads itself once more. The outage begins after that, when the page is at rest.
+  const reads = () => requests.filter(call => call.path !== '/v1/events' && call.path !== '/review/api/pulse').length
+  await until('the stored zone', () => run("document.cookie.includes('review_zone=')").catch(() => false))
+  for (let seen = -1; seen !== reads();) { seen = reads(); await new Promise(resolve => setTimeout(resolve, 500)) }
+  const join = `document.querySelector('input[name=intent][value=join]').form`
+  await run(`{
+    const form = ${join}
+    form.closest('details').open = true
+    form.elements.other.value = 'contact:73'
+    form.elements.reason.value = 'Met at intake, during the outage'
+  }`)
+  failure = 503
+  await run(`${join}.requestSubmit()`)
+  const kept = await until('the answer beside the form', () => run(`(() => {
+    const form = document.querySelector('input[name=intent][value=join]')?.form
+    if (!form || !document.body.innerText.includes('The graph did not answer')) return false
+    return JSON.stringify([form.closest('details').open, form.elements.other.value, form.elements.reason.value, Boolean(document.querySelector('input[type=range]')), document.body.innerText.includes('The page could not be opened')])
+  })()`).catch(() => false))
+  assert.deepEqual(JSON.parse(kept), [true, 'contact:73', 'Met at intake, during the outage', true, false])
+  // The same form, sent again once the graph answers, is recorded as it was typed.
+  failure = 0
+  await run(`${join}.requestSubmit()`)
+  await until('the decision', () => [...decisions.values()].some(decision => decision.pairs?.[0]?.b === 'contact:73' && decision.reason === 'Met at intake, during the outage'))
 })
 
 test('a graph that drops the connection or never answers gives the reviewer a bounded recovery page', { timeout: 18000 }, async () => {

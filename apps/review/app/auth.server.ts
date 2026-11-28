@@ -151,10 +151,18 @@ export async function withGraph<T>(request: Request, work: (session: Reviewer, g
     return answer
   } catch (error) {
     if (session.controller.signal.aborted) throw await signedOut(request, session)
-    if (error instanceof Response) throw error
+    // A page that cannot be read is replaced by one that says so. A form whose answer did not come is answered here, so the page it is on stays
+    // as it is, with what was entered. Whether the graph took it is not known: the answer may be what was lost. The same form sent again is recorded once.
+    const sent = request.method !== 'GET' && request.method !== 'HEAD'
+    const unsaved = () => data({ error: 'The graph did not answer, so this may not have been saved. What you entered is still here. Send it again in a moment. Sent twice, it is recorded once.' }, { status: 503 }) as T
+    if (error instanceof Response) {
+      if (sent && error.status >= 500) return unsaved()
+      throw error
+    }
     const fault = error as { code?: string, message?: string }
     if (fault.code === 'AUTH.REJECTED') throw await signedOut(request, session)
     if (typeof fault.code === 'string' && fault.code.startsWith('INPUT.')) throw new Response('Check the values in the form and try again.', { status: 400 })
+    if (sent) return unsaved()
     throw new Response('The graph is unavailable. Reload to try again.', { status: 503 })
   } finally {
     await graph.close()

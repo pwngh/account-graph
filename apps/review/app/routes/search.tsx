@@ -16,5 +16,7 @@ export async function action({request}: ActionFunctionArgs) {
 }
 export default function Search() {
   const result = useActionData<typeof action>()
+  // A search the graph could not answer says so, and the words stay in the box above.
+  if (result && 'error' in result) return <section><h2>Search</h2><p className="apart" role="alert">The graph did not answer. Search again in a moment.</p></section>
   return <section><h2>Search</h2>{result?.subjects.length ? <ul>{result.subjects.map(id => <li key={id}><Link to={subjectPath(id)} title={knownOf(id, result.called[id])}><bdi>{result.called[id]?.name ?? (result.called[id]?.phone ? shownPhone(result.called[id].phone) : id)}</bdi></Link></li>)}</ul> : <p>{result ? 'No results.' : 'Search by name, ID, email, phone number or ad click.'}</p>}</section>
 }
