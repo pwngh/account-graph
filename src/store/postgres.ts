@@ -96,7 +96,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     const notices = rows.map(row => row.key)
     if (ids.length) await db.query(`delete from ${t('alert')} where starts_with(key, 'alert:conversions:') and (callback_calls && $1::text[] or
       (callback_calls is null and (position((chr(10) || '…and ') in text) > 0 or exists (select from unnest($2::text[]) as c(id) where position(('• ' || c.id || ' to ') in text) > 0))))`, [ids, conversions])
-    const removed = await db.query(`delete from ${t('event')} where (type = 'callback.overdue' and (data->>'call' = any($1::text[]) or callback_calls && $4::text[] or notice_key = any($3::text[]))) or (type = 'conversion.failed' and data->>'conversion' = any($2::text[])) returning type, subject, notice_key`, [ids, conversions, notices, sources])
+    const removed = await db.query(`delete from ${t('event')} where (type = 'callback.overdue' and (data->>'call' = any($1::text[]) or callback_calls && $4::text[] or notice_key = any($3::text[]))) or (type = 'conversion.failed' and data->>'conversion' = any($2::text[])) or (type = 'call.recorded' and data->>'call' = any($1::text[])) returning type, subject, notice_key`, [ids, conversions, notices, sources])
     for (const row of removed.rows) if (row.notice_key) notices.push(row.notice_key)
     // An older event named the miss, but its once key named the first open miss. Keep keys that still belong to other notices.
     const older = removed.rows.filter(row => row.type === 'callback.overdue' && !row.notice_key).map(row => row.subject)

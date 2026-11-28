@@ -976,6 +976,41 @@ test('a list that takes too long is done as far as it got, and the rest says it 
   }
 })
 
+test('a lead, a call, a text and a conversion each say once that they arrived, and a load of history says nothing', async () => {
+  const { createEngine } = await import('../src/core/engine.ts')
+  const { createMemoryStore } = await import('../src/core/memory.ts')
+  const { createReceipts } = await import('../src/core/receipts.ts')
+  const { createSix } = await import('../src/core/six.ts')
+  const engine = createEngine(createMemoryStore(), { now: () => NOW, stages: { sale: {} } })
+  const six = createSix(engine, { receipts: createReceipts([SECRET]) })
+  const arrived = async () => (await engine.store.read((tx) => tx.eventsAfter(0, 99))).filter((event) => event.type.endsWith('.recorded')).map(({ type, data }) => [type, data])
+  const lead = { type: 'profile' as const, key: 'chat-1', at: AT, subject: 'lead:chat-1', facts: { phone: '+12025550161' } }
+  const entries: RecordEntry[] = [
+    { type: 'call', key: 'CA1', at: AT, direction: 'inbound', from: '+12025550162', to: '+12025550109', duration: 0, result: { answered: false } },
+    { type: 'text', key: 'SM1', at: AT, direction: 'inbound', from: '+12025550163', to: '+12025550109', text: 'hello' },
+    { type: 'conversion', key: 'sale-1', at: AT, subject: 'contact:1', stage: 'sale' },
+    { type: 'profile', key: 'own', at: AT, subject: 'contact:1', facts: { phone: '+12025550164' } },
+  ]
+  for (let twice = 0; twice < 2; twice++) {
+    assert.ok((await six.record({ entries: [lead] }, { lead: true })).results.every((each) => each.ok))
+    assert.ok((await six.record({ entries })).results.every((each) => each.ok))
+  }
+  const caller = `caller:${hashPhone('+12025550162')}`
+  const texter = `caller:${hashPhone('+12025550163')}`
+  assert.deepEqual(await arrived(), [
+    ['lead.recorded', { key: 'chat-1', subject: 'lead:chat-1' }],
+    ['call.recorded', { call: 'CA1', subject: caller, direction: 'inbound', state: 'missed' }],
+    ['text.recorded', { text: 'SM1', subject: texter, direction: 'inbound' }],
+    ['conversion.recorded', { conversion: 'sale-1', subject: 'contact:1', stage: 'sale' }],
+  ])
+  await six.record({ entries: [{ ...entries[0]!, key: 'CA-old' }, { ...entries[2]!, key: 'sale-old' }] as RecordEntry[], history: true })
+  assert.equal((await arrived()).length, 4)
+  // A call said to be someone's goes with them when they are forgotten, though its line stays.
+  await six.record({ entries: [{ type: 'call_update', key: 'whose', at: AT + 1, call: 'CA1', change: { kind: 'party', role: 'self', subject: 'contact:9', by: 'desk' } }] })
+  await engine.graph.forget('contact:9')
+  assert.deepEqual((await arrived()).map(([type]) => type), ['lead.recorded', 'text.recorded', 'conversion.recorded'])
+})
+
 test('a deletion asks platforms after it, and its answer is kept', async () => {
   const { createEngine } = await import('../src/core/engine.ts')
   const { createMemoryStore } = await import('../src/core/memory.ts')

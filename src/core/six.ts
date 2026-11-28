@@ -6,12 +6,13 @@ import { FAULT_CODES, fault, isRefused, malformed, refused } from '../contract/f
 import { canonical } from '../contract/json.ts'
 import { no, ok } from '../contract/outcome.ts'
 import type { Decided, Outcome } from '../contract/outcome.ts'
-import type { AttributedTouch, Candidate, Counterparty, Identifier, Reason, Subject, Touch } from '../contract/types.ts'
+import type { AttributedTouch, CallState, Candidate, Counterparty, Identifier, Reason, Subject, Touch } from '../contract/types.ts'
 import { callState, followUp, HIDDEN, recordCall, ringing, settleCall, settleLead } from './calls.ts'
 import { LINES } from './details.ts'
 import type { CallOptions, Call } from './calls.ts'
 import type { Engine, Inside, Parts } from './engine.ts'
 import { cursorOf, seqOf } from './events.ts'
+import type { NewEvent } from './events.ts'
 import { Outdated } from './graph.ts'
 import type { Tx } from './store.ts'
 import type { Hours } from './hours.ts'
@@ -419,6 +420,23 @@ export function createSix(engine: Engine, options: SixOptions) {
     }
   }
 
+  /** The event that says an entry arrived: a lead, a call, a text or a conversion. Others say nothing. */
+  function arrivalEvent(entry: RecordEntry, value: { subject?: string; state?: CallState }, lead: boolean): NewEvent | undefined {
+    const at = entry.at
+    switch (entry.type) {
+      case 'profile':
+        return lead ? { type: 'lead.recorded', at, subject: entry.subject, data: { key: entry.key, subject: entry.subject } } : undefined
+      case 'call':
+        return value.subject && value.state ? { type: 'call.recorded', at, subject: value.subject, data: { call: entry.key, subject: value.subject, direction: entry.direction, state: value.state } } : undefined
+      case 'text':
+        return value.subject ? { type: 'text.recorded', at, subject: value.subject, data: { text: entry.key, subject: value.subject, direction: entry.direction } } : undefined
+      case 'conversion':
+        return { type: 'conversion.recorded', at, subject: entry.subject, data: { conversion: entry.key, subject: entry.subject, stage: entry.stage } }
+      default:
+        return undefined
+    }
+  }
+
   async function recordUnit(entries: readonly RecordEntry[], checked: Checked, lead = false, paidUpTo?: Asked['paidUpTo'], quiet = false): Promise<RecordResult[]> {
     let entry = entries[0]!
     const answer = (decided: Decided<object, RecordRefusal>) => ({ type: entry.type, key: entry.key, ...decided }) as unknown as RecordResult
@@ -452,6 +470,9 @@ export function createSix(engine: Engine, options: SixOptions) {
           }
           const { value, subjects, stands = true, existed = false } = await write(inside, dated, before !== undefined, quiet)
           if (!before) await tx.addReceipt(receipts.make(dated, now(), about), subjects)
+          // A firm's own systems are told what arrived, once. A load of history tells nobody.
+          const arrived = before || existed || quiet ? undefined : arrivalEvent(dated, value as { subject?: string; state?: CallState }, lead)
+          if (arrived) await tx.emit([arrived])
           // Your own services writing a profile of a forgotten subject bring it back on purpose, so lead webhooks may file under it again.
           if (!lead && entry.type === 'profile') await tx.dropReceipt(SUBJECT_RECEIPT, receipts.mac(SUBJECT_RECEIPT, entry.subject).all)
           results.push(answer(ok({ duplicate: before !== undefined || existed, stands, ...value })))

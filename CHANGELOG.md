@@ -154,6 +154,7 @@
 
 ### Events
 
+- `lead.recorded`, `call.recorded`, `text.recorded` and `conversion.recorded` say once that an entry arrived. A load of history says nothing.
 - `callback.overdue` follows the current missed call, attempts and paid arrival. Reassignment or deletion removes superseded notices before retry.
 - `conversion.failed` events and queued failure alerts that rely on a corrected call are removed. A batch already posted can still arrive.
 - `WEBHOOK_URL` receives a newly signed batch when a correction changes its events during signing.

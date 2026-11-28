@@ -522,6 +522,10 @@ export type GraphEvent =
   | Event<'feed.quiet', { readonly feed: 'touches' | 'calls' | 'results' | 'costs'; readonly last: At | null; readonly hours: number }>
   | Event<'callback.overdue', { readonly call: string; readonly subject: string; readonly missedAt: At; readonly attempts: number; readonly source: string; readonly campaign: string | null; readonly campaignId: string | null }>
   | Event<'audit.head', { readonly seq: number; readonly hash: string; readonly sound: boolean; readonly brokenAt: number | null }>
+  | Event<'lead.recorded', { readonly key: string; readonly subject: string }>
+  | Event<'call.recorded', { readonly call: string; readonly subject: string; readonly direction: 'inbound' | 'outbound'; readonly state: CallState }>
+  | Event<'text.recorded', { readonly text: string; readonly subject: string; readonly direction: 'inbound' | 'outbound' }>
+  | Event<'conversion.recorded', { readonly conversion: string; readonly subject: string; readonly stage: string }>
 
 // ── the factory ──────────────────────────────────────────────────────────────
 export interface Common {

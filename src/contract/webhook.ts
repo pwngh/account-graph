@@ -34,7 +34,7 @@ export async function verifyWebhook(webhook: RawWebhook, options: { readonly sec
   return same(await hmac(options.secret, `${at}.${webhook.body}`), match[2]!)
 }
 
-const TYPES: ReadonlySet<string> = new Set<GraphEvent['type']>(['cluster.changed', 'conversion.failed', 'delivery.paused', 'delivery.late', 'costs.failed', 'feed.quiet', 'callback.overdue', 'audit.head'])
+const TYPES: ReadonlySet<string> = new Set<GraphEvent['type']>(['cluster.changed', 'conversion.failed', 'delivery.paused', 'delivery.late', 'costs.failed', 'feed.quiet', 'callback.overdue', 'audit.head', 'lead.recorded', 'call.recorded', 'text.recorded', 'conversion.recorded'])
 
 /** An event as it was sent, or what could not be read as one. */
 export function readEvent(value: unknown): GraphEvent | UnrecognizedEvent {

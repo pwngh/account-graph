@@ -191,7 +191,7 @@ export function createMemoryStore() {
     for (const key of notices) once.delete(key)
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i]!
-      if ((event.type === 'callback.overdue' && (ids.has(event.data.call) || event.calls?.some(id => sources.has(id)) || (event.notice && notices.has(event.notice)))) || (event.type === 'conversion.failed' && conversions.has(event.data.conversion))) {
+      if ((event.type === 'callback.overdue' && (ids.has(event.data.call) || event.calls?.some(id => sources.has(id)) || (event.notice && notices.has(event.notice)))) || (event.type === 'conversion.failed' && conversions.has(event.data.conversion)) || (event.type === 'call.recorded' && ids.has(event.data.call))) {
         if (event.notice) once.delete(event.notice)
         changingEvents()
         events.splice(i, 1)
