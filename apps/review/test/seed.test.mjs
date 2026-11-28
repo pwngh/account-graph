@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { firmHistory } from '../../../examples/firm/history.ts'
-import { loadFirmHistory } from '../../../examples/firm/load-history.ts'
+import { keeping, loadFirmHistory } from '../../../examples/firm/load-history.ts'
 import { PRACTICES } from '../../../examples/firm/practice.ts'
 import { createGraph, createMemoryStore, policyFrom } from '../../../tools/internals.ts'
 import { createPostgresStore } from '../../../src/store/postgres.ts'
@@ -18,7 +18,7 @@ async function seed(store, practice, batch) {
   const history = firmHistory(PRACTICES[practice], now, at => { writing = at }, false, () => {})
   const start = performance.now()
   if (batch) await loadFirmHistory({ store, policy, now }, history.fill, () => {})
-  else await history.fill(graph)
+  else await history.fill(graph, keeping(store))
   return { elapsed: performance.now() - start, counts: await graph.counts(), verify: await graph.verify() }
 }
 

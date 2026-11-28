@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Form, Link } from 'react-router'
-import { Author, Badge, Meter, PageHead, Parts, Subject, Tiles, Time } from './shared'
+import { Author, Badge, Meter, Named, PageHead, Parts, Subject, Tiles, Time } from './shared'
 import { Sourced, Tile } from './marks'
 import { amount, idText, percent, subjectHash } from './report-words'
 import { Term } from './terms'
@@ -71,7 +71,7 @@ export function Health({ data, Detail }) {
       {ops.pool && <section><h2><Term id="pool" more={'Each stays assigned for ' + amount(ops.pool.minutes) + ' minutes after the last page request.'}/></h2><Parts label="Tracking numbers" list={[['In use', ops.pool.held], ['Available', ops.pool.numbers - ops.pool.held]]}/><p className="meta">{amount(ops.pool.leased + ops.pool.exhausted)} requests since <Time at={ops.pool.since} short/>{ops.pool.exhausted > 0 && ' · ' + amount(ops.pool.exhausted) + ' without an available number. Add numbers or shorten POOL_MINUTES.'}</p></section>}</div>}</div>}
   {refused.length > 0 && <section><h2><Term id="rejected"/><span className="count">{refused.length < states.failed ? amount(refused.length) + ' of ' + amount(states.failed) : amount(refused.length)}</span></h2><ul className="cards rows">{refused.map(job => <li key={job.transactionId + '/' + job.target}><Tile kind="send" tone="apart"/><b>{job.action} <span className="muted">{job.value === undefined ? '—' : amount(job.value) + ' ' + (job.currency ?? '')}</span></b>
     <Form method="post" action="/health" preventScrollReset>{enhanced && <input type="hidden" name="_enhanced" value="1"/>}<input type="hidden" name="intent" value="retry"/><input type="hidden" name="transactionId" value={job.transactionId}/><input type="hidden" name="target" value={job.target}/><button aria-label={'Retry ' + job.transactionId + ' for ' + job.target}>Retry</button></Form>
-    <span className="flow"><Time at={job.at} now={at}/><Link className="who-chip" to={subjectHash(job.subject)} title={job.subject}><Badge id={job.subject}/>{idText(job.subject)}</Link><span className="sr-only"> to </span><i className="to" aria-hidden="true"/><span className="who-chip"><Sourced name={job.target}/></span><span className="meta">{job.note || 'No data'}</span></span></li>)}</ul></section>}
+    <span className="flow"><Time at={job.at} now={at}/><Link className="who-chip" to={subjectHash(job.subject)} title={job.subject}><Badge id={job.subject}/><Named id={job.subject}/></Link><span className="sr-only"> to </span><i className="to" aria-hidden="true"/><span className="who-chip"><Sourced name={job.target}/></span><span className="meta">{job.note || 'No data'}</span></span></li>)}</ul></section>}
   <section><div className="section-head"><h2><Term id="rules"/></h2><p className="meta">Related ≥ {percent(related)} · Join ≥ {percent(same)} · Join groups ≥ {percent(bridge)} · Review over {amount(review)} IDs</p></div>
     <div className="wide" tabIndex="0" role="region" aria-label="Matching rules"><table className="rules"><thead><tr><th scope="col">Identifier</th><th scope="col" className="num edge">Weight</th><td/><th scope="col" className="num edge">Shared by 4</th><th scope="col" className="num">Half-life</th><th scope="col" className="num">Limit</th><th scope="col" className="edge">Notes</th></tr></thead>
     {bands.map(([name, holds, only]) => {

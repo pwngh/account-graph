@@ -40,8 +40,9 @@ test('an overdue person on the Board and the history of a missed call can be rea
     await open(width, '/board/90', '.board-age.apart')
     const names = await sizes('.board li:has(.board-age.apart) .subject')
     assert.ok(names.length > 0, 'an overdue person at ' + width)
-    // A name is one line of text. One letter per line is a few pixels wide and hundreds tall.
-    for (const [wide, tall] of names) assert.ok(wide >= 64 && tall <= 28, `an overdue name is ${wide} by ${tall} at ${width}`)
+    // A name or a number is shown whole, on two or three lines where the card is narrow. One letter per line is a few pixels wide and hundreds tall.
+    for (const [wide, tall] of names) assert.ok(wide >= 64 && tall <= 64, `an overdue name is ${wide} by ${tall} at ${width}`)
+    assert.equal(await run(`[...document.querySelectorAll('.board li:has(.board-age.apart) .subject')].every(each => each.scrollWidth <= each.clientWidth + 1 && getComputedStyle(each).textOverflow !== 'ellipsis')`), true, 'an overdue name is whole at ' + width)
     assert.ok((await sizes('.board li .detail')).every(([wide, tall]) => wide === 17 && tall === 17), 'the mark that opens a card at ' + width)
     const ages = await sizes('.board-age.apart')
     for (const [, tall] of ages) assert.ok(tall <= 28, `how long overdue is ${tall} tall at ${width}`)

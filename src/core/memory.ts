@@ -248,6 +248,8 @@ export function createMemoryStore() {
       for (const { call, lineKind } of rows.calls) await tx.setCall(call, lineKind)
       for (const [id, result] of rows.results) await tx.setCallResult(id, result)
       for (const decision of rows.decisions) await tx.addDecision(decision)
+      for (const { subject, field, value, at, key } of rows.details ?? []) await tx.setDetails(subject, { [field]: value }, at, key)
+      for (const { identifier, value } of rows.shown ?? []) if (byIdentifier.get(identifier)?.size) shown.set(identifier, value)
     },
     addAlert: ops.addAlert,
     pendingAlert: ops.pendingAlert,

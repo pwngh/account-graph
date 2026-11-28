@@ -115,10 +115,16 @@ function withoutCards(html: string) {
   }
 }
 
+/** A page shows a person by name or number, with the exact ID first in a title. The scenes name people by ID, so each is read back as its ID. */
+function byId(html: string) {
+  return html.replace(/<bdi title="([^" ]+)[^"]*">[^<]*<\/bdi>/g, '<bdi>$1</bdi>').replace(/(<a class="link subject" title="([^" ]+)[^"]*"[^>]*>)<bdi>[^<]*<\/bdi>/g, '$1<bdi>$2</bdi>')
+    .replace(/(<span class="queue-names">)<span title="([^"]+)">[^<]*<\/span><span title="([^"]+)">[^<]*<\/span>/g, '$1<span>$2</span><span>$3</span>')
+}
+
 async function reportText(client: ReturnType<typeof stageClient>, path: string) {
   const page = await client(path)
   assert.equal(page.status, 200, path)
-  const html = (await page.text()).match(/<main\b[^>]*>([^]*?)<\/main>/)?.[1] ?? ''
+  const html = byId((await page.text()).match(/<main\b[^>]*>([^]*?)<\/main>/)?.[1] ?? '')
   return visibleText(withoutCards(html).replace(/<details\b[^>]*>[^]*?<\/details>/g, '').replace(/<\/?(?:h[1-6]|li|div|section|p|td|tr)\b[^>]*>/g, '\n')).replace(/\n+/g, '\n')
 }
 
@@ -299,13 +305,21 @@ for (const practice of ['family', 'injury'] as const) test('the ' + practice + '
     await screen.send('Page.navigate', { url: 'about:blank' })
     await until('a fresh document', () => screen.run("location.href === 'about:blank'").catch(() => false))
     await screen.send('Page.navigate', { url })
-    const shown = await until('document for ' + href, () => screen.run(`document.readyState !== 'loading' && document.getElementById('view') && { href: location.href, text: document.getElementById('view').innerText }`).catch(() => false))
+    const shown = await until('document for ' + href, () => screen.run(`document.readyState !== 'loading' && document.getElementById('view') && { href: location.href, text: document.getElementById('view').innerText, named: [...document.getElementById('view').querySelectorAll('a.subject[title], bdi[title], .queue-names span[title]')].filter(each => each.offsetParent !== null && !each.querySelector('bdi[title]')).map(each => [each.innerText, each.title.split(' · ')[0]]) }`).catch(() => false))
     const actual = new URL(shown.href)
     const requested = new URL(url)
     assert.equal(actual.origin, requested.origin)
     assert.deepEqual(actual.pathname.split('/').map(decodeURIComponent), requested.pathname.split('/').map(decodeURIComponent))
     assert.equal(actual.search, requested.search)
-    const text = shown.text as string
+    // A person is shown by name or number. Each is read back as its ID, in the order the page shows them.
+    let text = shown.text as string
+    let from = 0
+    for (const [seen, id] of shown.named as [string, string][]) {
+      const at = seen ? text.indexOf(seen, from) : -1
+      if (at < 0) continue
+      text = text.slice(0, at) + id + text.slice(at + seen.length)
+      from = at + id.length
+    }
     return text.includes('\nAttribution') ? text.slice(text.indexOf('\nAttribution')) : text
   }
   const { names, said, expected } = story(practice)

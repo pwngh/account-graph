@@ -120,6 +120,27 @@ export async function reviewGet(request: Request, session: Pick<Reviewer, 'token
   return response.json()
 }
 
+/** What a person is called: the values the graph keeps of their group, and the record of the firm's own that stands for one the graph made. */
+export interface Called { name?: string, phone?: string, email?: string, record?: string }
+
+/**
+ * What to call the people a page lists. Where the graph cannot say, the page shows IDs, as it did.
+ */
+export async function reviewCalled(request: Request, session: Pick<Reviewer, 'token'> & Partial<Pick<Reviewer, 'controller' | 'id'>>, subjects: Iterable<string | undefined | null>): Promise<Record<string, Called>> {
+  const asked = [...new Set([...subjects].filter((each): each is string => typeof each === 'string' && each.length > 0))].slice(0, 2000)
+  if (asked.length === 0) return {}
+  // What people are called is an addition to a page. Where it cannot be read, the page shows IDs, as it did.
+  let response: Response
+  try {
+    response = await fetch(new URL('/review/api/called', runtime().graphUrl), { method: 'POST', headers: { authorization: 'Bearer ' + session.token, 'content-type': 'application/json' }, body: JSON.stringify({ subjects: asked }), redirect: 'error', signal: AbortSignal.any([request.signal, ...(session.controller ? [session.controller.signal] : []), deadline(request)]) })
+  } catch {
+    return {}
+  }
+  if (response.status === 401) throw await signedOut(request, 'id' in session ? session as Reviewer : undefined)
+  if (!response.ok) return {}
+  return response.json().catch(() => ({}))
+}
+
 export async function withGraph<T>(request: Request, work: (session: Reviewer, graph: ReturnType<typeof accountGraph>) => Promise<T>) {
   const session = await requireReviewer(request)
   const graph = accountGraph({ url: runtime().graphUrl, token: session.token, timeoutMs: 8000 })

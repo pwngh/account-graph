@@ -93,3 +93,5 @@ a.sort:hover { color: var(--ink); }
 .cards.rows form { grid-row: span 2; grid-column: 3; }
 .cards .state .detail { margin-left: 8px; }
 .inbox-facts dd { overflow-wrap: anywhere; }
+/* A person's name or number is shown whole, on as many lines as it takes. Cut short, it says nothing. */
+.board .top .link, .inbox-who, .queue-names span { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }

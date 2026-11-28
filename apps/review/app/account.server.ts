@@ -3,7 +3,7 @@ import { graphTime } from './runtime.server'
 import { randomUUID } from 'node:crypto'
 import { data, redirect } from 'react-router'
 import { fieldsOf } from './forms.server'
-import { checkOrigin, reviewGet, withGraph } from './auth.server'
+import { checkOrigin, reviewCalled, reviewGet, withGraph } from './auth.server'
 import type { KnownProfile, ProfilePage } from './views/accounts'
 import { clusterLayout } from './views/cluster-layout'
 
@@ -36,7 +36,9 @@ export function loadAccounts(request: Request, subject?: string) {
     const selected = subject ?? clusters[0]?.id
     const profile = selected ? await get('subject', {subject: selected}) : undefined
     const wanted = Math.max(0, Math.floor(Number(query.get('links')) || 0))
-    return { subject, profile: !subject ? undefined : profile?.known ? pageOf(profile, wanted) : profile, layout: profile?.known ? clusterLayout(profile) : undefined, audit, clusters, recent, decisions, retraction: session.retraction, key: randomUUID(), at: graphTime(), offset, author }
+    const page = !subject ? undefined : profile?.known ? pageOf(profile, wanted) : profile
+    const called = await reviewCalled(request, session, [subject, ...clusters.map((cluster: {id: string}) => cluster.id), ...recent.flatMap((row: {subject: string, to?: string}) => [row.subject, row.to]), ...(page?.known ? [...page.links.map((link: {subject: string}) => link.subject), ...page.separated, ...(page.flows ?? []).map((flow: {subject: string}) => flow.subject), ...(page.rings ?? []).flatMap((ring: {subjects: string[]}) => ring.subjects)] : [])])
+    return { subject, called, profile: page, layout: profile?.known ? clusterLayout(profile) : undefined, audit, clusters, recent, decisions, retraction: session.retraction, key: randomUUID(), at: graphTime(), offset, author }
   })
 }
 
