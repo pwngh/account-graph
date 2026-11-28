@@ -15,6 +15,7 @@
  *
  * docs/operations.md lists every variable.
  */
+import { testReceiverAddress } from './client/providers.ts'
 import { readFileSync, realpathSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -148,15 +149,7 @@ export function readEnvironment(env: Env) {
     return problems.length > 0 ? undefined : value
   }
   const policy = policyGiven()
-  if (env.ADS_TEST_RECEIVER) {
-    let receiver: URL | undefined
-    try {
-      receiver = new URL(env.ADS_TEST_RECEIVER)
-    } catch {}
-    if (!receiver || !['http:', 'https:'].includes(receiver.protocol) || !['localhost', '127.0.0.1', '[::1]'].includes(receiver.hostname) || receiver.pathname !== '/' || receiver.search || receiver.username) {
-      wrong.push('ADS_TEST_RECEIVER must be an address on this machine, such as http://127.0.0.1:9000')
-    }
-  }
+  if (env.ADS_TEST_RECEIVER && !testReceiverAddress(env.ADS_TEST_RECEIVER)) wrong.push('ADS_TEST_RECEIVER must be an address on this machine, such as http://127.0.0.1:9000')
   for (const name of ['MICROSOFT_SANDBOX', 'META_CLIENT_USER_AGENT', 'GOOGLE_ADS_COSTS']) {
     if (env[name] && !['true', 'false'].includes(env[name]!)) wrong.push(`${name} must be true or false`)
   }

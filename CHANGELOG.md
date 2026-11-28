@@ -4,7 +4,7 @@
 
 ### Providers
 
-- `ADS_TEST_RECEIVER` sends every ad platform request, token requests included, to an address on this machine. `tools/ads-receiver.ts` answers as each platform does and prints what it was sent.
+- `ADS_TEST_RECEIVER` sends every conversion request to an ad platform, and its token requests, to an address on this machine. `tools/ads-receiver.ts` answers as each platform does and prints what it was sent.
 - `account-graph.tpl` installs the browser collector through Tag Manager with form, page and event settings and stops collection when either storage consent is withdrawn.
 - The tests replay Twilio’s published signature and response examples for the ad and lookup providers. A loopback receiver checks the graph’s event signature and unsigned alert.
 - `live-check` runs one named check, lists the data it sends and exits unsuccessfully on missing credentials or an inconclusive result. Dummy credentials require an explicit flag.

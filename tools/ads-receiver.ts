@@ -13,7 +13,10 @@ import { pathToFileURL } from 'node:url'
 function answer(path: string, body: string): unknown {
   if (path.endsWith('/token')) return { access_token: 'test-receiver', expires_in: 3600 }
   if (path === '/v1/events:ingest') return { requestId: 'test-receiver' }
-  if (/^\/v\d+\.\d+\/[^/]+\/events$/.test(path)) return { events_received: (JSON.parse(body) as { data?: unknown[] }).data?.length ?? 0, fbtrace_id: 'test-receiver' }
+  if (/^\/v\d+\.\d+\/[^/]+\/events$/.test(path)) {
+    const data = (JSON.parse(body) as { data?: unknown }).data
+    return { events_received: Array.isArray(data) ? data.length : 0, fbtrace_id: 'test-receiver' }
+  }
   if (path.startsWith('/CampaignManagement/')) return { PartialErrors: [] }
   if (path.startsWith('/open_api/')) return { code: 0, request_id: 'test-receiver' }
   return undefined
@@ -25,16 +28,18 @@ export function adsReceiver(heard: (request: { path: string; body: string }) => 
     const parts: Buffer[] = []
     request.on('data', (part: Buffer) => parts.push(part))
     request.on('end', () => {
-      const path = new URL(request.url ?? '/', 'http://receiver').pathname
-      const body = Buffer.concat(parts).toString('utf8')
-      heard({ path, body })
-      let said: unknown
+      let path = ''
+      let said: string | undefined
       try {
-        said = answer(path, body)
+        path = new URL(request.url ?? '/', 'http://receiver').pathname
+        const body = Buffer.concat(parts).toString('utf8')
+        heard({ path, body })
+        const answered = answer(path, body)
+        said = answered === undefined ? undefined : JSON.stringify(answered)
       } catch {
         said = undefined
       }
-      response.writeHead(said === undefined ? 404 : 200, { 'content-type': 'application/json', ...(path.startsWith('/CampaignManagement/') && { TrackingId: 'test-receiver' }) }).end(JSON.stringify(said ?? { error: 'no platform has this path' }))
+      response.writeHead(said === undefined ? 404 : 200, { 'content-type': 'application/json', ...(path.startsWith('/CampaignManagement/') && { TrackingId: 'test-receiver' }) }).end(said ?? '{"error":"no platform has this path"}')
     })
   })
 }

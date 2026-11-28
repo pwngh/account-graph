@@ -9,11 +9,28 @@ import { createAddressVerifier } from '../providers/smarty.ts'
 import { googleAds, meta, microsoftAds, tiktok } from '../providers/targets.ts'
 import { createLineTypeLookup } from '../providers/twilio.ts'
 
-/** A fetch that sends each request to `receiver`, keeping its path and query. */
+/** Whether an address is one a test receiver may have: on this machine, with no path, query or credentials. */
+export function testReceiverAddress(address: string): boolean {
+  let receiver: URL
+  try {
+    receiver = new URL(address)
+  } catch {
+    return false
+  }
+  return ['http:', 'https:'].includes(receiver.protocol) && ['localhost', '127.0.0.1', '[::1]'].includes(receiver.hostname)
+    && receiver.pathname === '/' && !receiver.search && !receiver.hash && !receiver.username && !receiver.password
+}
+
+/** A fetch that sends each request to `receiver`, keeping its path and query, and follows no redirect. */
 function toReceiver(receiver: string, fetcher: typeof fetch = fetch): typeof fetch {
-  return (input, init) => {
+  if (!testReceiverAddress(receiver)) throw new Error('A test receiver must be an address on this machine, such as http://127.0.0.1:9000')
+  return async (input, init) => {
     const asked = new URL(input instanceof Request ? input.url : String(input))
-    return fetcher(new URL(asked.pathname + asked.search, receiver), init)
+    const to = new URL(receiver)
+    to.pathname = asked.pathname
+    to.search = asked.search
+    const given = input instanceof Request ? { method: input.method, headers: input.headers, ...(input.body && { body: await input.arrayBuffer() }) } : {}
+    return fetcher(to, { ...given, ...init, redirect: 'error' })
   }
 }
 

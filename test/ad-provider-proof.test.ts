@@ -50,7 +50,7 @@ test('a configured Microsoft sandbox handles the conversion and its retraction',
 })
 
 test('a test receiver on this machine takes every ad platform request, and no other address is taken for one', async () => {
-  for (const address of ['https://ads.example.com', 'http://10.0.0.2:9000', 'http://127.0.0.1:9000/ads', 'nonsense']) assert.throws(() => configFrom({ ...base, ADS_TEST_RECEIVER: address }), /ADS_TEST_RECEIVER/)
+  for (const address of ['https://ads.example.com', 'http://10.0.0.2:9000', 'http://127.0.0.1:9000/ads', 'http://:secret@127.0.0.1:9000', 'nonsense']) assert.throws(() => configFrom({ ...base, ADS_TEST_RECEIVER: address }), /ADS_TEST_RECEIVER/)
   const heard: { path: string; body: string }[] = []
   const receiver = adsReceiver((request) => heard.push(request)).listen(0, '127.0.0.1')
   await new Promise((resolve) => receiver.once('listening', resolve))
@@ -70,6 +70,8 @@ test('a test receiver on this machine takes every ad platform request, and no ot
       const job = { ...item.job, target: target.name, keys: target.keys({ email: 'pat@example.org' } as never) }
       assert.deepEqual(await target.deliver('Lead', [{ ...item, job }]), { requestId: 'test-receiver' }, target.name)
     }
+    // Given in code, the same address is required.
+    assert.throws(() => targetsOf({ ...options, ads: { ...options.ads, testReceiver: 'https://ads.example.com' } }), /on this machine/)
     assert.deepEqual(heard.map((each) => each.path), ['/token', '/v1/events:ingest', '/v27.0/555/events', '/open_api/v1.3/event/track/', '/common/oauth2/v2.0/token', '/CampaignManagement/v13/OfflineConversions/Apply'])
   } finally {
     receiver.close()
