@@ -1602,6 +1602,23 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await history(), [['M1', 'returned', 'M1', undefined], ['M2', 'returned', 'M1', undefined], ['M3', 'returned', 'O1', undefined]])
     })
 
+    test('a recording the phone system holds of a call is said on the call in a history, and goes with the call', async () => {
+      const { graph } = await fresh()
+      const from = '+15550100083'
+      const caller = `caller:${hashPhone(from)}`
+      for (const id of ['R1', 'R2']) await recordCall(graph, { id, from, to: '+15550100001', at: T0 + (id === 'R1' ? 0 : HOUR), duration: 90, answered: true })
+      const heard = async () => (await graph.journey(caller)).entries.flatMap((entry) => (entry.kind === 'call' ? [[entry.call.id, entry.recording?.id, entry.recording?.state]] : []))
+      assert.deepEqual(await heard(), [['R1', undefined, undefined], ['R2', undefined, undefined]])
+      // The newest thing said stands, in whichever order it arrives.
+      assert.deepEqual(await graph.sayRecording({ call: 'R1', key: 'done', at: T0 + 200, id: 'RE1', state: 'completed' }), { stands: true })
+      assert.deepEqual(await graph.sayRecording({ call: 'R1', key: 'began', at: T0 + 100, id: 'RE1', state: 'in_progress' }), { stands: false })
+      assert.deepEqual(await heard(), [['R1', 'RE1', 'completed'], ['R2', undefined, undefined]])
+      // Deleting the caller takes what was said of the recording too: a call of the same ID afterwards has none.
+      await graph.forget(caller)
+      await recordCall(graph, { id: 'R1', from, to: '+15550100001', at: T0 + 2 * HOUR, duration: 90, answered: true })
+      assert.deepEqual(await heard(), [['R1', undefined, undefined]])
+    })
+
     test('a missed call is returned where one of your own systems says the caller was reached', async () => {
       const clock = { now: T0 + 10 * HOUR }
       const { graph } = await fresh(undefined, { now: () => clock.now })

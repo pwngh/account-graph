@@ -36,7 +36,7 @@ export function told(entry, icon = '') {
     const followUp = entry.notLead ? undefined : entry.followUp
     const how = { answered: 'answered', missed: 'missed', voicemail: 'voicemail', waiting: 'waiting for result', unknown: 'unknown result' }[state] ?? 'unknown result'
     const after = followUp && { open: 'Not returned', returned: `Returned after ${lasted(followUp.delay)}${followUp.reported ? (followUp.reporter ? ` (reported by ${followUp.reporter})` : ' (reported)') : ''}`, 'called again': `Called again after ${lasted(followUp.delay)}`, hidden: 'Number withheld' }[followUp.state]
-    return [call.direction === 'outbound' ? 'Outbound ' : 'Inbound ', display.chip(how[0].toUpperCase() + how.slice(1), display.callTone(state)), notLead(entry.notLead), icon,
+    return [call.direction === 'outbound' ? 'Outbound ' : 'Inbound ', display.chip(how[0].toUpperCase() + how.slice(1), display.callTone(state)), notLead(entry.notLead), entry.recording?.state === 'completed' ? display.chip('Recorded') : '', icon,
       facts(after && `${after}${followUp.attempts > 0 ? ` · ${amount(followUp.attempts)} ${followUp.attempts === 1 ? 'attempt' : 'attempts'}` : ''}`,
         call.duration === undefined ? '' : `Duration ${amount(Math.round(call.duration))} s`,
         call.result?.waited === undefined ? '' : `Wait ${amount(Math.round(call.result.waited))} s`,

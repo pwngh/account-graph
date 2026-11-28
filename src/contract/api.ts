@@ -177,6 +177,8 @@ export interface CallUpdateEntry extends Keyed<'call_update'> {
         readonly by?: string
       }
     | { readonly kind: 'not_returned'; readonly by?: string }
+    /** A recording your phone system holds of the call: its ID there and how it stands. The graph keeps the ID, and never fetches the recording. */
+    | { readonly kind: 'recording'; readonly id: string; readonly state: 'in_progress' | 'completed' | 'absent' | 'deleted' }
     | (CallParty & {
         readonly kind: 'party'
         readonly by: string
@@ -389,7 +391,7 @@ export interface Tied {
 export type JourneyEntry = { readonly at: At; readonly subject: string } & (
   | { readonly kind: 'visit'; readonly arrival: Arrival }
   | { readonly kind: 'sighting'; readonly event: string; readonly kinds: readonly string[] }
-  | { readonly kind: 'call'; readonly call: string; readonly party?: PartyStatement; readonly direction: 'inbound' | 'outbound'; readonly state: CallState; readonly followUp: FollowUp | null; readonly notLead: 'spam' | 'other' | null }
+  | { readonly kind: 'call'; readonly call: string; readonly party?: PartyStatement; readonly direction: 'inbound' | 'outbound'; readonly state: CallState; readonly followUp: FollowUp | null; readonly notLead: 'spam' | 'other' | null; /** The phone system's recording of the call, where it has said there is one. */ readonly recording?: { readonly id: string; readonly state: string } }
   | { readonly kind: 'text'; readonly text: string; readonly direction: 'inbound' | 'outbound'; readonly reply: TextReply | null; readonly notLead: 'spam' | 'other' | null }
   | { readonly kind: 'link'; readonly link: string; readonly purpose: string | null; readonly opened: At | null; readonly openings: number }
   | { readonly kind: 'conversion'; readonly conversion: string; readonly stage: string; readonly value: number; readonly currency: string; readonly deliveries: readonly Delivery[]; readonly notLead: 'spam' | 'other' | null }

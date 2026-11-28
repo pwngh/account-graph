@@ -602,6 +602,25 @@ test('the open missed call and the account of its number say what the phone comp
   assert.ok(rows.includes(subject) && !rows.includes('WIRELESS CALLER'))
 })
 
+test('a call the phone system recorded says so on its row of a history', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const { at } = await (await fetch(firm.graph + '/review/api/board?days=90', { headers: { authorization: 'Bearer demo' } })).json()
+  const record = async entries => (await (await fetch(firm.graph + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ entries }) })).json()).results
+  const [{ value: { subject } }] = await record([{ type: 'call', key: 'heard-1', at: at - 3 * 3600_000, direction: 'inbound', from: '+15550100066', to: '+15550100102', duration: 90, result: { answered: true } }])
+  const row = async () => ((await (await fetch(firm.graph + '/journey/' + encodeURIComponent(subject), { headers: { cookie } })).text()).replaceAll('<!-- -->', '').match(/<li class="timeline-entry" id="call-heard-1">[\s\S]*?<\/li>/)?.[0] ?? '').replace(/<[^>]+>/g, ' ')
+  assert.doesNotMatch(await row(), /Recorded/)
+  // While it is being made there is nothing to say yet. Once the phone system has it, the row says so.
+  assert.ok((await record([{ type: 'call_update', key: 'heard-1-began', at: at - 2 * 3600_000, call: 'heard-1', change: { kind: 'recording', id: 'RE1', state: 'in_progress' } }]))[0].ok)
+  assert.doesNotMatch(await row(), /Recorded/)
+  assert.ok((await record([{ type: 'call_update', key: 'heard-1-done', at: at - 3600_000, call: 'heard-1', change: { kind: 'recording', id: 'RE1', state: 'completed' } }]))[0].ok)
+  assert.match(await row(), /Answered\s+Recorded/)
+  // A state the graph does not know is refused.
+  assert.equal((await fetch(firm.graph + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ entries: [{ type: 'call_update', key: 'heard-1-odd', at, call: 'heard-1', change: { kind: 'recording', id: 'RE1', state: 'played' } }] }) })).status, 400)
+})
+
 test('a term has its definition beside it on every page, in the page from the start', async t => {
   const firm = await startFirm({}, { quick: true })
   t.after(() => firm.close())

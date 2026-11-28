@@ -332,7 +332,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         const owners = rows.flatMap(row => [row.subject, row.line_subject]).filter(Boolean)
         await dropCallNotices(db, ids, [subject, ...owners], [], [...(only ? [] : [creditSubject(subject)]), ...(rows.some(row => row.direction === 'inbound' && row.party) ? ['legacy:credit'] : [])])
         await db.query(`delete from ${t('call_result')} where id = any($1::text[])`, [ids])
-        await db.query(`delete from ${t('said')} where (topic in ('worth', 'lead') and about = any($1::text[])) or (topic in ('party', 'result', 'return') and about = any($2::text[]))`, [refs, ids])
+        await db.query(`delete from ${t('said')} where (topic in ('worth', 'lead') and about = any($1::text[])) or (topic in ('party', 'result', 'return', 'recording') and about = any($2::text[]))`, [refs, ids])
         await db.query(`delete from ${t('not_lead')} where id = any($1::text[])`, [refs])
         for (const table of ['outcome', 'outcome_value', 'payment']) await db.query(`delete from ${t(table)} where transaction_id = any($1::text[])`, [refs])
         callJobs = (await db.query(`delete from ${t('conversion')} where transaction_id = any($1::text[]) returning *`, [refs])).rows.map(toJob)
@@ -356,7 +356,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
              select transaction_id from ${t('outcome')} where subject = $1
              union all select transaction_id from ${t('outcome_value')} v where subject = $1 and not exists (select from ${t('outcome')} o where o.transaction_id = v.transaction_id)
              union all select 'call:' || id from ${t('call')} where subject = $1 union all select 'text:' || id from ${t('message')} where subject = $1))
-           or (topic in ('result', 'return') and about in (select id from ${t('call')} where subject = $1))`,
+           or (topic in ('result', 'return', 'recording') and about in (select id from ${t('call')} where subject = $1))`,
         [subject],
       )
       await db.query(`delete from ${t('sighting')} where subject = $1`, [subject])
@@ -1278,7 +1278,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     async pruneCallResults(before) {
       const { rows } = await db.query(
         `with gone as (delete from ${t('call_result')} r where recorded_at < $1 and not exists (select 1 from ${t('call')} c where c.id = r.id) returning id),
-           unsaid as (delete from ${t('said')} s where topic in ('result', 'return') and (about in (select id from gone) or (at < $1 and not exists (select from ${t('call')} c where c.id = s.about)))) select count(*)::int as n from gone`,
+           unsaid as (delete from ${t('said')} s where topic in ('result', 'return', 'recording') and (about in (select id from gone) or (at < $1 and not exists (select from ${t('call')} c where c.id = s.about)))) select count(*)::int as n from gone`,
         [before],
       )
       return rows[0].n as number
@@ -1428,6 +1428,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     async saidOf<T extends Topic>(topic: T, about: string) {
       const { rows } = await db.query(`select * from ${t('said')} where topic = $1 and about = $2`, [topic, about])
       return rows.map((row) => ({ topic, about, key: row.key, at: Number(row.at), data: row.data })) as unknown as SaidOf<T>[]
+    },
+
+    async saidAbout<T extends Topic>(topic: T, about: readonly string[]) {
+      if (about.length === 0) return []
+      const { rows } = await db.query(`select * from ${t('said')} where topic = $1 and about = any($2::text[])`, [topic, about])
+      return rows.map((row) => ({ topic, about: row.about, key: row.key, at: Number(row.at), data: row.data })) as unknown as SaidOf<T>[]
     },
 
     async costsBetween(from, to) {

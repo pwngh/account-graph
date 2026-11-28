@@ -3469,6 +3469,33 @@
               {
                 "type": "object",
                 "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "recording"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "in_progress",
+                      "completed",
+                      "absent",
+                      "deleted"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id",
+                  "state"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
                   "role": {
                     "type": "string",
                     "enum": [
@@ -6774,6 +6801,22 @@
                     "const": "other"
                   }
                 ]
+              },
+              "recording": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "state"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [

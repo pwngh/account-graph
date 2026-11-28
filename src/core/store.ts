@@ -345,6 +345,8 @@ export interface Tx {
   /** Keeps one thing said. Resolves to false where that key of that topic and thing was there. */
   addSaid(said: Said): Promise<boolean>
   saidOf<T extends Topic>(topic: T, about: string): Promise<SaidOf<T>[]>
+  /** The same of many things at once, in no order. */
+  saidAbout<T extends Topic>(topic: T, about: readonly string[]): Promise<SaidOf<T>[]>
   /** Costs with `from <= day <= to`, days written `YYYY-MM-DD`. */
   costsBetween(from: string, to: string): Promise<CostRow[]>
   /** Sightings of a subject, oldest first. With `limit`, only the newest that many. */

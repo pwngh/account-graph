@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { malformed, refused } from '../contract/fault.ts'
 import { later, newest, worthOf } from './said.ts'
+import type { SaidOf } from './said.ts'
 import { born, called, madeByGraph } from './details.ts'
 import type { Called } from './details.ts'
 import { brokenAt, seal } from './audit.ts'
@@ -212,6 +213,8 @@ export interface Graph {
   partyRevision(): Promise<string | undefined>
   /** `keepReturn`, by when it was said, which is not when they were reached. */
   sayReturn(said: { call: string; key: string; at: number; reachedAt?: number | undefined; by?: string | undefined }): Promise<{ stands: boolean }>
+  /** What the phone system says of a call's recording: its ID there and how it stands. The newest by when it was said stands. */
+  sayRecording(said: { call: string; key: string; at: number; id: string; state: string }): Promise<{ stands: boolean }>
   /** Every value a recorded outcome has had, oldest first. */
   values(transactionId: string): Promise<OutcomeValue[]>
   /** An outcome as it was recorded, or undefined when it was not. */
@@ -2108,6 +2111,14 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       })
     },
 
+    async sayRecording({ call, key, at, id, state }) {
+      keepable(key, call, id, state)
+      return store.write(async (tx) => {
+        await tx.addSaid({ topic: 'recording', about: call, key, at, data: { id, state } })
+        return { stands: newest(await tx.saidOf('recording', call))!.key === key }
+      })
+    },
+
     async withdraw(transactionId) {
       return store.write(async (tx) => {
         if (!(await tx.outcomeOf(transactionId))) return false
@@ -3297,6 +3308,14 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           }
           const reporter = reporters.get(source)
           if (reporter !== undefined) entry.followUp = { ...entry.followUp, reporter }
+        }
+        // A call the phone system recorded says so, from the newest thing said of its recording. One read serves the page.
+        const heard = page.flatMap((entry) => (entry.kind === 'call' ? [entry] : []))
+        const recordings = new Map<string, SaidOf<'recording'>[]>()
+        for (const each of await tx.saidAbout('recording', heard.map((entry) => entry.call.id))) recordings.set(each.about, [...(recordings.get(each.about) ?? []), each])
+        for (const entry of heard) {
+          const stands = newest(recordings.get(entry.call.id) ?? [])
+          if (stands) entry.recording = stands.data
         }
         // Delivery state belongs beside the ownership that was current when this journey was read.
         const shown = deliveries ? await Promise.all(page.map(async entry => {

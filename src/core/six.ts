@@ -368,12 +368,14 @@ export function createSix(engine: Engine, options: SixOptions) {
       }
       case 'call_update': {
         const { change } = entry
-        const topic = change.kind === 'party' || change.kind === 'result' ? change.kind : 'return'
+        const topic = change.kind === 'party' || change.kind === 'result' || change.kind === 'recording' ? change.kind : 'return'
         let stands: boolean
         if (again) stands = newest(await inside.tx.saidOf(topic, entry.call))?.key === entry.key
         else if (change.kind === 'party') {
           const { kind: _, seen, ...party } = change
           stands = (await graph.sayParty({ call: entry.call, key: entry.key, at: entry.at, party, ...(seen !== undefined && { seen }) })).stands
+        } else if (change.kind === 'recording') {
+          stands = (await graph.sayRecording({ call: entry.call, key: entry.key, at: entry.at, id: change.id, state: change.state })).stands
         } else if (change.kind === 'result') {
           stands = (await graph.sayResult({ call: entry.call, key: entry.key, at: entry.at, result: change.result })).stands
           await settleCall(graph, entry.call, service.calling())
@@ -643,7 +645,7 @@ export function createSix(engine: Engine, options: SixOptions) {
         case 'sighting':
           return { at, subject: on, kind: 'sighting', event: entry.event, kinds: [...new Set(entry.identifiers.map((each) => each.slice(0, each.indexOf(':'))))] }
         case 'call':
-          return { at, subject: on, kind: 'call', call: entry.call.id, ...(entry.call.party && { party: entry.call.party }), direction: entry.call.direction, state: callState(entry.call, now(), options), followUp: entry.followUp ?? null, notLead: entry.notLead ?? null }
+          return { at, subject: on, kind: 'call', call: entry.call.id, ...(entry.call.party && { party: entry.call.party }), direction: entry.call.direction, state: callState(entry.call, now(), options), followUp: entry.followUp ?? null, notLead: entry.notLead ?? null, ...(entry.recording && { recording: entry.recording }) }
         case 'text':
           return { at, subject: on, kind: 'text', text: entry.text.id, direction: entry.text.direction, reply: entry.reply ?? null, notLead: entry.notLead ?? null }
         case 'link':

@@ -353,7 +353,7 @@ export function createMemoryStore() {
         for (const [key, payment] of payments) if (payment.transactionId === outcome) payments.delete(key)
         for (const [key, job] of outbox.jobs) if (job.transactionId === outcome && outbox.jobs.delete(key)) gone.push(job)
         unsay(outcome)
-        unsay(id, 'party', 'return', 'result')
+        unsay(id, 'party', 'return', 'result', 'recording')
       }
       if (ids.size || !only) dropCallNotices(ids, [...owners], new Set(), only ? [] : [creditSubject(subject)])
       if (only) return gone
@@ -395,7 +395,7 @@ export function createMemoryStore() {
           lineKinds.delete(id)
           results.delete(id)
           spurned.delete(`call:${id}`)
-          unsay(id, 'result', 'return')
+          unsay(id, 'result', 'return', 'recording')
           unsay(`call:${id}`)
         } else if (call.visitor === subject) delete call.visitor
       }
@@ -1303,10 +1303,10 @@ export function createMemoryStore() {
 
     async pruneCallResults(before) {
       let gone = 0
-      for (const list of said.values()) for (const { topic, about, at } of [...list]) if ((topic === 'result' || topic === 'return') && at < before && !calls.has(about)) unsay(about, topic)
+      for (const list of said.values()) for (const { topic, about, at } of [...list]) if ((topic === 'result' || topic === 'return' || topic === 'recording') && at < before && !calls.has(about)) unsay(about, topic)
       for (const [id, result] of results) if (!calls.has(id) && result.recorded < before) {
         gone += Number(results.delete(id))
-        unsay(id, 'result', 'return')
+        unsay(id, 'result', 'return', 'recording')
       }
       return gone
     },
@@ -1459,6 +1459,10 @@ export function createMemoryStore() {
 
     async saidOf<T extends Topic>(topic: T, about: string) {
       return structuredClone((said.get(`${topic}\u0000${about}`) ?? []).map(({ deletion: _, ...entry }) => entry)) as SaidOf<T>[]
+    },
+
+    async saidAbout<T extends Topic>(topic: T, about: readonly string[]) {
+      return structuredClone(about.flatMap((each) => (said.get(`${topic}\u0000${each}`) ?? []).map(({ deletion: _, ...entry }) => entry))) as SaidOf<T>[]
     },
 
     async costsBetween(from, to) {

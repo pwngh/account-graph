@@ -21,7 +21,7 @@ import { hardwareId } from '../src/edge/hardware.ts'
 import { machineId } from '../src/edge/machine.ts'
 import { createDatabaseLookup, createMaxMindLookup, placeOf, shared } from '../src/providers/maxmind.ts'
 import { addressIdentifier, createAddressVerifier } from '../src/providers/smarty.ts'
-import { createLineTypeLookup, fromTwilio, twilioCall, twilioSignature } from '../src/providers/twilio.ts'
+import { createLineTypeLookup, fromTwilio, twilioCall, twilioSignature, twilioRecording } from '../src/providers/twilio.ts'
 import { createHandler } from './harness.ts'
 import { counts } from './suite.ts'
 
@@ -817,6 +817,9 @@ test('a Twilio request is checked against its signature and read as a call', () 
   assert.deepEqual(twilioCall({ ...ended, CallerName: 'WIRELESS CALLER', FromCity: 'SPRINGFIELD', FromState: 'IL' }, 0)?.caller, { name: 'WIRELESS CALLER', place: 'SPRINGFIELD, IL' })
   assert.deepEqual(twilioCall({ ...ended, FromState: 'IL' }, 0)?.caller, { place: 'IL' })
   assert.equal(twilioCall({ ...ended, CallStatus: 'ringing' }, 0), undefined)
+  // A recording status callback is of the recording, and says nothing of how the call went.
+  assert.deepEqual(twilioRecording({ CallSid: 'CA9', RecordingSid: 'RE1', RecordingStatus: 'completed', RecordingUrl: 'https://api.twilio.com/x', Timestamp: 'Fri, 20 Aug 2010 01:13:42 +0000' }, 0), { call: 'CA9', id: 'RE1', state: 'completed', at: Date.parse('2010-08-20T01:13:42Z') })
+  assert.deepEqual([twilioRecording({ CallSid: 'CA9', RecordingSid: 'RE1', RecordingStatus: 'in-progress' }, 7)?.state, twilioRecording(ended, 0), twilioRecording({ CallSid: 'CA9', RecordingSid: 'RE1', RecordingStatus: 'odd' }, 0)], ['in_progress', undefined, undefined])
   assert.equal(twilioCall({ ...ended, Direction: 'outbound-api' }, 0), undefined)
 })
 
