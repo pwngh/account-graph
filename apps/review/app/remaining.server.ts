@@ -8,8 +8,11 @@ export function remaining(request: Request, view: string) {
     const base = { view, legacy: legacy && legacy + '#/' + view }
     if (view === 'decide') {
       const audit = await reviewGet(request, session, 'decisions', {limit: '1'})
-      // As many as the graph gives at once, so Skip reaches every pair it lists.
-      const found = await reviewGet(request, session, 'undecided', {limit: '500'})
+      // As many as the graph gives at once, so Skip reaches every pair it lists. `older` checks every record, from the start or from a place
+      // a page before gave, where the queue is otherwise of recent sightings.
+      const older = new URL(request.url).searchParams.get('older') ?? ''
+      const sweep: Record<string, string> = older === 'all' ? {full: 'true'} : /^[\w-]{1,500}$/.test(older) ? {cursor: older} : {}
+      const found = await reviewGet(request, session, 'undecided', {limit: '500', ...sweep})
       const context = {seen: audit.decisions[0]?.seq ?? 0, key: randomUUID(), at: graphTime()}
       // The pair the address names, or the strongest. A pair decided since is no longer in the queue, and the first takes its place.
       const named = new URL(request.url).searchParams.get('pair')
@@ -22,9 +25,10 @@ export function remaining(request: Request, view: string) {
       const drawn = [...found.pairs.filter((each: {level: string}) => each.level === 'same').slice(0, 40), ...found.pairs.filter((each: {level: string}) => each.level !== 'same').slice(0, 40), ...(pair ? [pair] : [])]
       const known = await reviewCalled(request, session, drawn.flatMap((each: {a: string, b: string}) => [each.a, each.b]))
       const called = Object.fromEntries(Object.entries(known).map(([id, each]) => [id, pair && (id === pair.a || id === pair.b) ? each : each.name ? {name: each.name} : each.phone ? {phone: each.phone} : each.record ? {record: each.record} : {}]))
-      if (!pair) return {...base, queue, context, at, called}
+      const sweeping = 'full' in sweep || 'cursor' in sweep ? older : undefined
+      if (!pair) return {...base, queue, context, at, called, older: sweeping}
       const sides = await Promise.all([pair.a, pair.b].map(async subject => sideOf(subject, await reviewGet(request, session, 'subject', {subject}))))
-      return {...base, queue, context, at, called, reasons: pair.reasons, sides, effect: await effectOf(session.token, pair)}
+      return {...base, queue, context, at, called, older: sweeping, reasons: pair.reasons, sides, effect: await effectOf(session.token, pair)}
     }
     throw new Response('Unknown view', {status: 404})
   })

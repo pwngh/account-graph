@@ -124,8 +124,14 @@ test('Matches says when pairs among older sightings are left out, and where to c
   const origin = address(ui)
   const login = await fetch(origin + '/signin', { method: 'POST', headers: { origin }, body: new URLSearchParams({ token: 'review-fixture' }), redirect: 'manual' })
   const cookie = login.headers.get('set-cookie').split(';')[0]
-  const page = async () => (await fetch(origin + '/decide', { headers: { cookie } })).text()
-  assert.match(await page(), /<p class="meta older">Pairs among sightings before <time dateTime="[^"]+"[^>]*>[^<]+<\/time> are not in this queue\. <a href="[^"]+#\/decide">Check older records on the original reviewer screen<\/a>\.<\/p>/)
+  const page = async (path = '/decide') => (await (await fetch(origin + path, { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
+  assert.match(await page(), /<p class="meta older">Pairs among sightings before <time dateTime="[^"]+"[^>]*>[^<]+<\/time> are not in this queue\. <a href="\/decide\?older=all"[^>]*>Check older records<\/a><\/p>/)
+  // Checking every record: where it is, the last page, the way back, and the pairs it lists keep to the check.
+  const every = await page('/decide?older=all')
+  assert.match(every, /<p class="meta older">Checking every record, <bdi>[^<]+<\/bdi> to <bdi>[^<]+<\/bdi>\. These are the last\. <a href="\/decide"[^>]*>Back to recent<\/a><\/p>/)
+  assert.match(every, /class="queue-pair"[^>]*href="\/decide\?older=all&amp;pair=contact%3Aold-a/)
+  // A place that is not one is read as the recent queue.
+  assert.doesNotMatch(await page('/decide?older=' + encodeURIComponent('<nope>')), /Checking every record/)
   // With nothing left out, nothing is said.
   older = false
   assert.doesNotMatch(await page(), /class="older"/)
