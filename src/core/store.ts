@@ -120,7 +120,7 @@ export interface Tx {
   /** Keeps the newest creation statement by time and then key. */
   setCreatedAt(subject: Subject, createdAt: number, at: number, key: string): Promise<boolean>
   createdAtStands(subject: Subject, createdAt: number, at: number, key: string): Promise<boolean>
-  /** Keeps what is said of a record itself, as given: its name. Of each field, the newest by time and then key stands. */
+  /** Keeps what is said of a record itself, as given: its name, date of birth and address. Of each field, the newest by time and then key stands. */
   setDetails(subject: Subject, details: Details, at: number, key: string): Promise<void>
   /** Keeps a phone number or an email beside its hash, for people to read. Only an identifier this subject holds takes one, and it goes when the last holder does. */
   setShown(subject: Subject, shown: ReadonlyMap<Identifier, string>): Promise<void>

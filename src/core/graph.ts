@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { malformed, refused } from '../contract/fault.ts'
 import { later, newest, worthOf } from './said.ts'
-import { called, madeByGraph } from './details.ts'
+import { born, called, madeByGraph } from './details.ts'
 import type { Called } from './details.ts'
 import { brokenAt, seal } from './audit.ts'
 import { board } from './board.ts'
@@ -1940,7 +1940,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         }
         const kept = await tx.detailsOf(unique([...asked, ...asked.flatMap(members)]))
         // Asked for an account page: every number and email of the person's group, the newest first, each once.
-        const contacts = every ? await tx.contactsOf(unique(asked.flatMap(members))) : undefined
+        const contacts = every === true ? await tx.contactsOf(unique(asked.flatMap(members))) : undefined
         const all = (subject: Subject, field: 'phone' | 'email') => unique(members(subject).flatMap((each) => contacts?.get(each) ?? []).filter((each) => each.field === field)
           .sort((a, b) => b.last - a.last || (a.value < b.value ? -1 : 1)).map((each) => each.value))
         // Made from entries, so an ID such as `__proto__` is a name like any other.
@@ -1950,6 +1950,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
             const [phones, emails] = [all(subject, 'phone'), all(subject, 'email')]
             if (phones.length > 0) name.phones = phones
             if (emails.length > 0) name.emails = emails
+            Object.assign(name, born(subject, members(subject), kept))
           }
           return Object.keys(name).length > 0 ? [[subject, name] as const] : []
         }))

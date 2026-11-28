@@ -30,7 +30,7 @@ export function Time({ at, now, short = false }: { at?: number, now?: number, sh
 }
 
 /** What a person is called: the values the graph keeps of their group, and the record of the firm's own that stands for one the graph made. */
-export interface Called { name?: string, phone?: string, email?: string, record?: string, phones?: string[], emails?: string[] }
+export interface Called { name?: string, phone?: string, email?: string, record?: string, phones?: string[], emails?: string[], dob?: string, address?: string }
 /** What each person a page lists is called, by ID. A page sets it from what its loader read. */
 export const CalledContext = createContext<Record<string, Called>>({})
 

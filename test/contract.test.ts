@@ -152,7 +152,7 @@ everywhere('a record keeps its name, a number and an email are kept beside their
   const caller = `caller:${hashPhone('+15558675301')}`
   const profile = (key: string, at: number, subject: string, facts: object) => ({ type: 'profile', key, at, subject, facts })
   const sent = await graph.record({ entries: [
-    profile('one', AT, 'contact:one', { name: { first: ' Casey ', last: 'Known' }, phone: '(555) 867-5301', email: ' Casey@Example.org ' }),
+    profile('one', AT, 'contact:one', { name: { first: ' Casey ', last: 'Known' }, phone: '(555) 867-5301', email: ' Casey@Example.org ', dob: '1990-02-03', address: { street: ' 12  Main St\u202e ', city: 'Springfield', state: 'IL', zipcode: '62701' } }),
     profile('two', AT, 'contact:two', { email: 'two@example.org' }),
     { type: 'call', key: 'C1', at: AT, direction: 'inbound', from: '5558675301', to: '5551230001', result: { answered: false } },
     // A withheld number is reported as the word anonymous on a keypad. It is nobody's number.
@@ -182,12 +182,15 @@ everywhere('a record keeps its name, a number and an email are kept beside their
   // An account page asks for every number and email of the person, the newest first, each once, the joined caller's among them.
   const every = await engine.graph.called(['contact:one'], true)
   assert.deepEqual([every['contact:one']!.phones, every['contact:one']!.emails], [['+15558675302', '+15558675301'], ['casey@example.org', 'old@example.org']])
+  // A date of birth and an address are kept as written, for the account page alone. No list names anybody by them.
+  assert.deepEqual([every['contact:one']!.dob, every['contact:one']!.address, 'dob' in later['contact:one']!, 'address' in later['contact:one']!], ['1990-02-03', '12 Main St, Springfield, IL 62701', false, false])
   // Forgotten, a record keeps nothing, and the caller that was joined to it is called by its own number again.
   await graph.forget({ key: 'forget-one', at: AT + 2000, by: 'dana', subjects: ['contact:one'], platforms: 'report' })
   const after = await engine.graph.called(asked)
   assert.equal(after['contact:one'], undefined)
   assert.deepEqual(await graph.lookup({ kind: 'find', text: 'casey' }), { by: 'subject', subjects: [] })
   assert.deepEqual(after[caller], { phone: '+15558675301' })
+  assert.deepEqual(await engine.graph.called(['contact:one'], true), {})
   await graph.forget({ key: 'forget-caller', at: AT + 3000, by: 'dana', subjects: [caller], platforms: 'report' })
   assert.equal((await engine.graph.called([caller]))[caller], undefined)
   // The number went with its last holder. A record that later holds the same hash, sent already hashed, is not shown it.
