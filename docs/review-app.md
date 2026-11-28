@@ -1,6 +1,6 @@
 # Review app
 
-The review app serves the reviewer’s pages from a Node server. Accounts, Journey, Board and Calls have addresses you can open, bookmark and share with another reviewer. The server obtains the graph data over HTTP and renders the page, including its charts. Search and decision forms submit to the app. With JavaScript off you can follow links, open details, submit a form and reload to see changes.
+The review app serves the reviewer’s pages from a Node server. Accounts, Journey, Board, Matches, Calls, Channels and Health have addresses you can open, bookmark and share with another reviewer. The server obtains the graph data over HTTP and renders the page, including its charts. Search and decision forms submit to the app. With JavaScript off you can follow links, open details, submit a form and reload to see changes.
 
 Subject IDs occupy one URL segment. The account for `account:42` is at `/accounts/account%3A42`. An address pasted with a literal colon redirects to the same record. The IDs `.` and `..` use `;id=.` and `;id=..` in that segment so the browser can follow them.
 
@@ -22,6 +22,39 @@ NODE_ENV=development npm --prefix apps/review run dev
 ```
 
 Open the local address Vite prints. For a complete local installation with a fictional firm, graph, reviewer and presenter’s stage, use the [demo](demo.md).
+
+## Docker
+
+`docker compose up --build` starts the app beside the graph server and PostgreSQL. Open `http://localhost:3100` and sign in with a reviewer's token from `REVIEW_TOKENS`. Set `REVIEW_PORT` to publish another port. The port is published on this machine only. `REVIEW_BIND` names another address to publish it on.
+
+The app has an image of its own, built from the repository root:
+
+```sh
+docker build -f apps/review/Dockerfile -t account-graph-review .
+```
+
+`node tools/stack-check.ts` checks a running stack as a member of staff meets it: the graph answers, the sign-in page is served, a reviewer signs in, and each page opens. CI runs it on every change.
+
+> **The session secret in `compose.yaml` is public.** It begins with `change-me`, and the app refuses to start with it when `REVIEW_ORIGIN` names an address outside your own machine.
+
+To serve reviewers elsewhere, put a proxy with TLS in front. Set `REVIEW_ORIGIN` to the address reviewers open, change `REVIEW_SESSION_SECRET`, and forward to the app. Without `REVIEW_ORIGIN` the app compares a form's origin with the address the request came to, which a proxy that ends TLS changes, so sign-in is refused. Live updates are one long answer from `/events`, so the proxy must not buffer it:
+
+```nginx
+server {
+  listen 443 ssl;
+  server_name review.example.org;
+  location / {
+    proxy_pass http://127.0.0.1:3100;
+    proxy_set_header Host $host;
+  }
+  location /events {
+    proxy_pass http://127.0.0.1:3100;
+    proxy_set_header Host $host;
+    proxy_buffering off;
+    proxy_read_timeout 1h;
+  }
+}
+```
 
 ## Production
 

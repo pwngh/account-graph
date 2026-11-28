@@ -26,7 +26,7 @@ The lines after `collect accepts` list the enabled features. Each provider turns
 
 ## Docker
 
-`docker compose up --build` starts the server and PostgreSQL on port 8080.
+`docker compose up --build` starts the server and PostgreSQL on port 8080, and the [review app](review-app.md#docker) on port 3100.
 
 ```sh
 GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' RECEIPT_SECRETS=… IDENTIFIER_SECRET=… ORIGINS=https://example.org docker compose up --build

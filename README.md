@@ -45,7 +45,7 @@ This starts a made-up law firm with two months of data, a site and 27 scenes to 
 
 ## Reviewer screen
 
-The new reviewer app serves Accounts, Journey, Board and Calls as HTML. The original screen is still available on the graph server. See the [review app guide](docs/review-app.md).
+The reviewer app serves Accounts, Journey, Board, Matches, Calls, Channels and Health as HTML, and `docker compose up --build` starts it on port 3100. The original screen is still available on the graph server. See the [review app guide](docs/review-app.md).
 
 Reviewers see the evidence behind every match, missed calls awaiting a callback, and the return on each campaign. These are four of its seven views. Accounts is the picture at the top, and the others are Matches and Calls.
 

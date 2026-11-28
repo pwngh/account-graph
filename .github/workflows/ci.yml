@@ -43,6 +43,25 @@ jobs:
       - run: npm run review:test
       - run: docker build -t account-graph .
 
+  # Brings up what a firm installs by the guide, and signs in as a member of staff would.
+  stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Each step has its own limit, so a stack that hangs still leaves time to print its logs and take it down.
+      - run: docker compose up --build --detach --wait --wait-timeout 180
+        timeout-minutes: 9
+      - run: node tools/stack-check.ts
+        timeout-minutes: 3
+      - if: failure()
+        run: docker compose logs --no-color --tail 200
+      - if: always()
+        run: docker compose down --volumes
+
   # Looks for keys and tokens in every commit this one is built on. What it finds is not printed: the log is public.
   gitleaks:
     runs-on: ubuntu-latest

@@ -1,4 +1,4 @@
-# The server and its database, for trying it out:
+# The server, its database and the pages staff work in, for trying it out:
 #   docker compose up --build
 # Change the two tokens, LINK_SECRET, IDENTIFIER_SECRET and RECEIPT_SECRETS before anything real touches it. GRAPH_PORT moves it off 8080.
 services:
@@ -112,6 +112,28 @@ services:
       TIKTOK_ACCESS_TOKEN: ${TIKTOK_ACCESS_TOKEN:-}
       TIKTOK_TEST_EVENT_CODE: ${TIKTOK_TEST_EVENT_CODE:-}
       TIKTOK_SITE_URL: ${TIKTOK_SITE_URL:-}
+
+  # The pages staff work in. Open http://localhost:3100 and sign in with a reviewer's token from REVIEW_TOKENS.
+  # It is published on this machine only. To serve reviewers elsewhere, put a proxy with TLS in front, set REVIEW_ORIGIN
+  # to the address they open, and change REVIEW_SESSION_SECRET. See docs/review-app.md.
+  review:
+    build:
+      context: .
+      dockerfile: apps/review/Dockerfile
+    depends_on:
+      graph:
+        condition: service_healthy
+    ports:
+      - '${REVIEW_BIND:-127.0.0.1}:${REVIEW_PORT:-3100}:3000'
+    environment:
+      REVIEW_GRAPH_URL: http://graph:8080
+      # Signs the session cookie. Change it before anybody but you signs in.
+      REVIEW_SESSION_SECRET: ${REVIEW_SESSION_SECRET:-change-me-review-session-secret-now}
+      # The address reviewers open. Left out, it is the address each request came to. Set it behind a proxy.
+      REVIEW_ORIGIN: ${REVIEW_ORIGIN:-}
+      # Lets an open page update by itself.
+      REVIEW_EVENTS_TOKEN: ${GRAPH_TOKEN:-change-me-service-token}
+      REVIEW_LEGACY_URL: ${REVIEW_LEGACY_URL:-}
 
 volumes:
   graph-data:
