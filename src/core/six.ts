@@ -259,12 +259,13 @@ export function createSix(engine: Engine, options: SixOptions) {
         if (found.identifiers.length === 0 && !entry.speaker) throw Object.assign(malformed('No fact could be used'), { refusal: { reason: 'NO_FACT_USED', notes: found.notes } })
         const { notes, speakers } = await service.identify({ subject: entry.subject, ...entry.facts, at: entry.at, ...(entry.event && { event: entry.event }), ...(entry.speaker && { speaker: entry.speaker }) }, entry.key)
         const stands = entry.createdAt === undefined || await inside.tx.setCreatedAt(entry.subject, entry.createdAt, entry.at, entry.key)
-        // What they are called, as given. The name is kept of the record. A number and an email are kept once, beside their hash.
+        // What they are called. The name is kept of the record, as given. A number and an email are kept once, beside their hash,
+        // in the normalized form the hash was made of, so nothing of one holder's spelling is left for another.
         // What somebody else said of themselves, as a speaker, is not this record's.
         const { name, phone, email: address } = entry.facts
         const full = name && `${name.first} ${name.last}`.replace(/\s+/g, ' ').trim()
         if (full) await inside.tx.setDetails(entry.subject, { name: full }, entry.at, entry.key)
-        await inside.tx.setShown(entry.subject, new Map([...shownNumber(phone).shown, ...(address === undefined ? [] : [[email(address), address.trim()] as [Identifier, string]])]))
+        await inside.tx.setShown(entry.subject, new Map([...shownNumber(phone).shown, ...(address === undefined ? [] : [[email(address), normalizeEmail(address)] as [Identifier, string]])]))
         // Of whoever speaks too. Once they are deleted, a late retry must not bring them back.
         return { value: { changes: inside.changes, notes }, subjects: [entry.subject, ...speakers], stands }
       }

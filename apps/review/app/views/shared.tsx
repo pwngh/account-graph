@@ -30,7 +30,7 @@ export function Time({ at, now, short = false }: { at?: number, now?: number, sh
 }
 
 /** What a person is called: the values the graph keeps of their group, and the record of the firm's own that stands for one the graph made. */
-export interface Called { name?: string, phone?: string, email?: string, record?: string }
+export interface Called { name?: string, phone?: string, email?: string, record?: string, phones?: string[], emails?: string[] }
 /** What each person a page lists is called, by ID. A page sets it from what its loader read. */
 export const CalledContext = createContext<Record<string, Called>>({})
 
@@ -54,9 +54,11 @@ export function useNamed() {
   return (id: string) => nameOf(id, called[id])
 }
 
-/** Everything known of who an ID is, for a title: the ID itself, then the record that stands for it, the phone and the email. */
+/** Everything known of who an ID is, for a title: the ID itself, then the record that stands for it, and every number and email read for it, the newest first. */
 export function knownOf(id: string, called?: Called) {
-  return [id, called?.record, called?.phone && shownPhone(called.phone), called?.email].filter(Boolean).join(' · ')
+  const phones = called?.phones ?? (called?.phone ? [called.phone] : [])
+  const emails = called?.emails ?? (called?.email ? [called.email] : [])
+  return [id, called?.record, ...phones.map(shownPhone), ...emails].filter(Boolean).join(' · ')
 }
 
 /** A person's name or number as text, where a link of its own would not do. The ID and what else is known of them are in the title. */

@@ -163,23 +163,30 @@ everywhere('a record keeps its name, a number and an email are kept beside their
   const texter = `caller:${hashPhone('+15558675309')}`
   const asked = ['contact:one', 'contact:two', caller, texter, 'call:C2', 'contact:nobody']
   const first = await engine.graph.called(asked)
-  assert.deepEqual(first['contact:one'], { name: 'Casey Known', phone: '+15558675301', email: 'Casey@Example.org' })
+  assert.deepEqual(first['contact:one'], { name: 'Casey Known', phone: '+15558675301', email: 'casey@example.org' })
   assert.deepEqual(first['contact:two'], { email: 'two@example.org' })
   assert.deepEqual(first[texter], { phone: '+15558675309' })
   assert.equal(first[caller]!.phone, '+15558675301')
   assert.deepEqual([first['call:C2'], first['contact:nobody']], [undefined, undefined])
+  // A person is found by any part of their name, whatever the case. An ID that begins like the text comes first.
+  const found = [await graph.lookup({ kind: 'find', text: 'casey kn' }), await graph.lookup({ kind: 'find', text: 'NOWN' }), await graph.lookup({ kind: 'find', text: 'contact:o' }), await graph.lookup({ kind: 'find', text: 'nobody of that name' })]
+  assert.deepEqual(found, [{ by: 'name', subjects: ['contact:one'] }, { by: 'name', subjects: ['contact:one'] }, { by: 'subject', subjects: ['contact:one'] }, { by: 'subject', subjects: [] }])
   // Joined to a record of yours, the caller is called by that record's name, and says which record it is.
   await graph.decide({ key: 'join', at: AT + 1, by: 'dana', action: 'merge', pairs: [{ a: caller, b: 'contact:one' }] })
   const joined = await engine.graph.called([caller])
-  assert.deepEqual(joined[caller], { name: 'Casey Known', phone: '+15558675301', email: 'Casey@Example.org', record: 'contact:one' })
+  assert.deepEqual(joined[caller], { name: 'Casey Known', phone: '+15558675301', email: 'casey@example.org', record: 'contact:one' })
   // Of each value the newest statement stands, whichever arrives first. A later profile with only a phone leaves the name.
   await graph.record({ entries: [profile('older', AT - 1000, 'contact:one', { name: { first: 'Old', last: 'Name' }, email: 'old@example.org' }), profile('newer', AT + 1000, 'contact:one', { phone: '555-867-5302' })] as any })
   const later = await engine.graph.called(['contact:one'])
-  assert.deepEqual(later['contact:one'], { name: 'Casey Known', phone: '+15558675302', email: 'Casey@Example.org' })
+  assert.deepEqual(later['contact:one'], { name: 'Casey Known', phone: '+15558675302', email: 'casey@example.org' })
+  // An account page asks for every number and email of the person, the newest first, each once, the joined caller's among them.
+  const every = await engine.graph.called(['contact:one'], true)
+  assert.deepEqual([every['contact:one']!.phones, every['contact:one']!.emails], [['+15558675302', '+15558675301'], ['casey@example.org', 'old@example.org']])
   // Forgotten, a record keeps nothing, and the caller that was joined to it is called by its own number again.
   await graph.forget({ key: 'forget-one', at: AT + 2000, by: 'dana', subjects: ['contact:one'], platforms: 'report' })
   const after = await engine.graph.called(asked)
   assert.equal(after['contact:one'], undefined)
+  assert.deepEqual(await graph.lookup({ kind: 'find', text: 'casey' }), { by: 'subject', subjects: [] })
   assert.deepEqual(after[caller], { phone: '+15558675301' })
   await graph.forget({ key: 'forget-caller', at: AT + 3000, by: 'dana', subjects: [caller], platforms: 'report' })
   assert.equal((await engine.graph.called([caller]))[caller], undefined)
@@ -191,7 +198,7 @@ everywhere('a record keeps its name, a number and an email are kept beside their
   assert.deepEqual(placed.results.map((each) => each.ok), [true])
   const again = await engine.graph.called(['contact:three', '__proto__'])
   assert.deepEqual(again, {})
-  return [first, joined, later, after, again]
+  return [first, found, joined, later, every, after, again]
 })
 
 test('a reviewer screen asks what to call the people it lists, in a body and only with a reviewer or the service token', async () => {
@@ -204,6 +211,8 @@ test('a reviewer screen asks what to call the people it lists, in a body and onl
     await graph.record({ entries: [{ type: 'profile', key: 'one', at: AT, subject: 'contact:one', facts: { name: { first: 'Casey', last: 'Known' }, phone: '5558675301' } }] as any })
     assert.deepEqual(await ask({ subjects: ['contact:one', 'contact:nobody'] }), { status: 200, body: { 'contact:one': { name: 'Casey Known', phone: '+15558675301' } } })
     assert.equal((await ask({ subjects: ['contact:one'] }, 'service')).status, 200)
+    assert.deepEqual((await ask({ subjects: ['contact:one'], every: true })).body, { 'contact:one': { name: 'Casey Known', phone: '+15558675301', phones: ['+15558675301'] } })
+    for (const bad of [{ subjects: ['contact:one'], every: 'yes' }, { subjects: Array.from({ length: 11 }, (_, i) => 'contact:' + i), every: true }]) assert.equal((await ask(bad)).status, 400, JSON.stringify(bad).slice(0, 60))
     assert.equal((await ask({ subjects: ['contact:one'] }, 'wrong')).status, 401)
     for (const bad of [{}, { subjects: 'contact:one' }, { subjects: [1] }, { subjects: [''] }, { subjects: Array.from({ length: 2001 }, (_, i) => 'contact:' + i) }]) assert.equal((await ask(bad)).status, 400, JSON.stringify(bad).slice(0, 60))
   } finally {

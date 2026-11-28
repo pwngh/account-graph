@@ -124,6 +124,10 @@ export interface Tx {
   setDetails(subject: Subject, details: Details, at: number, key: string): Promise<void>
   /** Keeps a phone number or an email beside its hash, for people to read. Only an identifier this subject holds takes one, and it goes when the last holder does. */
   setShown(subject: Subject, shown: ReadonlyMap<Identifier, string>): Promise<void>
+  /** Every number and email kept for each of these exact subjects to read, with when the subject was last seen with it. Newest first. */
+  contactsOf(subjects: readonly Subject[]): Promise<Map<Subject, { field: 'phone' | 'email'; value: string; last: number }[]>>
+  /** Records whose kept name contains this text, whatever the case, in ID order. Each store folds case by its own rules, which differ for a few letters outside ASCII. */
+  namedLike(text: string, limit: number): Promise<Subject[]>
   /** What is kept of each of these exact subjects that has any: its name, and of the numbers and emails kept for it to read, the one it was seen with last. */
   detailsOf(subjects: readonly Subject[]): Promise<Map<Subject, Details>>
   /** Which lines can speak about texts for these subjects, including an earlier STOP from a withdrawn line. */

@@ -131,5 +131,8 @@ export async function limitedCall(owner: Extract<Owner, { role: 'limited' }>, na
   }
   if (kinds !== true && !kinds.includes(name === 'decide' ? body?.action : body?.kind)) throw forbidden()
   if ((name === 'decide' || name === 'forget') && body?.by !== author) throw fault(FAULT_CODES.AUTH.FORBIDDEN, '`by` must match the service token owner')
-  return dispatch(body)
+  const said = await dispatch(body)
+  // People are searched by name for a reviewer and the service only. A named service's `find` stays the exact lookups it was given.
+  if (name === 'lookup' && body?.kind === 'find' && (said as { by?: string } | undefined)?.by === 'name') return { by: 'subject', subjects: [] }
+  return said
 }

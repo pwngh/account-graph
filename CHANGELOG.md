@@ -193,6 +193,8 @@
 
 ### Reviewer screen
 
+- Search finds a person by any part of their name. `lookup` `find` answers `by: "name"` for it, once the text is no ID and no ad click.
+- The account page lists every number and email read for its person, the newest first. `POST /review/api/called` takes `every: true` for up to 10 IDs and adds `phones` and `emails`.
 - The review app shows each person by name, else by phone number, on every page. The ID, the record of yours that stands for a caller, the number and the email are in the title, and beneath the heading of the account page.
 - A name or a number on a Board card, in the missed calls and in the Matches queue is shown whole, on as many lines as it needs.
 - The demo firm's sample history keeps a name and a number for each person.

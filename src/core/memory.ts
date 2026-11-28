@@ -504,6 +504,20 @@ export function createMemoryStore() {
       for (const [identifier, value] of given) if (bySubject.get(subject)?.has(identifier)) shown.set(identifier, value)
     },
 
+    async contactsOf(subjects) {
+      const found = new Map<Subject, { field: 'phone' | 'email'; value: string; last: number }[]>()
+      for (const subject of subjects) {
+        const held = [...(bySubject.get(subject)?.values() ?? [])].filter((edge) => shown.has(edge.identifier)).sort((a, b) => b.last - a.last || (a.identifier < b.identifier ? -1 : 1))
+        if (held.length > 0) found.set(subject, held.map((edge) => ({ field: edge.identifier.startsWith('email:') ? 'email' as const : 'phone' as const, value: shown.get(edge.identifier)!, last: edge.last })))
+      }
+      return found
+    },
+
+    async namedLike(text, limit) {
+      const wanted = text.toLowerCase()
+      return [...details].filter(([, kept]) => kept.name?.value.toLowerCase().includes(wanted)).map(([subject]) => subject).sort().slice(0, limit)
+    },
+
     async detailsOf(subjects) {
       const found = new Map<Subject, Details>()
       for (const subject of subjects) {
