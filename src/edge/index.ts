@@ -109,8 +109,8 @@ export function createEdge(graph: AccountGraph, options: EdgeOptions): Edge {
       outbox: engine.outbox,
       ops,
       sendsPaused: () => sendsPaused(engine.store),
-      called: ({ id, at, from, to, duration, direction = 'inbound', answered, voicemail, waited, tags }) =>
-        reported({ type: 'call', key: id, at, direction, to, ...(from && from.length <= 64 && { from }), ...(duration !== undefined && { duration }), ...(answered !== undefined && { result: { answered, ...(voicemail !== undefined && { voicemail }), ...(waited !== undefined && { waited }) } }), ...(tags && { tags }) }),
+      called: ({ id, at, from, to, duration, direction = 'inbound', answered, voicemail, waited, tags, caller }) =>
+        reported({ type: 'call', key: id, at, direction, to, ...(from && from.length <= 64 && { from }), ...(duration !== undefined && { duration }), ...(answered !== undefined && { result: { answered, ...(voicemail !== undefined && { voicemail }), ...(waited !== undefined && { waited }) } }), ...(tags && { tags }), ...(caller && direction === 'inbound' && { caller }) }),
       texted: ({ id, at, from, to, direction = 'inbound', text, code, tags }) => reported({ type: 'text', key: id, at, direction, from, to, ...(text !== undefined && { text: keepableText(text, 20_000) }), ...(code && { code }), ...(tags && { tags }) }),
       async forget(subjects, { by, reason, seen }, retract) {
         const answer = (await internals.call('forget', { key: `review ${randomUUID()}`, at: now(), by: by ?? 'service', ...(reason && { reason }), ...(seen !== undefined && { seen }), subjects, platforms: retract ? 'retract' : 'report' })) as { ok: true; value: ForgetValue } | { ok: false; reason: string; decision?: number }

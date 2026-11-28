@@ -42,6 +42,8 @@ export interface Call {
   code?: string
   /** Facts about the call, such as the language chosen at the prompt, carried on to its outcome. */
   tags?: Record<string, string>
+  /** What the phone company says of the caller: the name on its caller ID and the place the number is from. For staff to read, and never matched on. */
+  caller?: { name?: string; place?: string }
 }
 
 /** Where a tracking number is published, so a call to it can be filed under that campaign. */

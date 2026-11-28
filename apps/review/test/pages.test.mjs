@@ -580,6 +580,28 @@ test('the audit log shows no ID for a deleted record', async t => {
   assert.deepEqual(JSON.parse(answer).decisions.slice(0, 2).map(decision => decision.about), [['[Deleted]'], ['contact:ash', '[Deleted]']])
 })
 
+test('the open missed call and the account of its number say what the phone company says of the caller', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const { at } = await (await fetch(firm.graph + '/review/api/board?days=90', { headers: { authorization: 'Bearer demo' } })).json()
+  const day = at => new Date(at).toISOString().slice(0, 10)
+  const written = await fetch(firm.graph + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ entries: [{ type: 'call', key: 'said-1', at: at - 3 * 3600_000, direction: 'inbound', from: '+15550100064', to: '+15550100102', duration: 20, result: { answered: false, waited: 20 }, caller: { name: 'WIRELESS CALLER', place: 'Springfield, IL' } }] }) })
+  const [{ value: { subject } }] = (await written.json()).results
+  const page = async path => (await (await fetch(firm.graph + path, { headers: { cookie } })).text()).replaceAll('<!-- -->', '').replaceAll('&amp;', '&')
+  const list = await page('/calls?from=' + day(at - 86400_000) + '&to=' + day(at))
+  // The call is opened from the list, and its head says both, as the phone company's words and not as a name.
+  const open = list.match(new RegExp('<a\\b[^>]*\\bhref="(/calls\\?[^"]+)#call-history"[^>]*\\btitle="' + subject + '[ "]'))?.[1] ?? list.match(new RegExp('<a\\b[^>]*\\btitle="' + subject + '[ "][^>]*\\bhref="(/calls\\?[^"]+)#call-history"'))?.[1]
+  assert.ok(open, 'the caller is in the list')
+  const said = '<span class="caller-id">Caller ID: WIRELESS CALLER · Number from Springfield, IL</span>'
+  assert.ok((await page(open)).includes(said))
+  assert.ok((await page('/accounts/' + encodeURIComponent(subject))).includes(said))
+  // In the list of callers they are named by their number still.
+  const rows = list.slice(list.indexOf('class="inbox-list'), list.indexOf('id="call-history"'))
+  assert.ok(rows.includes(subject) && !rows.includes('WIRELESS CALLER'))
+})
+
 test('a term has its definition beside it on every page, in the page from the start', async t => {
   const firm = await startFirm({}, { quick: true })
   t.after(() => firm.close())

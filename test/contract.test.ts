@@ -1063,6 +1063,32 @@ test('the review API names no deleted record in the record of decisions, and the
   }
 })
 
+test('what the phone company says of a caller is kept on the record of the number, for reading only', async () => {
+  const { graph, local, close } = await http()
+  try {
+    const call = (key: string, more: object): RecordEntry => ({ type: 'call', key, at: AT, direction: 'inbound', from: '+15558675320', to: '+15551230001', duration: 20, result: { answered: false }, ...more }) as RecordEntry
+    const results = (await graph.record({ entries: [
+      call('id-1', { caller: { name: ' WIRELESS\u202e CALLER ', place: 'Springfield, IL' } }),
+      // A call the firm placed says nothing of who was rung.
+      call('id-2', { direction: 'outbound', from: '+15551230001', to: '+15558675321', caller: { name: 'NOBODY' } }),
+    ] })).results
+    assert.ok(results.every((result) => result.ok), JSON.stringify(results))
+    const { engine } = await internalsOf(local)!()
+    const [rang, rung] = ['+15558675320', '+15558675321'].map((number) => `caller:${hashPhone(number)}`)
+    const every = await engine.graph.called([rang!, rung!], true)
+    assert.deepEqual([every[rang!]?.callerName, every[rang!]?.callerPlace, every[rung!]?.callerName], ['WIRELESS CALLER', 'Springfield, IL', undefined])
+    // It is nobody's name: a list of people does not show it, and a search for it finds nobody.
+    assert.deepEqual([(await engine.graph.called([rang!]))[rang!]?.name, (await graph.lookup({ kind: 'find', text: 'WIRELESS CALLER' })).subjects], [undefined, []])
+    // It goes with the record.
+    await graph.forget({ key: 'id-gone', at: NOW, by: 'dana', subjects: [rang!], platforms: 'report' })
+    assert.deepEqual(await engine.graph.called([rang!], true), {})
+    // A caller field that is no text is refused.
+    await assert.rejects(graph.record({ entries: [call('id-3', { caller: { name: 7 } })] }))
+  } finally {
+    await close()
+  }
+})
+
 test('answers of a report are shared until something is written', async () => {
   let now = NOW
   const { graph, local, close } = await memory({ now: () => now })

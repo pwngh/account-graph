@@ -31,9 +31,15 @@ export function Time({ at, now, short = false }: { at?: number, now?: number, sh
 }
 
 /** What a person is called: the values the graph keeps of their group, and the record of the firm's own that stands for one the graph made. */
-export interface Called { name?: string, phone?: string, email?: string, record?: string, phones?: string[], emails?: string[], dob?: string, address?: string, line?: string }
+export interface Called { name?: string, phone?: string, email?: string, record?: string, phones?: string[], emails?: string[], dob?: string, address?: string, line?: string, callerName?: string, callerPlace?: string }
 /** What each person a page lists is called, by ID. A page sets it from what its loader read. */
 export const CalledContext = createContext<Record<string, Called>>({})
+/** What the phone company says of a number's caller. It is often the account holder or a carrier's placeholder, so it is said as theirs and not as the person's name. */
+export function CallerId({ id }: { id: string }) {
+  const called = useContext(CalledContext)[id]
+  if (!called?.callerName && !called?.callerPlace) return null
+  return <span className="caller-id">{[called.callerName && 'Caller ID: ' + called.callerName, called.callerPlace && 'Number from ' + called.callerPlace].filter(Boolean).join(' · ')}</span>
+}
 
 /** A phone number as a person writes it, where it is a North American one, and as kept otherwise. */
 export function shownPhone(phone: string) {

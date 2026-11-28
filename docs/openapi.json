@@ -3328,6 +3328,19 @@
               "pattern": "^[a-z_]{1,32}$"
             }
           },
+          "caller": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "place": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "description": "What the phone company says of an inbound caller: the name on its caller ID, and the place the number is from. Kept on the record of the number for staff to read. Never used to match, because it is often the account holder or a carrier's placeholder."
+          },
           "type": {
             "type": "string",
             "const": "call"

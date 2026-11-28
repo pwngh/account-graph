@@ -258,10 +258,16 @@ export function createSix(engine: Engine, options: SixOptions) {
   /** The time before which what somebody wrote is no longer kept or read. */
   const keptSince = () => Math.floor(now() - (options.messageDays ?? 30) * 86_400_000)
   /** Keeps the other side's number of a call or a text, on the record the graph made of that number, where that record holds it. */
-  async function keepNumber(tx: Tx, theirs: string | undefined): Promise<void> {
+  async function keepNumber(tx: Tx, theirs: string | undefined, said?: { name?: string; place?: string }, entry?: { at: number; key: string }): Promise<void> {
     const { line, shown } = shownNumber(theirs)
-    if (line) await tx.setShown(line, new Map(shown))
+    if (!line) return
+    await tx.setShown(line, new Map(shown))
+    // What the phone company says of the caller is kept on the same record, for people to read.
+    const [callerName, callerPlace] = [readable(said?.name), readable(said?.place)]
+    if (entry && (callerName || callerPlace)) await tx.setDetails(line, { ...(callerName && { callerName }), ...(callerPlace && { callerPlace }) }, entry.at, entry.key)
   }
+  /** For people to read: one line, with no character that hides or reorders what is beside it on a page. */
+  const readable = (text: string | undefined) => text?.replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim()
 
   /** Writes one entry, or where it was written before says how it stands. */
   async function write(inside: Inside, entry: RecordEntry, again: boolean): Promise<Values[RecordEntry['type']]> {
@@ -351,10 +357,10 @@ export function createSix(engine: Engine, options: SixOptions) {
         return { value: { value: (await graph.outcomeOf(entry.conversion))?.value ?? null, deliveries: await jobsOf(inside, entry.conversion) }, subjects: [], existed }
       }
       case 'call': {
-        const { type: _, key, result, ...rest } = entry
+        const { type: _, key, result, caller, ...rest } = entry
         const call: Call = { id: key, ...rest, ...result }
         const recorded = await recordCall(graph, call, { ...service.calling(), said: { key: `call ${entry.at} ${canonical(result ?? null)}`, at: entry.at } })
-        await keepNumber(inside.tx, entry.direction === 'inbound' ? entry.from : entry.to)
+        await keepNumber(inside.tx, entry.direction === 'inbound' ? entry.from : entry.to, entry.direction === 'inbound' ? caller : undefined, entry)
         // Of two reports at one time, the same one stands whichever came first.
         const stands = !result || newest(await inside.tx.saidOf('result', key))?.key === `call ${entry.at} ${canonical(result)}`
         const line = !again && await inside.tx.callLine(key)

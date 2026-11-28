@@ -2,7 +2,7 @@
 import type { Subject } from '../contract/types.ts'
 
 /** The plain values kept of a record. Matching never reads them: it works from the hashes. */
-export type DetailField = 'name' | 'phone' | 'email' | 'dob' | 'address' | 'line'
+export type DetailField = 'name' | 'phone' | 'email' | 'dob' | 'address' | 'line' | 'callerName' | 'callerPlace'
 /** The kinds of phone line a lookup can find that staff act on: whether a number can be texted, and whether it is an app's. */
 export const LINES = new Set(['mobile', 'landline', 'fixedVoip', 'nonFixedVoip'])
 export type Details = Partial<Record<DetailField, string>>
@@ -36,10 +36,18 @@ export function called(subject: Subject, members: readonly Subject[], kept: Read
   return { ...(name !== undefined && { name }), ...(phone !== undefined && { phone }), ...(email !== undefined && { email }), ...(record !== undefined && { record }) }
 }
 
-/** A person's date of birth, address and kind of phone line, from the first record of their group that has each: for the account page, and nowhere else. */
-export function born(subject: Subject, members: readonly Subject[], kept: ReadonlyMap<Subject, Details>): { dob?: string; address?: string; line?: string } {
-  const order = [subject, ...members.filter((each) => each !== subject && !madeByGraph(each))]
-  const first = (field: 'dob' | 'address' | 'line') => order.map((each) => kept.get(each)?.[field]).find((value) => value !== undefined)
-  const [dob, address, line] = [first('dob'), first('address'), first('line')]
-  return { ...(dob !== undefined && { dob }), ...(address !== undefined && { address }), ...(line !== undefined && { line }) }
+/**
+ * What is kept of a person beyond what they are called: their date of birth, address and kind of phone line, and what the phone company says of a number's caller.
+ * Each is from the first record of their group that has it. It is for the account page and the open call, and nowhere else.
+ */
+const BEYOND = ['dob', 'address', 'line', 'callerName', 'callerPlace'] as const
+export function born(subject: Subject, members: readonly Subject[], kept: ReadonlyMap<Subject, Details>): Pick<Details, typeof BEYOND[number]> {
+  // What the phone company says is of a number, so it is read from the records the graph made of numbers too.
+  const order = [subject, ...members.filter((each) => each !== subject)]
+  const found: Pick<Details, typeof BEYOND[number]> = {}
+  for (const field of BEYOND) {
+    const value = order.filter((each) => each === subject || field.startsWith('caller') || !madeByGraph(each)).map((each) => kept.get(each)?.[field]).find((value) => value !== undefined)
+    if (value !== undefined) found[field] = value
+  }
+  return found
 }
