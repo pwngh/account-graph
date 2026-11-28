@@ -16,6 +16,7 @@
  * docs/operations.md lists every variable.
  */
 import { testReceiverAddress } from './client/providers.ts'
+import { settingProblems } from './settings.ts'
 import { readFileSync, realpathSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -50,7 +51,7 @@ type Env = Record<string, string | undefined>
 
 /** What the environment asks for, checked. Throws one error that names everything wrong. */
 export function readEnvironment(env: Env) {
-  const wrong: string[] = []
+  const wrong: string[] = settingProblems(env)
   const need = (name: string) => env[name] || (wrong.push(`${name} is required`), '')
   const number = (name: string, fallback: number) => {
     if (!env[name]) return fallback
@@ -150,9 +151,6 @@ export function readEnvironment(env: Env) {
   }
   const policy = policyGiven()
   if (env.ADS_TEST_RECEIVER && !testReceiverAddress(env.ADS_TEST_RECEIVER)) wrong.push('ADS_TEST_RECEIVER must be an address on this machine, such as http://127.0.0.1:9000')
-  for (const name of ['MICROSOFT_SANDBOX', 'META_CLIENT_USER_AGENT', 'GOOGLE_ADS_COSTS']) {
-    if (env[name] && !['true', 'false'].includes(env[name]!)) wrong.push(`${name} must be true or false`)
-  }
   const readGoogleCosts = env.GOOGLE_ADS_COSTS ? env.GOOGLE_ADS_COSTS === 'true' : Boolean(env.GOOGLE_ADS_DEVELOPER_TOKEN)
   if (readGoogleCosts && !env.GOOGLE_ADS_CUSTOMER_ID && !env.GOOGLE_SERVICE_ACCOUNT_FILE) {
     wrong.push('Google cost reporting requires GOOGLE_ADS_CUSTOMER_ID and GOOGLE_SERVICE_ACCOUNT_FILE')
@@ -264,7 +262,6 @@ export function readEnvironment(env: Env) {
   } catch {
     wrong.push('REPORT_TIME_ZONE must be a time zone, such as America/New_York')
   }
-  if (env.CHANGE_WEBHOOK || env.CHANGE_SECRET) wrong.push('CHANGE_WEBHOOK and CHANGE_SECRET are now WEBHOOK_URL and WEBHOOK_SECRET')
   if (Boolean(config.webhookUrl) !== Boolean(config.webhookSecret)) wrong.push('WEBHOOK_URL and WEBHOOK_SECRET must be set together')
   if (config.receiptSecrets.some((each) => each.length < 32)) wrong.push('RECEIPT_SECRETS must each be at least 32 characters')
   if (config.callTapSeconds > 3600) wrong.push('CALL_TAP_SECONDS must be at most 3600')
