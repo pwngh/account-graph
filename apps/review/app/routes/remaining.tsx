@@ -3,6 +3,7 @@ import { changeAccounts } from '../account.server'
 import { remaining } from '../remaining.server'
 import { Answer, type ActionResult } from '../views/shared'
 import { Matches, type MatchesModel } from '../views/matches'
+import { keptThroughOutage } from '../kept'
 const name = (request: Request) => new URL(request.url).pathname.slice(1).replace(/\.data$/, '')
 export const loader = ({request}: LoaderFunctionArgs) => remaining(request, name(request))
 export async function action({request}: ActionFunctionArgs) {
@@ -13,3 +14,6 @@ export function Remaining({model}: {model: Awaited<ReturnType<typeof remaining>>
   return <Matches model={model as unknown as MatchesModel}/>
 }
 export default function Page() { return <><Answer result={useActionData<ActionResult>()}/><Remaining model={useLoaderData<typeof loader>()}/></> }
+
+// Read again while the graph is away, the page keeps what it showed.
+export const clientLoader = keptThroughOutage
