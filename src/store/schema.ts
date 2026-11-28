@@ -104,6 +104,20 @@ create table ${schema}.decision (
   reason text,
   hash text not null
 );
+create table ${schema}.body (
+  source text not null,
+  id text collate "C" not null,
+  subject text not null,
+  author text,
+  at bigint not null,
+  recorded_at bigint not null,
+  words text not null,
+  cut boolean not null,
+  primary key (source, id)
+);
+create index body_subject on ${schema}.body (subject, at);
+create index body_recorded on ${schema}.body (recorded_at);
+create index body_author on ${schema}.body (author) where author is not null;
 create table ${schema}.detail (
   subject text not null,
   field text not null,

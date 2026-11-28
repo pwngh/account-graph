@@ -26,7 +26,7 @@ function pageOf(profile: KnownProfile, wanted: number): ProfilePage {
 }
 
 export function loadAccounts(request: Request, subject?: string) {
-  return withGraph(request, async session => {
+  return withGraph(request, async (session, graph) => {
     const get = (path: string, query?: Record<string,string>) => reviewGet(request, session, path, query)
     const audit = await get('audit')
     const query = new URL(request.url).searchParams
@@ -45,7 +45,9 @@ export function loadAccounts(request: Request, subject?: string) {
       if (every) called[subject] = every
       else delete called[subject]
     }
-    return { subject, called, profile: page, layout: profile?.known ? clusterLayout(profile) : undefined, audit, clusters, recent, decisions, retraction: session.retraction, key: randomUUID(), at: graphTime(), offset, author }
+    // What the person wrote, kept as a copy to read back. A graph that cannot say leaves the section out.
+    const wrote = subject ? (await graph.lookup({ kind: 'messages', subject }, { signal: request.signal }).catch(() => ({ messages: [] }))).messages : []
+    return { subject, called, wrote, profile: page, layout: profile?.known ? clusterLayout(profile) : undefined, audit, clusters, recent, decisions, retraction: session.retraction, key: randomUUID(), at: graphTime(), offset, author }
   })
 }
 

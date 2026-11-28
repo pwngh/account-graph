@@ -441,6 +441,19 @@ export interface KeptCall {
 }
 
 /** A text message as it is kept: who and when, and nothing it said. */
+/** What somebody wrote, kept for a while as a copy to read back: a form's message, or an inbound text. Matching never reads it. */
+export interface KeptWords {
+  /** `lead` for the message of a `profile`, `text` for an inbound text. */
+  from: 'lead' | 'text'
+  /** The key of the entry it came with. */
+  id: string
+  subject: Subject
+  at: number
+  text: string
+  /** Whether it was longer than is kept, and was cut. */
+  cut: boolean
+}
+
 export interface KeptText {
   id: string
   direction: 'inbound' | 'outbound'

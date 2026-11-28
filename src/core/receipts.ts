@@ -46,6 +46,8 @@ export function compared(entry: RecordEntry | ({ type: 'decide' } & DecideReques
   const { type, key: _, ...fields } = entry as any
   // A conversion's optional HTTP user agent is only kept on the opted-in delivery.
   if (type === 'conversion') delete fields.userAgent
+  // What somebody wrote is kept for a while and then goes. No mark of it is kept with the receipt, which outlasts it.
+  if (type === 'profile') delete fields.message
   if (type === 'call') {
     const from = fields.direction === 'outbound' ? fields.from && phone(fields.from) : callerNumber(fields.from, country)
     return { direction: fields.direction, to: phone(fields.to), ...(from && { from }) }

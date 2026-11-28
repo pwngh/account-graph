@@ -16,6 +16,9 @@
 
 ### The six calls
 
+- `profile` takes `message`, what the person wrote, and an inbound `text` keeps its words. Both are kept as a copy to read back, up to 4,000 characters, apart from everything matching reads.
+- `lookup` `messages` answers what a person wrote, the newest first, to the service token or a reviewer.
+- `MESSAGE_DAYS` (`messageDays`, default 30) sets how long they are kept. `forget` deletes a person's at once. A lead mapping takes `message`.
 - The `Authorization` header's `Bearer` scheme is read in any case and with any spaces before the token, as HTTP allows.
 - `fill` also sets its fields on a form a script sends with `form.submit()`, which fires no submit event, so such inquiries keep their device and ad.
 - `serviceTokens` gives each integration a credential of its own, limited to the calls, entry types, decisions and reads it lists, signing only as `system:<name>`.

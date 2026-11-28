@@ -59,6 +59,7 @@ A server has the settings as [environment variables](operations.md#environment-v
 | `stages` | a local graph | `STAGES` | Your [steps](report.md#steps) |
 | `leads` | a local graph | `LEADS`, `LEADS_FILE` | Sources whose webhooks the edge accepts, keyed by the name in the URL. See [Mappings and example posts](leads.md). |
 | `openHours`, `timeZone` | a local graph | `OPEN_HOURS`, `REPORT_TIME_ZONE` | When you are open, and the zone |
+| `messageDays` | a local graph | `MESSAGE_DAYS` | How many days a form's message and an inbound text's words are kept. 30 when left out |
 | `targets` | a local graph | `TARGETS` | Numbers you set yourself to meet. See [targets](operations.md#targets). |
 | `phones` | a local graph | `CALL_*`, `POOL_*`, `RETURN_HOURS` | `numbers`, `exclude`, `minimumSeconds`, `resultsExpectedWithinMinutes`, `returnHours`, `country`, `tapSeconds`, `pool` |
 | `ads` | a local graph | each platform's, `FORGET_ADS`, `OUTBOX_DELAY_MS` | `google`, `meta`, `microsoft`, `tiktok`, `retractOnForget`, `delayMs` |

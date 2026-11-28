@@ -631,6 +631,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `WEBHOOK_URL`, `WEBHOOK_SECRET` | none | URL that receives [events](#webhook), and the secret that signs each post. Set both. |
 | `ALERT_WEBHOOK` | none | URL that receives alerts, as `{"text": "…"}`. |
 | `AUDIT_HEAD_HOURS` | `0` | Posts the newest audit hash to `ALERT_WEBHOOK` at this interval, at least one hour. Requires `ALERT_WEBHOOK`. `0` disables it. |
+| `MESSAGE_DAYS` | `30` | How many days [what somebody wrote](privacy.md) is kept after it was recorded: a form's message and the words of an inbound text. An hourly job deletes the rest. |
 | `QUIET_TOUCHES_HOURS`, `QUIET_CALLS_HOURS`, `QUIET_RESULTS_HOURS`, `QUIET_COSTS_HOURS` | `0` | Hours before a feed is [stale](#stale-feeds). `0` disables the check. |
 | `LATE_HOURS` | `6` | Hours past its due time before a queued conversion raises an alert. `0` disables it. |
 | `REVIEW_PENDING_LIMIT` | `0` | Alerts once a day while more pairs than this wait in the recent review queue. `0` never alerts. Each check asks for the queue once, every five minutes. |

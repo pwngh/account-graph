@@ -12,7 +12,7 @@ import type { SaidOf, Topic } from '../core/said.ts'
 import type { AddedSightings, Store, Tx } from '../core/store.ts'
 import { CLICK_IDS } from '../core/touch.ts'
 import { schemaSql } from './schema.ts'
-import type { CallResult, CallTime, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
+import type { CallResult, CallTime, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, KeptWords, Labels, Lease, Moved, NotLead, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
 
 /** Every ad click id a touch carries, as the index on them has it. */
 const CLICKED = `array[${CLICK_IDS.map((name) => `detail->>'${name}'`).join(', ')}]`
@@ -338,7 +338,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       }
       await db.query(`delete from ${t('said')} where topic = 'party' and data->>'subject' = $1 and ($2::text[] is null or about = any($2))`, [subject, only ?? null])
       if (only) return callJobs
-      await db.query(`with created as (delete from ${t('profile_created')} where subject = $1), details as (delete from ${t('detail')} where subject = $1)
+      await db.query(`with created as (delete from ${t('profile_created')} where subject = $1), details as (delete from ${t('detail')} where subject = $1), written as (delete from ${t('body')} where subject = $1 or author = $1)
         , facts as (delete from ${t('fact_withdrawal')} where subject = $1), hidden as (delete from ${t('withdrawn_edge')} where subject = $1)
         , stops as (delete from ${t('text_stop')} where subject = $1 or line = $1), phones as (delete from ${t('text_phone_profile')} where subject = $1) delete from ${t('call_evidence')} where subject = $1`, [subject])
       if (!ids.length) await dropCallNotices(db, ids, [subject], [], [creditSubject(subject)])
@@ -453,6 +453,20 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       if (given.size === 0) return
       await db.query(`update ${t('identifier')} i set shown = g.value from unnest($2::text[], $3::text[]) g(id, value) where i.id = g.id and i.shown is distinct from g.value
         and exists (select from ${t('edge')} e where e.subject = $1 and e.identifier = i.id)`, [subject, [...given.keys()], [...given.values()]])
+    },
+
+    async keepWords({ from, id, subject, at, recorded, text, cut, author }) {
+      await db.query(`insert into ${t('body')} (source, id, subject, author, at, recorded_at, words, cut) values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict (source, id) do nothing`, [from, id, subject, author ?? null, at, recorded, text, cut])
+    },
+
+    async wordsOf(subjects, limit, since) {
+      if (subjects.length === 0) return []
+      const { rows } = await db.query(`select source, id, subject, at, words, cut from ${t('body')} where subject = any($1::text[]) and recorded_at >= $3 order by at desc, id, source limit $2`, [subjects, limit, since])
+      return rows.map((row): KeptWords => ({ from: row.source, id: row.id, subject: row.subject, at: Number(row.at), text: row.words, cut: row.cut }))
+    },
+
+    async pruneWords(before) {
+      return (await db.query(`with gone as (delete from ${t('body')} where recorded_at < $1 returning 1) select count(*)::int as n from gone`, [before])).rows[0].n
     },
 
     async contactsOf(subjects) {

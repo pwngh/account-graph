@@ -135,7 +135,7 @@ const party = byField('role', { self: namedParty, representative: namedParty, ex
 
 const entry = (fields: Record<string, Check>, keyed: Check = key) => shape({ type: any, key: keyed, at, ...fields })
 const ENTRIES: Record<string, Check> = {
-  profile: both(entry({ subject, facts: known, 'event?': short, 'speaker?': speaker, 'createdAt?': integer(1, lastAt) }), (value, path) => {
+  profile: both(entry({ subject, facts: known, 'event?': short, 'message?': string(1, 20_000), 'speaker?': speaker, 'createdAt?': integer(1, lastAt) }), (value, path) => {
     const { facts: given, speaker: by, createdAt, at, subject } = value as ProfileEntry
     if (!by) some('fact')(given, `${path}.facts`)
     if (createdAt !== undefined) {
@@ -197,6 +197,7 @@ const REQUEST = {
     conflicts: shape({ kind: any, subjects: list(subject, 1, 50) }),
     record: shape({ kind: any, type: oneOf('conversion', 'call', 'text'), key, at }),
     transfers: shape({ kind: any, subject, 'tiedOnly?': boolean }),
+    messages: shape({ kind: any, subject }),
   }),
   report: byField('kind', {
     campaigns: shape({ kind: any, window, 'by?': short, 'per?': short }),
