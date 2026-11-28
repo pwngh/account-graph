@@ -64,7 +64,9 @@ The email, number, address, name and date of birth are stored only as hashes.
 | A number from an internet calling app | `"phone": "nonFixedVoip"` | Kept as `voip`, 0.5: related without joining. |
 | A toll-free or premium line | `"phone": "tollFree: not used"` | Dropped. |
 | An address confirmed to the door | `"address": "confirmed"` | Kept as `address`, 0.6. |
-| A rented mail box, or vacant | `"address": "a rented mail box: not used"` | Dropped. |
+| A rented mail box | `"address": "a rented mail box: not used"` | Dropped. |
+| A vacant address | `"address": "vacant: not used"` | Dropped. |
+| A building with the apartment missing | `"address": "not confirmed to the apartment: not used"` | Dropped. |
 | Unknown to the postal service | `"address": "not found"` | Dropped. |
 
 > **An address identifies a household.** Two accounts at one confirmed address are related at 0.6 and are not joined by it alone. A rented mail box, a vacant address, or a building with the apartment missing links no accounts.
@@ -297,7 +299,7 @@ Put the tag, with its own `domains`, on each site, and list each site in `ORIGIN
 
 > **A carry token is bound to the browser's user agent and network.** It has no effect on another network or browser version, which stops a stranger from attaching their ad click to a sign-up by handing over a link. [Limitations](#limitations) covers look-alike browsers on one network.
 
-A carried visitor is linked at 0.95, which joins two visitors and cannot merge two groups on its own. It is recorded per receiving site, so one visitor carried to three sites is joined on each. When look-alike browsers on a shared network use one token, a third holder ends the join and a fifth ends the link.
+A carried visitor is linked at 0.95, which joins two visitors and cannot merge two groups on its own. It is recorded per receiving site, so one visitor carried to three sites is joined on each. When look-alike browsers on a shared network use one token, a third holder ends the join and a fourth ends the link.
 
 A referrer listed in `ORIGINS` records no new visit, so the original ad click keeps the credit. Subdomains of one site can share a cookie instead with `COOKIE=example.org`. See [Operations](operations.md#behind-a-proxy).
 

@@ -82,7 +82,7 @@ A page reports events without the service token, in one of three ways.
 | Any element with `data-ag-event="name"` | `name`, when clicked, or on a form when submitted |
 | `accountGraph.event('name', { id })` from your own script | `name` |
 
-The server keeps the names listed in `EVENTS` and answers 400 to any other. Each event is an outcome of the step with its name. A step in `STAGES` adds its value and the ad platforms it names. See [Steps](report.md#steps).
+The server keeps the names listed in `EVENTS` and answers 400 to any other. It also keeps `phone_click` when call numbers, a number pool or Twilio calls are set, and `text_click` when text codes or Twilio texts are set. Each event is an outcome of the step with its name. A step in `STAGES` adds its value and the ad platforms it names. See [Steps](report.md#steps).
 
 An event counts once a day per browser, as a conversion whose key begins with `page:`. To count each occurrence, such as each form submission, pass an id in `data-ag-id` or the `id` argument. The id is ignored for a step with a value or an action in `STAGES`.
 
@@ -446,7 +446,7 @@ tap ──▶ I need a lawyer. Ref K7Q2MX ──▶ your number ──▶ record
 
 Set `TEXT_CODES=true` on the server. The script asks for this browser's code and adds it to the message as the link is followed. Without an answer, the link works as you wrote it.
 
-A browser keeps its code for a week and is then given another. A code names its browser for 30 days after it was last given, in capital or small letters.
+A browser keeps its code for a week and is then given another. A code names its browser for 30 days after it was first given, in capital or small letters.
 
 ### Recording a text
 

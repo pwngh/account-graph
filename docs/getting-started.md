@@ -95,5 +95,5 @@ Remove the script tag and test callbacks, stop intake and stop the server. [`for
 
 - The server is one process and one database. A pilot has no failover.
 - The offline tests cover the published examples. A field pilot still needs independent checks of real call delivery, case-system inputs and match accuracy. Live ad acceptance and attribution require separate provider tests.
-- There is no import of past calls or contacts.
+- There is no import tool. Past calls and contacts go through `record` with their own `at` and `history: true`, up to 100 entries to a request. With `history`, nothing is sent to an ad platform for them.
 - Two weeks is too short to see clients who take months to sign.

@@ -71,7 +71,7 @@ A server has the settings as [environment variables](operations.md#environment-v
 | `fetch` | all | none | Used in place of the global one. A local graph asks ad platforms, checks and webhooks with it, for tests. |
 | `timeoutMs` | all | none | How long one call may take, in milliseconds. 30,000 when left out. |
 
-> **Say `workers` on purpose.** With `true`, a script that runs for a second reads costs and sends conversions. With `false` everywhere, nothing is ever sent.
+> **Say `workers` on purpose.** With `true`, a script that runs for a second reads costs and sends conversions. With `false` everywhere, no cost is read and nothing is sent to ad platforms or webhooks, except the retractions `forget` asks for. `record` still asks the services under `checks`.
 
 A local graph with settings:
 
@@ -313,7 +313,7 @@ A server posts [events](operations.md#webhook) to your address. Check each post 
 import { parseWebhook, verifyWebhook } from 'account-graph'
 
 export async function receive(request: Request): Promise<Response> {
-  const webhook = { headers: Object.fromEntries(request.headers), body: await request.text() }
+  const webhook = { headers: { 'x-account-graph-signature': request.headers.get('x-account-graph-signature') ?? '' }, body: await request.text() }
   if (!(await verifyWebhook(webhook, { secret: process.env.WEBHOOK_SECRET!, now: Date.now(), maxAgeMs: 300_000 }))) return new Response(null, { status: 401 })
   for (const event of parseWebhook(webhook)) {
     if (event.type === 'callback.overdue') console.log(event.data.call, event.data.attempts)
@@ -400,4 +400,4 @@ const hardware = await hardwareId('my-game-client') // 'hardware:9c1f…'
 
 - **Hardware id.** The client reports it, so a modified client can send a false value.
 - **Windows.** The Windows hardware id is untested.
-- **Memory.** A memory graph is lost with its process, and so are its receipts. It copies all it holds before each entry, so it suits tests and small graphs.
+- **Memory.** A memory graph is lost with its process, and so are its receipts. It runs one write at a time and undoes a failed entry from a journal of what it changed. It suits tests and small graphs.

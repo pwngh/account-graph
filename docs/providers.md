@@ -139,7 +139,7 @@ To load the sales, calls and payments you already have, send them with `"history
 
 | Condition | Job outcome |
 | --- | --- |
-| The adapter accepts the provider's reply | `sent`. For Meta this requires the submitted count in `events_received`. It does not establish a match or campaign credit. |
+| The adapter accepts the provider's reply | `sent`. For Meta, a count in `events_received`, when Meta gives one, must equal the submitted count. It does not establish a match or campaign credit. |
 | Retryable refusal or network error | `pending` with backoff from 30 seconds, doubling to one hour, shortened by jitter. After eight attempts by default, `failed`. Credential errors are classified by each adapter. |
 | Non-retryable batch refusal | The outbox retries each member separately to isolate bad items. Some providers can already have accepted part of the batch. An individual refusal can be terminal. |
 | No eligible click or permitted email/phone | `pending` with `no_match_key`, then `skipped` after seven days without a key. New evidence can make a job eligible. |

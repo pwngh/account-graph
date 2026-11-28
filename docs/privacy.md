@@ -20,7 +20,7 @@ The graph also keeps what people are called, so the reviewer screen can say who 
 | Your record's creation date | The standing timestamp in milliseconds, with the reporting profile's time and key | Yes. Keep personal details out of the key. |
 | Browser | The id in its first-party cookie | It identifies a browser, and a person once something links the two. |
 | IP address | As written. IPv6 is kept as its /64 | Yes. |
-| Ad clicks, campaign ids, the parameters you named, landing pages without their query | As received | They identify what was clicked. |
+| Ad clicks, campaign ids, the parameters you named, landing pages | As received. A visit from the script tag has its landing page without the query or fragment. An `arrival` you record yourself, such as one made from a form's `ag_landing`, is kept without its query and fragment where `landing` is a whole address, once its click ids and tags are read, and as sent where it is a path. See [Pages a site may record](#pages-a-site-may-record). | They identify what was clicked. A query can hold personal data. |
 | Calls | Time, duration, result, your number, and the caller as a hash. The caller's number is also kept, beside its hash. Call content is not stored. | As a phone number. |
 | Texts | Time, direction, your number, flags such as `opt_out`, and the other side as a hash. The other side's number is also kept, beside its hash. | As a phone number. |
 | What somebody wrote: the `message` of a `profile`, such as a form's message, and the words of an inbound text | As written, up to 4,000 characters, in a table of its own, with the record, the time and the key of its entry. It is a copy to read back when your own system missed the message. Matching, events, alerts, ad platforms and exports never read it. What you wrote to them is not kept. | Yes. It is plain. It is no longer read back `MESSAGE_DAYS` days after it was recorded, 30 unless you set it, and is deleted by an hourly job and as new messages arrive. It is deleted at once when the person's record is forgotten, or the record of whoever spoke for them. No mark of it is kept with the entry's receipt. |
@@ -36,11 +36,12 @@ The graph also keeps what people are called, so the reviewer screen can say who 
 
 | Recipient | Data | When |
 | --- | --- | --- |
-| Ad platforms you set up | The outcome, with whichever of these exist: that platform's click id, the email and phone hashed the way it matches them, and for Meta its browser id beside its click | For a step that names an action, when there is a click id or a hash to match by, and ad measurement was not refused |
+| Ad platforms you set up | The outcome with its time and value, and whichever of these exist: that platform's click id, the email and phone hashed the way it matches them, and for Meta its browser id beside its click. TikTok, and Meta for a website event, also get the credited visit's landing page, or your site's address without one. With `META_CLIENT_USER_AGENT` and ad-user-data consent, Meta gets the user agent recorded with a website conversion, where there is one. | For a step that names an action, when there is a click id or a hash to match by, and ad measurement was not refused |
 | Services you set up: fingerprint, address check, line check, IP lookup | The one value being checked | On arrival |
 | Your own webhooks | Alerts and [events](operations.md#events), by id | When they happen |
+| Fingerprint's script host, or the open-source helper's | The visitor's IP address and browser, as the browser loads the script | On a page that uses a fingerprint |
 
-Data goes to these recipients only.
+The server sends a person's data to these recipients only. Callers of the API can read it back. The server also reads costs from Google Ads and Meta, and asks Google and Microsoft for access tokens. Those requests carry no person's data.
 
 The creation date is for review of the exact record. It contributes no identifier, link or score. Events, reports and ad platform deliveries omit it.
 
