@@ -125,6 +125,10 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const policy of [defaultPolicy, ...presets]) for (const pending of [false, true]) {
         const { graph, store } = await fresh(policy, { now: () => T0 + 10 })
         const { graph: unstated } = await fresh(policy, { now: () => T0 + 10 })
+        // A call's line is a record of another type, so the two records on its number are one or two as they are with no call.
+        const { graph: uncalled } = await fresh(policy, { now: () => T0 + 10 })
+        await uncalled.observe([a, b].map(subject => ({ subject, at: T0, identifiers: [phone] })))
+        const alone = (await uncalled.cluster(a))?.members
         const call = { id: 'shared', at: T0 + 1, from, to: '+12025550105' }
         const state = (g: Graph) => g.sayParty({ call: call.id, key: 'desk', at: T0 + 2, party: { role: 'excluded', subject: a, by: 'desk' } })
         for (const g of [graph, unstated]) {
@@ -140,10 +144,10 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         for (const g of [graph, await graph.asOf(T0 + 10)]) {
           assert.deepEqual(await pair(g), await pair(unstated))
           assert.deepEqual(await probe(g), await probe(unstated))
-          assert.deepEqual((await g.cluster(a))?.members, [a])
+          assert.deepEqual((await g.cluster(a))?.members, alone)
           assert.deepEqual(await g.verify(), [])
           await g.rebuild()
-          assert.deepEqual((await g.cluster(a))?.members, [a])
+          assert.deepEqual((await g.cluster(a))?.members, alone)
         }
         await graph.observe({ subject: line, at: T0 + 5, identifiers: [phone] })
         assert.equal((await store.read(tx => tx.states([phone]))).get(phone)?.fanout, 3)
@@ -367,7 +371,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.verify(), [])
     })
 
-    test('replaying a corrected call before a later report counts the line from its first report', async () => {
+    test('replaying a corrected call before a later report leaves the records on its number as they were', async () => {
       let clock = T0
       const { graph } = await fresh(undefined, { now: () => clock })
       const from = '+12025550103'
@@ -378,7 +382,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       clock += 1000
       await graph.keepCall((await graph.keptCall(call.id))!)
       await graph.sayParty({ call: call.id, key: 'who', at: clock, party: { by: 'desk', role: 'unknown' } })
-      assert.deepEqual((await (await graph.asOf(T0)).cluster('contact:a'))?.members, ['contact:a'])
+      assert.deepEqual((await (await graph.asOf(T0)).cluster('contact:a'))?.members, ['contact:a', 'contact:b'])
+      assert.deepEqual((await graph.cluster('contact:a'))?.members, ['contact:a', 'contact:b'])
     })
 
     test('a withdrawn call tie that says two people differ still bounds their link and journey', async () => {
@@ -532,6 +537,34 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.links('voip:00'))[0]!.level, 'related')
       await graph.observe({ subject: 'voip:02', identifiers: ['voip:shared'], at: T0 })
       assert.deepEqual(await graph.links('voip:00'), [])
+      assert.deepEqual(await graph.verify(), [])
+    })
+
+    test("one person's caller, lead and contact records hold a phone as one person, and three contacts as three", async () => {
+      const { graph, store } = await fresh()
+      const phone = 'phone:shared'
+      const state = async () => (await store.read((tx) => tx.states([phone]))).get(phone)
+      const members = async (subject: string) => [...(await graph.cluster(subject))!.members].sort()
+      const found = async () => (await graph.match([phone])).map((each) => [each.subject, each.level, Math.round(each.score * 1e9) / 1e9]).sort()
+      // A call, the contact taken on it, and the lead form the same person sent: three records, one of each type.
+      for (const subject of ['caller:1', 'contact:1', 'lead:1']) await graph.observe({ subject, identifiers: [phone], at: T0 })
+      assert.deepEqual(await state(), { fanout: 3, ignored: false, people: 1 })
+      assert.deepEqual(await members('contact:1'), ['caller:1', 'contact:1', 'lead:1'])
+      // Asked about while the phone rings, or before a record is entered, all three are found.
+      assert.deepEqual(await found(), [['caller:1', 'same', 0.9], ['contact:1', 'same', 0.9], ['lead:1', 'same', 0.9]])
+      // A second contact may be the same person entered twice, as two records on one number always were.
+      await graph.observe({ subject: 'contact:2', identifiers: [phone], at: T0 })
+      assert.deepEqual(await state(), { fanout: 4, ignored: false, people: 2 })
+      assert.deepEqual(await members('contact:1'), ['caller:1', 'contact:1', 'contact:2', 'lead:1'])
+      // A third contact makes three people on one number, and it relates them and joins none, as before.
+      await graph.observe({ subject: 'contact:3', identifiers: [phone], at: T0 })
+      assert.deepEqual(await state(), { fanout: 5, ignored: false, people: 3 })
+      assert.deepEqual(await members('contact:1'), ['contact:1'])
+      assert.deepEqual((await graph.links('contact:1')).map((link) => [link.level, Math.round(link.score * 1e9) / 1e9]), Array(4).fill(['related', 0.6]))
+      // A number as many of one type hold as hold it at all says nothing more than the count.
+      assert.deepEqual((await store.read((tx) => tx.states(['phone:alone']))).get('phone:alone'), undefined)
+      await graph.observe([{ subject: 'contact:8', identifiers: ['phone:pair'], at: T0 }, { subject: 'contact:9', identifiers: ['phone:pair'], at: T0 }])
+      assert.deepEqual((await store.read((tx) => tx.states(['phone:pair']))).get('phone:pair'), { fanout: 2, ignored: false })
       assert.deepEqual(await graph.verify(), [])
     })
 

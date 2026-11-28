@@ -41,6 +41,11 @@ export interface Edge {
 export interface IdentifierState {
   /** How many distinct subjects carry the identifier. */
   fanout: number
+  /**
+   * Of a phone number: the most subjects of one type that carry it, where that is fewer than all of them.
+   * One person's `caller:`, `lead:` and `contact:` records are one of each type, and thin its evidence as one person does.
+   */
+  people?: number
   /** Set by hand to stop an identifier from linking anything. */
   ignored: boolean
 }

@@ -26,7 +26,7 @@ import { createMemoryStore } from './memory.ts'
 import type { Job } from './outbox.ts'
 import type { KeptAlert } from './ops.ts'
 import type { NewEvent } from './events.ts'
-import { UNNAMED, checkedReasons, defaultPolicy, earlierReasons, evidence, joins, plainPolicy, policyHash, ruleFor, told, usable, weigh } from './policy.ts'
+import { UNNAMED, checkedReasons, defaultPolicy, earlierReasons, evidence, joins, mostOfOneType, plainPolicy, policyHash, ruleFor, told, usable, weigh } from './policy.ts'
 import type { Policy } from './policy.ts'
 import { dayIn, dayStart, dimension, fold, nextDay, paid, sourceOf } from './report.ts'
 import type { Credited } from './report.ts'
@@ -734,7 +734,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     const two: [Subject, Subject][] = []
     for await (const batch of tx.sharing(caps, alone)) {
       for (const shared of batch) {
-        const raw = shared.map(({ a, b, fanout }) => evidence(policy, a, b, fanout))
+        const raw = shared.map(({ a, b, fanout, people }) => evidence(policy, a, b, fanout, people))
         const reasons = previous ? earlierReasons(raw) : checkedReasons(raw, changed)
         if (reasons.length === 0) continue
         const score = weigh(policy, reasons)
@@ -1413,14 +1413,15 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     const shared = holders.filter(edge => present.has(edge.subject))
     if (present.size < 2) return new Map<Subject, Labels>()
     const reserved = (await tx.callEvidence({ identifiers: ids })).filter(row => row.at <= cut.at)
-    const counts = new Map(ids.map(id => [id, new Set([...shared, ...reserved].filter(edge => edge.identifier === id).map(edge => edge.subject)).size]))
+    const then = new Map(ids.map(id => [id, new Set([...shared, ...reserved].filter(edge => edge.identifier === id).map(edge => edge.subject))]))
+    const counts = new Map([...then].map(([id, subjects]) => [id, subjects.size]))
     if (![...counts].some(([id, count]) => count >= 2 && count <= ruleFor(policy, id).cap)) return new Map<Subject, Labels>()
     const peers = [...present]
     const edges = [...(await tx.edgesOf(peers)).filter(e => !ids.includes(e.identifier)), ...shared].filter(e => e.first <= cut.at).map(e => ({ ...e, last: Math.min(cut.at, e.last) }))
     const withheld = (await tx.callEvidence({ subjects: peers })).filter(row => row.at <= cut.at)
     const states = await tx.states(unique([...edges, ...withheld].map(e => e.identifier)))
     // People who first gave the number after the cut cannot dilute an earlier link and remove its STOP.
-    for (const [id, fanout] of counts) states.set(id, { fanout, ignored: states.get(id)?.ignored ?? false })
+    for (const [id, fanout] of counts) states.set(id, { fanout, ignored: states.get(id)?.ignored ?? false, people: mostOfOneType(then.get(id)!) })
     const separated = (await tx.separatedOf(peers)).filter(([a, b]) => present.has(a) && present.has(b))
     return grouped(peers, edges, withheld, states, separated)
   }
@@ -1770,7 +1771,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const states = await tx.states(given)
         for (const identifier of given) {
           const kept = states.get(identifier)
-          states.set(identifier, { ignored: kept?.ignored ?? false, fanout: (kept?.fanout ?? 0) + 1 })
+          // The record asked about may be one more of the type the number has most of.
+          states.set(identifier, { ignored: kept?.ignored ?? false, fanout: (kept?.fanout ?? 0) + 1, ...(kept?.people !== undefined && { people: kept.people + 1 }) })
         }
         // Counting this record can make a name public for it and for everyone who already holds it.
         const unavailable = new Set(given.filter(silent(states)))

@@ -272,16 +272,32 @@ export function ruleFor(policy: Policy, identifier: Identifier): Rule {
   return rule
 }
 
+/** Whether the holders of an identifier are counted as people: a phone number, whatever kind of line it is. */
+export const countedAsPeople = (identifier: Identifier) => identifier.startsWith('phone:') || identifier.startsWith('voip:')
+
+/**
+ * How many people these holders of one number may be: the most of one type. A `caller:`, a `lead:` and a `contact:` record
+ * are one person met three ways, and two `contact:` records may be two people.
+ */
+export function mostOfOneType(subjects: Iterable<string>): number {
+  const counts = new Map<string, number>()
+  for (const subject of new Set(subjects)) {
+    const type = subject.split(':', 1)[0]!
+    counts.set(type, (counts.get(type) ?? 0) + 1)
+  }
+  return Math.max(0, ...counts.values())
+}
+
 /** Whether an identifier can link subjects at all. */
 export function usable(policy: Policy, identifier: Identifier, state: IdentifierState | undefined): boolean {
   return state !== undefined && !state.ignored && state.fanout <= ruleFor(policy, identifier).cap
 }
 
 /** The evidence one shared identifier gives that the subjects of `a` and `b` are one person. */
-export function evidence(policy: Policy, a: Edge, b: Edge, fanout: number): Reason {
+export function evidence(policy: Policy, a: Edge, b: Edge, fanout: number, people = fanout): Reason {
   const rule = ruleFor(policy, a.identifier)
   const gap = Math.max(0, Math.max(a.first, b.first) - Math.min(a.last, b.last))
-  const thinned = rule.weight * (2 / Math.max(2, fanout)) ** rule.dilution
+  const thinned = rule.weight * (2 / Math.max(2, Math.min(fanout, people))) ** rule.dilution
   return { identifier: a.identifier, evidence: thinned * 0.5 ** (gap / rule.halfLife), fanout, gap }
 }
 

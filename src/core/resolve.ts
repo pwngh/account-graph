@@ -38,7 +38,7 @@ export function scorePairs(
         let row = found.get(a.subject)
         if (!row) found.set(a.subject, (row = new Map()))
         const reasons = row.get(b.subject)
-        const reason = evidence(policy, a, b, state!.fanout)
+        const reason = evidence(policy, a, b, state!.fanout, state!.people)
         if (reasons) reasons.push(reason)
         else row.set(b.subject, [reason])
       }
