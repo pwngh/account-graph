@@ -42,7 +42,10 @@ export function createAddressVerifier(options: SmartyOptions): AddressVerifier {
     if (options.license) url.searchParams.set('license', options.license)
     const response = await fetcher(url.href, { headers: { authorization, accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
     // What Smarty says back can quote the address, so only its status is kept.
-    if (!response.ok) throw new Error(`Smarty rejected the address check with ${response.status}`)
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {})
+      throw new Error(`Smarty rejected the address check with ${response.status}`)
+    }
     const answer = (await response.json()) as unknown
     const found = Array.isArray(answer) ? answer[0] : undefined
     if (!found?.delivery_point_barcode) return undefined

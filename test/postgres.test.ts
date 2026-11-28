@@ -277,6 +277,9 @@ if (!url) {
         await ask('/review/api/subject?subject=private-subject', 'review')
         assert.ok(lines.some((line) => /^GET \/review\/api\/policy 200 \d+ms$/.test(line)), lines.join('\n'))
         assert.ok(lines.some((line) => line.startsWith('GET /review/api/subject ')) && !lines.some((line) => line.includes('private-subject')))
+        // An encoded part of a path is left out too.
+        await ask('/collect%3Femail%3Dpat%40example.org', 'review')
+        assert.ok(lines.some((line) => line.startsWith('GET /… ')) && !lines.some((line) => line.includes('example.org')), lines.join('\n'))
       } finally {
         await running.close()
       }

@@ -265,7 +265,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       clock.now += 10 * 60_000
       await failures('later', 1)
       assert.equal(posted.length, 2)
-      assert.match(posted[1]!, /^account-graph: 1 conversion rejected\.\n• later-0 to test: rejected\n3 more were rejected since the last alert\./)
+      assert.match(posted[1]!, /^account-graph: 1 conversion rejected\.\n3 more were rejected since the last alert\.\n• later-0 to test: rejected\n/)
       clock.now += 10 * 60_000
       await failures('again', 1)
       assert.doesNotMatch(posted[2]!, /since the last alert/)

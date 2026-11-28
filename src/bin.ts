@@ -425,10 +425,12 @@ export async function serve(env: Env, log: (line: string) => void = console.log)
     throw new Error(`Cannot start:\n  ${(error as Error).message}`)
   }
   const edge = createEdge(graph, edging)
-  // One line for each request: its method, its path without the query, the answer and how long it took. A query can hold what a person typed.
+  // One line for each request: its method, its path without the query, the answer and how long it took. A query can hold what a person typed,
+  // and so can an encoded or long part of a path, so such a part is left out.
   const server = createServer((request, response) => {
     const started = performance.now()
-    response.once('finish', () => log(`${request.method} ${(request.url ?? '').split(/[?#]/, 1)[0]} ${response.statusCode} ${Math.round(performance.now() - started)}ms`))
+    const path = (request.url ?? '').split(/[?#]/, 1)[0]!.split('/').map((part) => (part.includes('%') || part.length > 40 ? '…' : part)).join('/')
+    response.once('close', () => log(`${request.method} ${path} ${response.statusCode}${response.writableFinished ? '' : ' cut off'} ${Math.round(performance.now() - started)}ms`))
     return edge(request, response)
   })
   await new Promise<void>((resolve, reject) => server.once('error', reject).listen(asked, host, resolve))
@@ -551,21 +553,21 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
       // Each line says when, so an operator can read the log against the clock.
       const log = (line: string) => console.log(`${new Date().toISOString()} ${line}`)
       const running = await serve(process.env, log)
-      for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => {
+      // The last line is written out before the process ends.
+      const end = (line: string, code: number) => process.stdout.write(`${new Date().toISOString()} ${line}\n`, () => process.exit(code))
+      let stopping = false
+      for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => {
+        // A second signal waits for the first stop.
+        if (stopping) return
+        stopping = true
         log(`stopping on ${signal}`)
         // Inside a container's grace time. A send cut off here goes again at the next start, and the platform keeps it once.
-        setTimeout(() => {
-          log('stopped before every send had an answer. They are sent again at the next start')
-          process.exit(1)
-        }, STOP_WITHIN).unref()
-        void running.close().then(() => {
-          log('stopped')
-          process.exit(0)
-        })
+        setTimeout(() => end('stopped before every send had an answer. They are sent again at the next start', 1), STOP_WITHIN).unref()
+        void running.close().then(() => end('stopped', 0))
       })
     }
   } catch (error) {
-    console.error(String((error as Error)?.message ?? error))
+    console.error(`${process.argv.length > 2 ? '' : `${new Date().toISOString()} `}${String((error as Error)?.message ?? error)}`)
     process.exit(1)
   }
 }

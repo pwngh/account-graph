@@ -129,7 +129,7 @@ function failedText(jobs: readonly Job[], since = 0): string {
   const lines = jobs.slice(0, 10).map((job) => `• ${job.transactionId} to ${job.target}: ${job.note ?? 'no reason given'}`)
   const more = jobs.length > 10 ? `\n…and ${jobs.length - 10} more` : ''
   const before = since > 0 ? `\n${since} more ${since === 1 ? 'was' : 'were'} rejected since the last alert.` : ''
-  return `account-graph: ${jobs.length} ${jobs.length === 1 ? 'conversion' : 'conversions'} rejected.\n${lines.join('\n')}${more}${before}\nRetry them from the Health view.`
+  return `account-graph: ${jobs.length} ${jobs.length === 1 ? 'conversion' : 'conversions'} rejected.${before}\n${lines.join('\n')}${more}\nRetry them from the Health view.`
 }
 
 const HOUR = 3_600_000
@@ -222,6 +222,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
     async failed(jobs, graphStore) {
       const at = now()
       let claimed = false
+      let counted = 0
       let paused: string | undefined
       const alert = await graphStore.write(async tx => {
         const failed: Job[] = []
@@ -237,6 +238,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         if (at - (sent.get('conversions') ?? -Infinity) < 10 * 60_000) heldBack += failed.length
         else {
           const text = failedText(failed, heldBack)
+          counted = heldBack
           heldBack = 0
           alert = { key: `alert:conversions:${createHash('sha256').update(text).digest('hex').slice(0, 16)}`, text, at }
           sent.set('conversions', at)
@@ -247,6 +249,8 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         return alert
       }).catch(error => {
         if (claimed && sent.get('conversions') === at) sent.delete('conversions')
+        // Nobody was told of those held back, so the next alert still counts them.
+        heldBack += counted
         throw error
       })
       // The stop is told apart from the failures, and is never held back by their ten minutes.
