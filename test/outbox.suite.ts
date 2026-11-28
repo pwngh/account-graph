@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { after, describe, test } from 'node:test'
-import { GoogleError, MetaError, createBatcher, codeNote, recordCall, createGraph, createOutbox, googleAds, hashEmail, meta, microsoftAds, tiktok, recordNotLead } from '../tools/internals.ts'
+import { GoogleError, MetaError, createBatcher, codeNote, recordCall, createGraph, createOutbox, googleAds, hashEmail, hashPhone, meta, microsoftAds, tiktok, recordNotLead } from '../tools/internals.ts'
 import type { IngestRequest, OutboxOptions, Outcome, Store } from '../tools/internals.ts'
 import type { Opened } from './suite.ts'
 import { createService } from '../src/core/service.ts'
@@ -732,6 +732,68 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       clock.now += 60_000
       assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 1, retried: 0 })
       assert.ok(new MetaError(400, '{"error":{"code":190}}').code === 190)
+    })
+
+    test('a sale that names no email goes to each platform with the email and the number kept of its record, once the person agreed', async () => {
+      const next = await open()
+      opened.push(next)
+      const graph = createGraph(next.store)
+      const remote = google()
+      const posted: { url: string; body: any }[] = []
+      const fetcher = (async (url: any, init: any) => {
+        const body = JSON.parse(init.body)
+        posted.push({ url: String(url), body })
+        if (String(url).includes('tiktok')) return new Response(JSON.stringify({ code: 0 }))
+        return new Response(JSON.stringify(String(url).includes('facebook') ? { events_received: body.data.length } : { PartialErrors: [] }))
+      }) as typeof fetch
+      const clock = { now: T0 + 2 * HOUR }
+      const outbox = createOutbox(graph, next.store.outbox, {
+        targets: [
+          googleAds({ customerId: '123-456-7890', send: remote.send }),
+          meta({ pixelId: '555', accessToken: 'meta-token', url: 'https://site.example/', fetch: fetcher }),
+          microsoftAds({ accessToken: 'ms-token', developerToken: 'dev', customerId: '11', customerAccountId: '22', fetch: fetcher }),
+          tiktok({ pixelCode: 'PIXEL1', accessToken: 'tt-token', url: 'https://site.example/', fetch: fetcher }),
+        ],
+        now: () => clock.now,
+        random: () => 1,
+      })
+      const [mail, number] = ['pat.lee@gmail.com', '+18005550100']
+      const [byMail, byNumber] = [`email:${hashEmail(mail)}`, `phone:${hashPhone(number)}`] as const
+      await graph.observe({ subject: 'contact:1', identifiers: [byMail, byNumber], at: T0 })
+      await next.store.write((tx) => tx.setShown('contact:1', new Map([[byMail, mail], [byNumber, number]])))
+      const sale = { ...outcome(1), action: { google: '900', meta: 'Purchase', microsoft: 'Sale', tiktok: 'Purchase' } }
+
+      // Nobody has agreed yet, so nothing of the record is used. With no click either, the sale waits.
+      assert.deepEqual((await outbox.record(sale)).map((job) => job.keys), [{}, {}, {}, {}])
+      assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 0, retried: 4 })
+      assert.deepEqual([remote.requests.length, posted.length], [0, 0])
+
+      await graph.consent('contact:1', { adUserData: true, adPersonalization: true }, { at: T0 })
+      clock.now += HOUR
+      assert.deepEqual(await outbox.run(), { sent: 4, skipped: 0, failed: 0, retried: 0 })
+      // Each platform has its own way to write the two before it hashes them. Google drops the dots of a Gmail address, and Meta the plus of a number.
+      assert.deepEqual(remote.requests[0]!.events[0]!.userData, { userIdentifiers: [{ emailAddress: hashEmail(mail) }, { phoneNumber: hashPhone(number) }] })
+      const body = (host: string) => posted.find((each) => each.url.includes(host))!.body
+      assert.deepEqual(body('facebook').data[0].user_data, { em: [sha256(mail)], ph: [sha256('18005550100')] })
+      assert.deepEqual([body('bingads').OfflineConversions[0].HashedEmailAddress, body('bingads').OfflineConversions[0].HashedPhoneNumber], [sha256(mail), sha256(number)])
+      assert.deepEqual(body('tiktok').data[0].user, { email: sha256(mail), phone: sha256(number) })
+      const sent = await outbox.get('enroll-1')
+      assert.deepEqual(sent.map((job) => [job.state, job.filed]), [['sent', ['email', 'phone']], ['sent', ['em', 'ph']], ['sent', ['email', 'phone']], ['sent', ['email', 'phone']]])
+      // The same sale recorded again is the same sale, though its jobs now hold keys it did not name.
+      assert.deepEqual((await outbox.record(sale)).map((job) => job.state), ['sent', 'sent', 'sent', 'sent'])
+
+      // An email on the sale itself is used as given, and the record adds only the number.
+      await outbox.record({ ...sale, transactionId: 'enroll-named', email: 'other@example.com' })
+      assert.equal((await outbox.run()).sent, 4)
+      const named = (await outbox.get('enroll-named')).find((job) => job.target === 'tiktok')!
+      assert.deepEqual([named.keys, named.filed], [{ email: sha256('other@example.com'), phone: sha256(number) }, ['phone']])
+
+      // Once they refuse, a later sale is not sent, and holds nothing of the record.
+      await graph.consent('contact:1', { adUserData: false, adPersonalization: false }, { at: T0 + 3 * HOUR })
+      await outbox.record({ ...sale, transactionId: 'enroll-after', at: T0 + 3 * HOUR })
+      clock.now += HOUR
+      assert.equal((await outbox.run()).skipped, 4)
+      assert.deepEqual((await outbox.get('enroll-after')).map((job) => [job.note, job.keys, job.filed]), Array(4).fill(['consent_denied', {}, undefined]))
     })
 
     test('Microsoft gets its own request shape, and a part-refused request is retried one by one', async () => {

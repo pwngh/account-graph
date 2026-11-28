@@ -171,7 +171,7 @@ Read `{"kind":"party","call":"incoming-4"}`<!-- schema LookupRequest --> with `l
 
 A call record lookup includes the current `party` and ordered `partyHistory`. The last item has the standing statement and its key. A journey shows only the current statement on a visible call. Before the phone report arrives, the record lookup returns `null` and the party lookup can already return a statement.
 
-A `delivery` is `{ conversion, platform, state, note? }`. `state` is `held`, `pending`, `sent`, `skipped` or `failed`. `held` waits for a call's result. No answer holds a hashed email or phone.
+A `delivery` is `{ conversion, platform, state, note? }`. `state` is `held`, `pending`, `sent`, `skipped` or `failed`. `held` waits for a call's result. No answer holds a hashed email or phone. A conversion with no `email` or `phone` is matched by the ones kept of its `subject`, when consent to ad-user data stands.
 
 ### Refusals
 

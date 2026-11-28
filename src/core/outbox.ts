@@ -21,6 +21,8 @@ export interface Job {
   source?: Outcome['source']
   /** The email and phone, hashed the way this platform matches them. */
   keys: Record<string, string>
+  /** Which of `keys` were made from the email and the number kept of the record, because the outcome gave none. */
+  filed?: string[]
   /** Raw HTTP user agent only for opted-in Meta website conversions. Never a match key. */
   metaUserAgent?: string
   consent?: Consent
@@ -224,6 +226,12 @@ const DAY = 86_400_000
 
 const reached = (job: Job) => Boolean(job.delivered || job.state === 'sent' || job.requestId)
 // The target already knows the transaction id. An adjustment gives it no newly named subject.
+/** A job with the keys its outcome gave, and none made from the record. They are made again at each send, while consent stands. */
+function unfiled(job: Job): Job {
+  if (!job.filed) return job
+  const { filed, ...rest } = job
+  return { ...rest, keys: Object.fromEntries(Object.entries(job.keys).filter(([name]) => !filed.includes(name))) }
+}
 const forTarget = (job: Job): Job => job.note === 'call_party' ? { ...job, subject: job.transactionId } : job
 const privateNote = (job: Job, note: string) => job.note === 'call_party' ? job.note : note
 
@@ -408,7 +416,18 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     const groups = new Map<string, { target: Target; action: string; items: Item[] }>()
     const attributions = new Map<string, Attribution>()
     const spurned = await graph.notLeads(claimed.map((job) => job.transactionId))
-    for (const job of claimed) {
+    const contacts = new Map<Subject, { email?: string; phone?: string }>()
+    /** The keys a platform makes of one value, or none where it cannot be read as an email or a number. */
+    const hashed = (target: Target, value: { email: string } | { phone: string }): Record<string, string> => {
+      try {
+        return target.keys(value as Outcome)
+      } catch {
+        return {}
+      }
+    }
+    for (const stored of claimed) {
+      // One that was sent with keys from the record, or waits to be sent again, has them made anew below.
+      const job = stored.note === 'call_party' ? stored : unfiled(stored)
       // Said to be no lead before it was queued. It waits, and one that is taking a conversion back goes out.
       if (spurned.has(job.transactionId) && !job.withdrawn) {
         await change(job, (current) => (current.withdrawn ? undefined : takenBack(current)))
@@ -468,6 +487,14 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
           continue
         }
         if (known.length === subjects.length) consent = { adUserData: true, adPersonalization: known.every((each) => each.adPersonalization) }
+      }
+      // The outcome named no email or phone, the record has one, and the person agreed to their data going to ad platforms.
+      if (consent?.adUserData) {
+        if (!contacts.has(job.subject)) contacts.set(job.subject, await graph.contactOf(job.subject))
+        const { email, phone } = contacts.get(job.subject)!
+        const made = { ...(email !== undefined && hashed(target, { email })), ...(phone !== undefined && hashed(target, { phone })) }
+        const filed = Object.keys(made).filter((name) => !(name in job.keys))
+        if (filed.length > 0) Object.assign(job, { keys: { ...made, ...job.keys }, filed })
       }
       if (!touch && Object.keys(job.keys).length === 0) {
         // Whose it is can come out later: they open a link, or call again. Looked at less and less often, it is given up on in the end.
@@ -537,7 +564,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         stored.at === job.at &&
         stored.action === job.action &&
         (stored.restated || stored.value === job.value) &&
-        JSON.stringify(Object.entries(stored.keys).sort()) === JSON.stringify(Object.entries(job.keys).sort())
+        JSON.stringify(Object.entries(unfiled(stored).keys).sort()) === JSON.stringify(Object.entries(job.keys).sort())
       if (!same) throw refused(`Outcome "${outcome.transactionId}" was already recorded with different details`, { reason: 'KEY_REUSED', fields: [] })
       out.push(stored)
     }
