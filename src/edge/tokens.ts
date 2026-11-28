@@ -16,7 +16,7 @@ type Kinds = {
 const KINDS = {
   record: { profile: true, arrival: true, cost: true, conversion: true, restatement: true, payment: true, call: true, call_update: true, text: true, consent: true, link: true, transfer: true },
   decide: { merge: true, unmerge: true, split: true, unsplit: true, mute: true, unmute: true, withdraw: true },
-  lookup: { person: true, journey: true, find: true, match: true, caller: true, party: true, conflicts: true, record: true, transfers: true, messages: true },
+  lookup: { person: true, journey: true, find: true, match: true, caller: true, party: true, conflicts: true, record: true, transfers: true, messages: true, pair: true },
   report: { campaigns: true, pipeline: true, calls: true, callbacks: true, texts: true, after_calls: true, deliveries: true },
 } satisfies { [C in keyof Kinds]: Record<Kinds[C], true> }
 

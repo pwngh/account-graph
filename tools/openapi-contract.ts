@@ -274,6 +274,7 @@ function addRequestLimits(schemas: Record<string, Schema>) {
     const fields = option.properties!
     const kind = fields.kind!.const
     if (fields.subject) subject(fields.subject)
+    for (const side of ['a', 'b']) if (kind === 'pair') subject(fields[side]!)
     if (kind === 'match') fields.facts!.minProperties = 1
     if (kind === 'conflicts' || kind === 'person') {
       Object.assign(fields.subjects!, { minItems: 1, maxItems: kind === 'person' ? 100 : 50 })

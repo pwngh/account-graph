@@ -573,6 +573,30 @@ everywhere('one refusal in a list undoes nothing, and a later entry sees an earl
   return [results, (await graph.lookup({ kind: 'person', subjects: ['contact:z', 'x'], at: NOW })).people]
 })
 
+everywhere('a pair says whether two records are one person, whether they were kept apart, and what they share', async ({ graph }) => {
+  const { results } = await graph.record({ entries: [
+    { type: 'profile', key: 'p1', at: AT, subject: 'contact:p1', facts: { email: 'pat@example.org', phone: '+12025550171' } },
+    { type: 'profile', key: 'p2', at: AT, subject: 'contact:p2', facts: { email: 'pat@example.org' } },
+    { type: 'profile', key: 'p3', at: AT, subject: 'contact:p3', facts: { phone: '+12025550172' } },
+    { type: 'profile', key: 'p4', at: AT, subject: 'contact:p4', facts: { phone: '+12025550172' } },
+  ] })
+  assert.ok(results.every((each) => each.ok))
+  const pair = (a: string, b: string) => graph.lookup({ kind: 'pair', a, b })
+  const joined = await pair('contact:p1', 'contact:p2')
+  assert.deepEqual([joined.together, joined.separated, joined.link?.level, joined.link?.kinds], [true, false, 'same', ['email']])
+  assert.deepEqual(await pair('contact:p1', 'contact:p3'), { together: false, separated: false, link: null })
+  // A record the graph does not have is with nobody, not even itself.
+  assert.deepEqual(await pair('contact:none', 'contact:none'), { together: false, separated: false, link: null })
+  assert.deepEqual((await pair('contact:p3', 'contact:p4')).link?.kinds, ['phone'])
+  await graph.decide({ key: 'apart', at: AT, by: 'dana', action: 'split', pairs: [{ a: 'contact:p3', b: 'contact:p4' }] })
+  // Kept apart, what they share links nothing.
+  const apart = await pair('contact:p4', 'contact:p3')
+  assert.deepEqual(apart, { together: false, separated: true, link: null })
+  // Not a subject, it is refused as any malformed lookup is.
+  await assert.rejects(graph.lookup({ kind: 'pair', a: 'contact:p1' } as never), (error: any) => error.code === FAULT_CODES.INPUT.MALFORMED)
+  return [joined, apart]
+})
+
 everywhere('facts that say nothing of who somebody is are refused, and can be sent again', async ({ graph }) => {
   const result = await one(graph, { type: 'profile', key: 'p', at: AT, subject: 'contact:1', facts: { address: { street: '1 Main St' } } })
   assert.ok((await one(graph, { type: 'profile', key: 'p', at: AT, subject: 'contact:1', facts: { device: 'd' } })).ok)

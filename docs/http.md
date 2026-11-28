@@ -358,6 +358,7 @@ POST /v1/lookup
 | `match` | `facts`, `at` | `candidates`, `notes`: who somebody may be, before you save them |
 | `caller` | `from?`, `to`, `at` | Who is calling, [while the phone rings](calls.md#while-the-phone-rings) |
 | `party` | `call` | The standing party statement with its `role`, `subject` when named, `by`, `at` and `key`, or `null`. A reviewer token gets no `subject` with `excluded`. |
+| `pair` | `a`, `b` | `together`: whether they are one person now. `separated`: whether somebody said they are two. `link`: `score`, `level`, `kinds`, `conflict?` and `unconfirmed?` of what they share directly, or null. Two joined through a third record can be `together` with no `link`. A pair kept apart has none |
 | `conflicts` | `subjects`, 1 to 50 | `conflicts`: who of them is [kept apart](matching.md#asking-about-conflicts) |
 | `record` | `type`, `key`, `at` | One conversion, call or text, or `null` |
 | `transfers` | `subject`, `tiedOnly?` | `counterparties`, `rings` |
