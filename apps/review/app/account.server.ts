@@ -1,5 +1,5 @@
 import { subjectPath } from './navigation'
-import { graphTime } from './runtime.server'
+import { graphTime, runtime } from './runtime.server'
 import { randomUUID } from 'node:crypto'
 import { data, redirect } from 'react-router'
 import { fieldsOf } from './forms.server'
@@ -47,7 +47,7 @@ export function loadAccounts(request: Request, subject?: string) {
     }
     // What the person wrote, kept as a copy to read back. A graph that cannot say leaves the section out.
     const wrote = subject ? (await graph.lookup({ kind: 'messages', subject }, { signal: request.signal }).catch(() => ({ messages: [] }))).messages : []
-    return { subject, called, wrote, profile: page, layout: profile?.known ? clusterLayout(profile) : undefined, audit, clusters, recent, decisions, retraction: session.retraction, key: randomUUID(), at: graphTime(), offset, author }
+    return { subject, called, wrote, link: subject ? runtime().recordLink(subject) : undefined, profile: page, layout: profile?.known ? clusterLayout(profile) : undefined, audit, clusters, recent, decisions, retraction: session.retraction, key: randomUUID(), at: graphTime(), offset, author }
   })
 }
 

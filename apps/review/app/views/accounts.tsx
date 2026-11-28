@@ -31,6 +31,8 @@ export interface AccountsData {
   called?: Record<string, Called>
   /** What the person wrote, the newest first: form messages and inbound texts. */
   wrote?: readonly { from: 'lead' | 'text', id: string, subject: string, at: number, text: string, cut: boolean }[]
+  /** The same record in the firm's own system, where the firm has said how its addresses are made. */
+  link?: { href: string, host: string }
   clusters: { id: string, size: number, oversized?: boolean }[]
   recent: { subject: string, to?: string, at: number }[]
   decisions: { decisions: Decision[], total: number, next: number | null }
@@ -126,7 +128,7 @@ function ProfileView({ profile, data, context }: { profile: Profile, data: Accou
   const start = profile.start
   const pageHref = (offset: number) => { const q = new URLSearchParams(query); q.set('links', String(offset / 50)); return pathname + '?' + q + '#links' }
   const indices = Array.from({ length: Math.min(50, count - start) }, (_, i) => i)
-  return <><section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi title={subject}>{headed(subject, data.called?.[subject])}</bdi></h2><Guide view="accounts"/><div className="row"><Link className="button" to={subjectPath(subject, 'journey')}>Journey</Link><DecisionForm context={context} subject={subject} intent="join" label="Join with…"/><DecisionForm context={context} subject={subject} intent="forget" label="Delete…" targets={data.retraction?.always ? undefined : data.retraction?.targets}/></div></div>
+  return <><section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi title={subject}>{headed(subject, data.called?.[subject])}</bdi></h2><Guide view="accounts"/><div className="row">{data.link && <a className="button" href={data.link.href} target="_blank" rel="noopener noreferrer">Open in {data.link.host}</a>}<Link className="button" to={subjectPath(subject, 'journey')}>Journey</Link><DecisionForm context={context} subject={subject} intent="join" label="Join with…"/><DecisionForm context={context} subject={subject} intent="forget" label="Delete…" targets={data.retraction?.always ? undefined : data.retraction?.targets}/></div></div>
   <p className="meta" id="known"><bdi>{knownOf(subject, data.called?.[subject])}</bdi></p>
   {(data.called?.[subject]?.dob || data.called?.[subject]?.address || data.called?.[subject]?.line) && <p className="meta" id="born"><bdi>{[LINE_WORDS[data.called[subject].line ?? ''], data.called[subject].dob && 'Born ' + data.called[subject].dob, data.called[subject].address].filter(Boolean).join(' · ')}</bdi></p>}<p className="meta"><CallerId id={subject}/></p>
     <DatesOf id={subject} dates={dates}/><Tiles items={[
