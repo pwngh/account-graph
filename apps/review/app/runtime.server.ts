@@ -4,6 +4,8 @@ import { randomBytes } from 'node:crypto'
 
 export interface Reviewer {
   id: string
+  /** When the reviewer signed in. The Matches page lists what they decided since. */
+  since: number
   token: string
   name: string
   retraction: { targets: string[], always: boolean }

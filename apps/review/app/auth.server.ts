@@ -176,7 +176,7 @@ export async function openSession(request: Request, token: string, name: string,
   const id = randomUUID()
   const controller = new AbortController()
   const expires = Date.now() + lifetime * 1000
-  sessions.set(id, { id, name, token, retraction, controller, expires })
+  sessions.set(id, { id, name, token, retraction, controller, expires, since: Date.now() })
   const expiry = setTimeout(() => {
     sessions.delete(id)
     controller.abort()

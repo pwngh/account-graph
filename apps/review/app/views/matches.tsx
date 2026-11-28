@@ -13,13 +13,21 @@ export interface MatchesModel {
   queue: { pairs: Pair[], total: number, seen: number, more?: boolean, next?: string | null, window?: { kind: string, older?: boolean, oldest?: number, first?: string | null, last?: string | null } }
   /** Where a check of every record is, where the page is one. */
   older?: string
+  /** The pairs skipped in this visit, how many of the queue that leaves out, and what this reviewer joined or separated since signing in, the newest first. */
+  skipped: string[], passed: number, mine: { action: 'join' | 'separate', a: string, b: string, at: number }[]
   at: number, reasons?: Reason[], sides?: [Side, Side], effect?: string
   /** What each person in the queue is called, by ID. */
   called?: Record<string, Called>
 }
 
 export const pairName = ({ a, b }: { a: string, b: string }) => a + '\n' + b
-const pairPath = (pair: Pair, older?: string) => '/decide?' + new URLSearchParams({ ...(older && { older }), pair: pairName(pair) })
+/** The address of a pair in the queue. What is skipped and where a check of every record is go along. */
+const pairPath = (pair: Pair | undefined, older?: string, skipped: string[] = []) => {
+  const q = new URLSearchParams(older ? { older } : {})
+  for (const each of skipped) q.append('skip', each)
+  if (pair) q.set('pair', pairName(pair))
+  return '/decide' + (q.size ? '?' + q : '')
+}
 
 /** A score as a ring around its number. */
 function Dial({ score }: { score: number }) {
@@ -55,27 +63,33 @@ function MatchesPage({ model }: { model: MatchesModel }) {
   const pair = queue.pairs[model.at]
   const deck = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    // J joins, K separates and S skips, as the keys beside the buttons say. A key typed into a field is text.
+    // J joins, K separates, S skips and U undoes, as the keys beside the buttons say. A key typed into a field is text.
     function key(event: KeyboardEvent) {
       if (event.metaKey || event.ctrlKey || event.altKey || (event.target as Element).closest?.('input, textarea, select, [contenteditable]')) return
-      deck.current?.querySelector<HTMLElement>('.choices [aria-keyshortcuts="' + event.key.toLowerCase() + '"]')?.click()
+      const key = event.key.toLowerCase()
+      // U takes back the newest decision of this session, which is listed below the pair.
+      ;(key === 'u' ? document.querySelector<HTMLElement>('.decided [aria-keyshortcuts="u"]') : deck.current?.querySelector<HTMLElement>('.choices [aria-keyshortcuts="' + key + '"]'))?.click()
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   }, [])
   const groups: [string, string, Pair[]][] = [['High confidence', 'confident', queue.pairs.filter(each => each.level === 'same')], ['Possible', 'possible', queue.pairs.filter(each => each.level !== 'same')]]
   const next = queue.pairs[(model.at + 1) % queue.pairs.length]
-  return <DecisionScope key={pair ? pairName(pair) : 'none'}><section><PageHead view="decide" title="Matches"/><Tiles items={[[['Pending', 'pending'], amount(queue.total)], [['IDs checked', 'checked'], amount(queue.seen)]]}/>
+  return <DecisionScope key={pair ? pairName(pair) : 'none'}><section><PageHead view="decide" title="Matches">{model.passed > 0 && <Link className="button" to={pairPath(undefined, model.older)}>Restore skipped</Link>}</PageHead><Tiles items={[[['Pending', 'pending'], amount(queue.total)], [['IDs checked', 'checked'], amount(queue.seen)], model.passed > 0 && ['Skipped', amount(model.passed), 'This session']]}/>
     {queue.total > queue.pairs.length && <p className="meta">The strongest {amount(queue.pairs.length)} are listed. The rest follow as these are decided.</p>}
     {queue.window?.kind === 'recent' && queue.window.older && <p className="meta older">Pairs among sightings before <Time at={queue.window.oldest}/> are not in this queue. <Link to="/decide?older=all">Check older records</Link></p>}
     {queue.window?.kind === 'full' && <p className="meta older">{queue.window.first == null ? 'Checking every record.' : <>Checking every record, <bdi>{named(queue.window.first)}</bdi> to <bdi>{named(queue.window.last ?? '')}</bdi>.</>} {queue.more && queue.next ? <Link to={'/decide?' + new URLSearchParams({ older: queue.next })}>Next records</Link> : 'These are the last.'} <Link to="/decide">Back to recent</Link></p>}</section>
     {pair && sides ? <div className="deck" ref={deck}><div className="queue-rail scroll" tabIndex={0} role="region" aria-label="Queue">{groups.map(([name, term, list]) => list.length > 0 && <div key={name}><p className="inbox-age"><Term id={term}>{name}</Term><span className="count">{amount(list.length)}</span></p>
-      {list.slice(0, 40).map(each => <Link key={pairName(each)} className="queue-pair" aria-current={each === pair ? 'true' : undefined} to={pairPath(each, model.older)} preventScrollReset><span className="queue-names"><span title={each.a}>{named(each.a)}</span><span title={each.b}>{named(each.b)}</span></span><b>{percent(each.score)}</b><span className="meta">{each.kinds}</span><Meter share={each.score}/></Link>)}
+      {list.slice(0, 40).map(each => <Link key={pairName(each)} className="queue-pair" aria-current={each === pair ? 'true' : undefined} to={pairPath(each, model.older, model.skipped)} preventScrollReset><span className="queue-names"><span title={each.a}>{named(each.a)}</span><span title={each.b}>{named(each.b)}</span></span><b>{percent(each.score)}</b><span className="meta">{each.kinds}</span><Meter share={each.score}/></Link>)}
       {list.length > 40 && <p className="meta queue-more">{amount(list.length - 40)} more</p>}</div>)}</div>
       <section className="pair" aria-label="Pair"><div className="pair-top"><span className={'chip ' + pair.level}>{pair.level === 'same' ? 'High confidence' : 'Possible'}</span><span className="meta">{amount(model.at + 1)} of {amount(queue.pairs.length)}</span></div>
         <Versus left={sides[0]} right={sides[1]} pair={pair}/>
         <div className="pair-why"><p className="inbox-age"><Term id="evidence"/></p><Reasons reasons={reasons} context={context} subject={pair.a}/></div>
         <p className="pair-effect" role="status">{model.effect}</p>
-        <div className="choices"><DecisionForm context={context} intent="join" subject={pair.a} other={pair.b} look="primary" keys="j"/><DecisionForm context={context} intent="separate" subject={pair.a} other={pair.b} keys="k"/>{next !== pair && <Link className="button choice" to={pairPath(next, model.older)} aria-keyshortcuts="s" preventScrollReset>Skip<kbd>S</kbd></Link>}</div></section></div>
-      : <section><p className="muted">No pending matches</p></section>}</DecisionScope>
+        <div className="choices"><DecisionForm context={context} intent="join" subject={pair.a} other={pair.b} look="primary" keys="j"/><DecisionForm context={context} intent="separate" subject={pair.a} other={pair.b} keys="k"/>{pair && <Link className="button choice" to={pairPath(next !== pair ? next : undefined, model.older, [...model.skipped, pairName(pair)])} aria-keyshortcuts="s" preventScrollReset>Skip<kbd>S</kbd></Link>}</div></section></div>
+      : <section><p className="muted">{model.passed > 0 && queue.total > 0 ? 'All pending matches were skipped.' : 'No pending matches'}</p></section>}
+    {model.mine.length > 0 && <section><h2>This session</h2><ul className="decided">{model.mine.map((entry, i) => <li key={entry.action + entry.a + entry.b}>
+      <span className={'chip ' + (entry.action === 'join' ? 'same' : 'apart')}>{entry.action === 'join' ? 'Joined' : 'Separated'}</span> <Link to={subjectPath(entry.a)}><bdi title={entry.a}>{named(entry.a)}</bdi></Link> and <Link to={subjectPath(entry.b)}><bdi title={entry.b}>{named(entry.b)}</bdi></Link>{' '}
+      {/* Undo takes the decision back with a new one, as the original screen does. U undoes the newest. */}
+      <DecisionForm context={context} intent={entry.action === 'join' ? 'unjoin' : 'rejoin'} subject={entry.a} other={entry.b} look="link" label="Undo" keys={i === 0 ? 'u' : undefined}/></li>)}</ul></section>}</DecisionScope>
 }
