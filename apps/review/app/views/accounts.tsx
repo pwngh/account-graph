@@ -3,6 +3,7 @@ import { Form, Link, useLocation, useSearchParams } from 'react-router'
 import { subjectPath } from '../navigation'
 import { amount, Author, Badge, type Called, CalledContext, Compare, DecisionForm, knownOf, Reasons, type Reason, DecisionScope, PageHead, percent, Scroll, shownPhone, Subject, Table, Tiles, Time, type WriteContext } from './shared'
 import { ICONS, nameOf, PERSON, typeOf, type ClusterLayout } from './cluster-layout.js'
+import { Guide } from './guide'
 import { Term } from './terms'
 
 type Dates = Record<string, { firstSeen?: number, createdAt?: number }>
@@ -116,7 +117,7 @@ function ProfileView({ profile, data, context }: { profile: Profile, data: Accou
   const { subject, dates } = profile
   const [query] = useSearchParams()
   const { pathname } = useLocation()
-  if (!profile.known) return <section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi title={subject}>{headed(subject, data.called?.[subject])}</bdi></h2></div><DatesOf id={subject} dates={dates}/><p className="muted">No records</p></section>
+  if (!profile.known) return <section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi title={subject}>{headed(subject, data.called?.[subject])}</bdi></h2><Guide view="accounts"/></div><DatesOf id={subject} dates={dates}/><p className="muted">No records</p></section>
   const members = new Set(profile.listedMembers)
   const consent = profile.consent[0]
   const verdicts = new Map(profile.verdicts.map(v => [v.a === subject ? v.b : v.a, v]))
@@ -124,7 +125,7 @@ function ProfileView({ profile, data, context }: { profile: Profile, data: Accou
   const start = profile.start
   const pageHref = (offset: number) => { const q = new URLSearchParams(query); q.set('links', String(offset / 50)); return pathname + '?' + q + '#links' }
   const indices = Array.from({ length: Math.min(50, count - start) }, (_, i) => i)
-  return <><section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi title={subject}>{headed(subject, data.called?.[subject])}</bdi></h2><div className="row"><Link className="button" to={subjectPath(subject, 'journey')}>Journey</Link><DecisionForm context={context} subject={subject} intent="join" label="Join with…"/><DecisionForm context={context} subject={subject} intent="forget" label="Delete…" targets={data.retraction?.always ? undefined : data.retraction?.targets}/></div></div>
+  return <><section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi title={subject}>{headed(subject, data.called?.[subject])}</bdi></h2><Guide view="accounts"/><div className="row"><Link className="button" to={subjectPath(subject, 'journey')}>Journey</Link><DecisionForm context={context} subject={subject} intent="join" label="Join with…"/><DecisionForm context={context} subject={subject} intent="forget" label="Delete…" targets={data.retraction?.always ? undefined : data.retraction?.targets}/></div></div>
   <p className="meta" id="known"><bdi>{knownOf(subject, data.called?.[subject])}</bdi></p>
   {(data.called?.[subject]?.dob || data.called?.[subject]?.address) && <p className="meta" id="born"><bdi>{[data.called[subject].dob && 'Born ' + data.called[subject].dob, data.called[subject].address].filter(Boolean).join(' · ')}</bdi></p>}
     <DatesOf id={subject} dates={dates}/><Tiles items={[
