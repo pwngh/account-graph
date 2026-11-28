@@ -115,11 +115,14 @@ function Board({ data }) {
     {board.unplaced > 0 && <p className="meta">{amount(board.unplaced)} more at steps outside STAGES</p>}{board.columns.length === 1 && <p>Set STAGES to add a column for each step.</p>}</section>
     <div className="said" tabIndex="-1" ref={answer}><Answer result={said.data}/></div>
     <div className="board wide" tabIndex="0" role="region" aria-label="Columns">{board.columns.map((column, i) => {
+      // A column shows fifty people. Its foot reads it further on, and the other columns stay as they are.
+      const start = n => data.page?.column === n ? data.page.from : 0
+      const further = (n, from) => '/board/' + board.days + (from > 0 ? '?column=' + n + '&from=' + from : '') + '#column-' + n
       const name = column.step === null ? 'Missed calls' : column.step.toLowerCase() === 'missed calls' ? column.step + ', a step' : column.step
       const counts = [amount(column.people) + (column.people === 1 ? ' person' : ' people'), column.fresh > 0 && amount(column.fresh) + ' new', column.late > 0 && amount(column.late) + ' over ' + lasted(column.wait), column.done > 0 && amount(column.done) + (column.step === null ? ' reached' : ' advanced') + ' today']
       return <Fragment key={i}><section aria-label={name} id={'column-' + i} className={column.people ? undefined : 'idle'}><h2>{column.step === null ? <Term id="missedColumn">{name}</Term> : name}</h2><p className="counts">{counts.map((count, n) => count && <span key={n} className={n === 2 ? 'apart' : undefined}>{count}</span>)}</p>
-      {column.rows.length > 0 && <div className="scroll" tabIndex="0" role="region" aria-label={name + ': people'}><ol>{column.rows.map((row, j) => <Person key={row.subject} row={row} column={column} board={board} card={cards[data.columns[i][j]]}/>)}</ol></div>}
-      {column.people > column.rows.length && <p className="muted board-foot">{amount(column.rows.length)} of {amount(column.people)}</p>}</section>{column.step === null && textLane}</Fragment>
+      {column.rows.length > 0 && <div key={start(i)} className="scroll" tabIndex="0" role="region" aria-label={name + ': people'}><ol>{column.rows.map((row, j) => <Person key={row.subject} row={row} column={column} board={board} card={cards[data.columns[i][j]]}/>)}</ol></div>}
+      {(start(i) > 0 || column.people > column.rows.length) && <p className="muted board-foot">{column.rows.length > 0 ? amount(start(i) + 1) + ' to ' + amount(start(i) + column.rows.length) : 'None after ' + amount(start(i))} of {amount(column.people)}{start(i) > 0 && <> · <Link to={further(i, Math.max(0, start(i) - 50))} aria-label={'Previous 50 in ' + name}>Previous 50</Link></>}{start(i) + column.rows.length < column.people && <> · <Link to={further(i, start(i) + 50)} aria-label={'Next 50 in ' + name}>Next 50</Link></>}</p>}</section>{column.step === null && textLane}</Fragment>
     })}</div></>
 }
 

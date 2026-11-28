@@ -520,6 +520,8 @@ export interface BoardOptions {
   hours?: Hours
   /** The most rows of one column. Counts are of everybody. Defaults to 50. */
   limit?: number
+  /** One column read further on: `column` counts from 0, the missed calls, and `from` is how many of its rows to pass over. The other columns begin at their first row. */
+  page?: { column: number; from: number }
 }
 
 /** A person on the board, with the arrival credited with where they stand. */
@@ -2522,9 +2524,12 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       })
     },
 
-    async board({ steps, days = 90, timeZone, at = now(), returnHours = 0, limit = 50, hours }) {
+    async board({ steps, days = 90, timeZone, at = now(), returnHours = 0, limit = 50, hours, page }) {
       if (!Array.isArray(steps) || !steps.every((step) => typeof step?.name === 'string' && step.name)) throw malformed('`steps` must be a list, such as [{ name: "inquiry" }]')
       if (!Number.isSafeInteger(days) || days < 1 || days > 365) throw malformed('`days` must be an integer from 1 to 365')
+      if (page !== undefined && !(Number.isSafeInteger(page.column) && page.column >= 0 && page.column <= steps.length && Number.isSafeInteger(page.from) && page.from >= 0)) throw malformed('`page` must name a column of the board and a row to begin after')
+      // Read once, so that the rows traced to an ad are the rows answered, whatever the caller does with its object meanwhile.
+      const [further, passed] = [page?.column, page?.from ?? 0]
       const day = dayIn(at, timeZone)
       const today = dayStart(day, timeZone)
       const from = dayStart(new Date(Date.parse(day) - (days - 1) * DAY).toISOString().slice(0, 10), timeZone)
@@ -2544,7 +2549,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const { columns, unplaced } = board([...people.values()], { steps: steps.map(({ name, wait }) => ({ name, ...(wait && { wait: wait * HOUR }) })), at, today, ...(returnHours > 0 && { returnWait: returnHours * HOUR }), ...(hours && { hours }) })
         // Only those shown are traced to an ad, because that is the slow part.
         const shown: BoardColumn<BoardRow>[] = []
-        const placed = columns.flatMap((column) => column.rows.slice(0, limit))
+        const rowsOf = (column: typeof columns[number], i: number) => column.rows.slice(further === i ? passed : 0, (further === i ? passed : 0) + limit)
+        const placed = columns.flatMap(rowsOf)
         // A record may have reached this step before the confirmed call whose outcome the row shows.
         const forPlace = (place: typeof placed[number]) => {
           const call = place.miss ?? parties.get(place.outcome?.transactionId ?? '')
@@ -2553,9 +2559,9 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const asks = placed.map(forPlace)
         const creditOf = await creditAll(tx, asks, 90 * DAY, 2, undefined, asks.flatMap(ask => ask.call ?? []))
         const calls = new Map((await tx.callsWith(placed.flatMap((place) => place.call?.id ?? []))).map((call) => [call.id, call]))
-        for (const column of columns) {
+        for (const [i, column] of columns.entries()) {
           const rows: BoardRow[] = []
-          for (const place of column.rows.slice(0, limit)) {
+          for (const place of rowsOf(column, i)) {
             const { call: newest, miss, ...rest } = place
             const ask = forPlace(place)
             const { credited } = creditOf(ask.subject, ask.at, ask.call)

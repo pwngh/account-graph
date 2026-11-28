@@ -1026,6 +1026,23 @@ test('a reviewer who says a caller was reached is shown a Board without them', a
   }
 })
 
+test('the review API reads one column of the Board further on, and refuses half a page', async () => {
+  const { graph, base, close } = await http({ now: () => NOW })
+  try {
+    const miss = (i: number) => ({ type: 'call' as const, key: `m${i}`, at: NOW - (i + 1) * 60_000, direction: 'inbound' as const, from: `+1555867${String(5300 + i)}`, to: '+15551230001', duration: 20, result: { answered: false } })
+    assert.ok((await graph.record({ entries: Array.from({ length: 60 }, (_, i) => miss(i)) })).results.every((result) => result.ok))
+    const ask = async (query: string) => { const answer = await fetch(`${base}/review/api/board${query}`, { headers: { authorization: 'Bearer reviewer' } }); return [answer.status, answer.ok ? ((await answer.json()) as any).columns[0] : null] as const }
+    const [, first] = await ask('')
+    const [, second] = await ask('?column=0&from=50')
+    // Sixty wait. The first read has the fifty who have waited longest, and the second the ten after them.
+    assert.deepEqual([first.people, first.rows.length, second.people, second.rows.length], [60, 50, 60, 10])
+    assert.deepEqual([first.rows[0].missed, first.rows[49].missed, second.rows[0].missed, second.rows[9].missed], ['m59', 'm10', 'm9', 'm0'])
+    for (const query of ['?column=0', '?from=50', '?column=9&from=0', '?column=0&from=-1', '?column=0&from=1.5', '?column=&from=', '?column=0&from=%20', '?column=0&from=50.000000000000001', '?column=0&from=5e1']) assert.equal((await ask(query))[0], 400, query)
+  } finally {
+    await close()
+  }
+})
+
 test('answers of a report are shared until something is written', async () => {
   let now = NOW
   const { graph, local, close } = await memory({ now: () => now })
