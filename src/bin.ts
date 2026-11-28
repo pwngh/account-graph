@@ -5,7 +5,7 @@
  *   account-graph                    the server: the six calls, browsers, Twilio, the reviewer screen, and the workers
  *   account-graph rebuild            take the policy that is set, and work every group out again
  *   account-graph verify             compare the stored groups with that
- *   account-graph prune --before DAY delete old sightings, events and receipts
+ *   account-graph prune --before DAY [--dry-run] delete old sightings, events and receipts
  *   account-graph retry ID [PLATFORM] put a conversion that failed back in line
  *   account-graph stats | alerts test | staff-link URL | events new-epoch
  *   account-graph sends [pause REASON | resume]   stop sends to ad platforms in every process, or let them go again
@@ -464,6 +464,18 @@ export async function serve(env: Env, log: (line: string) => void = console.log)
 /** How long a stop may take before the process ends anyway. Compose gives it fifteen seconds. */
 const STOP_WITHIN = 10_000
 
+/** The day of a prune, as a time, and whether it is a dry run. A day after today is refused without `--force`, because it takes every sighting and event there is. */
+function pruneArgs(rest: readonly string[], usage: (text: string) => never): { before: number; dryRun: boolean } {
+  const flags = new Set<string>(rest.filter((each) => each === '--dry-run' || each === '--force'))
+  const asked = rest.filter((each) => !flags.has(each))
+  const day = asked[0] === '--before' && asked.length === 2 ? asked[1]! : ''
+  const before = Date.parse(`${day}T00:00:00Z`)
+  // A day that is not on the calendar, such as February 30, is refused, not read as another.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(before) || new Date(before).toISOString().slice(0, 10) !== day) usage('prune --before YYYY-MM-DD [--dry-run] [--force]')
+  if (before > Date.now() && !flags.has('--force')) throw new Error(`${day} is after today, so every sighting and event there is would be deleted. Add --force if that is meant`)
+  return { before, dryRun: flags.has('--dry-run') }
+}
+
 /** Runs one command and says what came of it. */
 export async function command(env: Env, args: readonly string[], log: (line: string) => void = console.log): Promise<void> {
   const [name, ...rest] = args
@@ -479,7 +491,9 @@ export async function command(env: Env, args: readonly string[], log: (line: str
     return show({ ...counts, share: round(share), low: round(low), high: round(high) })
   }
   const { graph: options } = configFrom(env)
-  const graph = localGraph({ ...options, workers: false, timeoutMs: 24 * 3_600_000 }, { adopt: name === 'rebuild' })
+  // What prune is asked is checked before the database is opened, because opening it can write.
+  const pruning = name === 'prune' ? pruneArgs(rest, usage) : undefined
+  const graph = localGraph({ ...options, workers: false, timeoutMs: 24 * 3_600_000 }, { adopt: name === 'rebuild', existing: true })
   try {
     const { engine, ops } = await internalsOf(graph)!()
     switch (name) {
@@ -490,14 +504,23 @@ export async function command(env: Env, args: readonly string[], log: (line: str
         return show({ changes, policy: { hash: policy.hash, builtWith: policy.builtWith ?? null, due: policy.due } })
       }
       case 'prune': {
-        const day = rest[0] === '--before' ? rest[1] : undefined
-        const before = Date.parse(`${day}T00:00:00Z`)
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(day ?? '') || Number.isNaN(before)) usage('prune --before YYYY-MM-DD')
-        const pruned = await engine.graph.prune(before, { by: 'command line' })
+        const { before, dryRun } = pruning!
+        const pruned = await engine.graph.prune(before, { by: 'command line' }, dryRun)
         // A key may be sent again for as long as its receipt is kept, so those stay a year whatever is asked.
         const year = Math.min(before, engine.now() - RECEIPT_RETENTION)
-        const { events, receipts } = await engine.store.write(async (tx) => ({ events: await tx.pruneEvents(before), receipts: await tx.pruneReceipts(year) }))
-        return show({ pruned, events, receipts })
+        const undo = new Error('dry run')
+        let counted = { events: 0, receipts: 0 }
+        try {
+          counted = await engine.store.write(async (tx) => {
+            const found = { events: await tx.pruneEvents(before), receipts: await tx.pruneReceipts(year) }
+            if (!dryRun) return found
+            counted = found
+            throw undo
+          }, { whole: true })
+        } catch (error) {
+          if (error !== undo) throw error
+        }
+        return show({ ...(dryRun && { dryRun: true }), pruned, ...counted })
       }
       case 'retry': {
         const [id, platform] = rest

@@ -471,7 +471,8 @@ export interface Graph {
    * the answer that stands. `history`, `consentHistory` and `asOf` lose what
    * was deleted. Returns how many went.
    */
-  prune(before: number, why?: Why): Promise<number>
+  /** With `dryRun`, counts what would go and deletes nothing. */
+  prune(before: number, why?: Why, dryRun?: boolean): Promise<number>
   /**
    * The policy this graph runs, and whether the stored clusters were built
    * with it. `due` means they were not, or that it is not known. Then call `rebuild`.
@@ -3417,12 +3418,23 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       })
     },
 
-    async prune(before, why) {
+    async prune(before, why, dryRun = false) {
       if (!Number.isSafeInteger(before)) throw malformed('prune requires `before`, an integer in epoch milliseconds')
-      return store.write(async (tx) => {
-        await decide(tx, 'prune', [String(before)], why)
-        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before)) + ((await tx.pruneLeases(before)) + (await tx.pruneLinks(before))) + (await tx.pruneNotLeads(before))
-      })
+      const undo = new Error('dry run')
+      let counted = 0
+      try {
+        return await store.write(async (tx) => {
+          await decide(tx, 'prune', [String(before)], why)
+          const pruned = (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before)) + ((await tx.pruneLeases(before)) + (await tx.pruneLinks(before))) + (await tx.pruneNotLeads(before))
+          if (!dryRun) return pruned
+          // Counted inside the write, which is then undone.
+          counted = pruned
+          throw undo
+        }, { whole: true })
+      } catch (error) {
+        if (error !== undo) throw error
+        return counted
+      }
     },
 
     decisions() {
