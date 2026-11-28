@@ -134,6 +134,8 @@ services:
       # Lets an open page update by itself.
       REVIEW_EVENTS_TOKEN: ${GRAPH_TOKEN:-change-me-service-token}
       REVIEW_LEGACY_URL: ${REVIEW_LEGACY_URL:-}
+      # With a proxy of your own in front: true, or the number of proxies.
+      REVIEW_TRUST_PROXY: ${REVIEW_TRUST_PROXY:-}
 
 volumes:
   graph-data:
