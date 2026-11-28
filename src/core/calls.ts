@@ -148,7 +148,7 @@ const SKEW = 5_000
 const STAGED = 60_000
 const TOLL_FREE = /^\+18(00|33|44|55|66|77|88)\d{7}$/
 /** What a hidden caller's number is reported as: the words anonymous, restricted, unavailable, blocked and unknown, spelled on a keypad. */
-const HIDDEN = new Set(['+266696687', '+7378742833', '+86282452253', '+2562533', '+8656696'])
+export const HIDDEN = new Set(['+266696687', '+7378742833', '+86282452253', '+2562533', '+8656696'])
 
 /**
  * The note left on a visitor who tapped a phone number. It is filed by the

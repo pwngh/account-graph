@@ -63,6 +63,9 @@
 
 ### People
 
+- The graph keeps what people are called, for people to read: the name of a `profile` on its record, and a phone number or an email once, beside its hash. A `call` or a `text` keeps the other side's number the same way. Matching still reads only the hashes.
+- `forget` deletes a record's name with it, and a number or an email goes when its last holder does.
+- `POST /review/api/called` takes up to 2,000 IDs and answers what to call each: the name, phone and email kept of the records in its group, and for a record the graph made of a browser or a phone, the record of your own that stands for it.
 - `phone` keys exclude extension digits when recording a line or looking it up. Older keys made with extension digits need the [original records](docs/identify.md#fields) to correct them.
 - `split` cuts guessed links before staff merges and restores each merge it can keep while all separations hold.
 - `call_update` withdraws identity evidence for that call while its original holders still count toward shared identifiers. See the [matching rules](docs/matching.md).

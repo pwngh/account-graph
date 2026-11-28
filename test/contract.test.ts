@@ -147,6 +147,70 @@ everywhere('a profile with an IP that is not an address is refused and leaves no
   return [bad, good.ok]
 })
 
+everywhere('a record keeps its name, a number and an email are kept beside their hashes, and a forgotten person keeps nothing', async ({ graph, local }) => {
+  const { engine } = await internalsOf(local)!()
+  const caller = `caller:${hashPhone('+15558675301')}`
+  const profile = (key: string, at: number, subject: string, facts: object) => ({ type: 'profile', key, at, subject, facts })
+  const sent = await graph.record({ entries: [
+    profile('one', AT, 'contact:one', { name: { first: ' Casey ', last: 'Known' }, phone: '(555) 867-5301', email: ' Casey@Example.org ' }),
+    profile('two', AT, 'contact:two', { email: 'two@example.org' }),
+    { type: 'call', key: 'C1', at: AT, direction: 'inbound', from: '5558675301', to: '5551230001', result: { answered: false } },
+    // A withheld number is reported as the word anonymous on a keypad. It is nobody's number.
+    { type: 'call', key: 'C2', at: AT, direction: 'inbound', from: '+266696687', to: '5551230001', result: { answered: false } },
+    { type: 'text', key: 'T1', at: AT, direction: 'inbound', from: '+15558675309', to: '5551230001', text: 'hello' },
+  ] as any })
+  assert.deepEqual(sent.results.map((each) => each.ok), [true, true, true, true, true])
+  const texter = `caller:${hashPhone('+15558675309')}`
+  const asked = ['contact:one', 'contact:two', caller, texter, 'call:C2', 'contact:nobody']
+  const first = await engine.graph.called(asked)
+  assert.deepEqual(first['contact:one'], { name: 'Casey Known', phone: '+15558675301', email: 'Casey@Example.org' })
+  assert.deepEqual(first['contact:two'], { email: 'two@example.org' })
+  assert.deepEqual(first[texter], { phone: '+15558675309' })
+  assert.equal(first[caller]!.phone, '+15558675301')
+  assert.deepEqual([first['call:C2'], first['contact:nobody']], [undefined, undefined])
+  // Joined to a record of yours, the caller is called by that record's name, and says which record it is.
+  await graph.decide({ key: 'join', at: AT + 1, by: 'dana', action: 'merge', pairs: [{ a: caller, b: 'contact:one' }] })
+  const joined = await engine.graph.called([caller])
+  assert.deepEqual(joined[caller], { name: 'Casey Known', phone: '+15558675301', email: 'Casey@Example.org', record: 'contact:one' })
+  // Of each value the newest statement stands, whichever arrives first. A later profile with only a phone leaves the name.
+  await graph.record({ entries: [profile('older', AT - 1000, 'contact:one', { name: { first: 'Old', last: 'Name' }, email: 'old@example.org' }), profile('newer', AT + 1000, 'contact:one', { phone: '555-867-5302' })] as any })
+  const later = await engine.graph.called(['contact:one'])
+  assert.deepEqual(later['contact:one'], { name: 'Casey Known', phone: '+15558675302', email: 'Casey@Example.org' })
+  // Forgotten, a record keeps nothing, and the caller that was joined to it is called by its own number again.
+  await graph.forget({ key: 'forget-one', at: AT + 2000, by: 'dana', subjects: ['contact:one'], platforms: 'report' })
+  const after = await engine.graph.called(asked)
+  assert.equal(after['contact:one'], undefined)
+  assert.deepEqual(after[caller], { phone: '+15558675301' })
+  await graph.forget({ key: 'forget-caller', at: AT + 3000, by: 'dana', subjects: [caller], platforms: 'report' })
+  assert.equal((await engine.graph.called([caller]))[caller], undefined)
+  // The number went with its last holder. A record that later holds the same hash, sent already hashed, is not shown it.
+  const hashed = await graph.record({ entries: [profile('three', AT + 4000, 'contact:three', { identifiers: [`phone:${hashPhone('+15558675301')}`] })] as any })
+  assert.deepEqual(hashed.results.map((each) => each.ok), [true])
+  // Nor does a call you place to that number make it readable on a record that never gave it.
+  const placed = await graph.record({ entries: [{ type: 'call', key: 'C3', at: AT + 5000, direction: 'outbound', from: '5551230001', to: '5558675301', result: { answered: true } }] as any })
+  assert.deepEqual(placed.results.map((each) => each.ok), [true])
+  const again = await engine.graph.called(['contact:three', '__proto__'])
+  assert.deepEqual(again, {})
+  return [first, joined, later, after, again]
+})
+
+test('a reviewer screen asks what to call the people it lists, in a body and only with a reviewer or the service token', async () => {
+  const { graph, base, close } = await http({ serviceTokens: [{ name: 'intake', token: 'limited-token-of-thirty-two-chars!', calls: { record: true } }] })
+  const ask = async (body: unknown, token = 'reviewer') => {
+    const response = await fetch(`${base}/review/api/called`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    return { status: response.status, body: (await response.json()) as any }
+  }
+  try {
+    await graph.record({ entries: [{ type: 'profile', key: 'one', at: AT, subject: 'contact:one', facts: { name: { first: 'Casey', last: 'Known' }, phone: '5558675301' } }] as any })
+    assert.deepEqual(await ask({ subjects: ['contact:one', 'contact:nobody'] }), { status: 200, body: { 'contact:one': { name: 'Casey Known', phone: '+15558675301' } } })
+    assert.equal((await ask({ subjects: ['contact:one'] }, 'service')).status, 200)
+    assert.equal((await ask({ subjects: ['contact:one'] }, 'wrong')).status, 401)
+    for (const bad of [{}, { subjects: 'contact:one' }, { subjects: [1] }, { subjects: [''] }, { subjects: Array.from({ length: 2001 }, (_, i) => 'contact:' + i) }]) assert.equal((await ask(bad)).status, 400, JSON.stringify(bad).slice(0, 60))
+  } finally {
+    await close()
+  }
+})
+
 everywhere('a creation date belongs to the exact record and the newest dated profile stands in either arrival order', async ({ graph, local }) => {
   const { engine } = await internalsOf(local)!()
   const records = ['contact:one', 'contact:two']

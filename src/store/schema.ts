@@ -104,6 +104,14 @@ create table ${schema}.decision (
   reason text,
   hash text not null
 );
+create table ${schema}.detail (
+  subject text not null,
+  field text not null,
+  value text not null,
+  at bigint not null,
+  key text collate "C" not null,
+  primary key (subject, field)
+);
 create table ${schema}.edge (
   subject text not null,
   identifier text not null,
@@ -167,7 +175,8 @@ create table ${schema}.flow (
 create table ${schema}.identifier (
   id text not null,
   fanout integer not null,
-  ignored boolean default false not null
+  ignored boolean default false not null,
+  shown text
 );
 create table ${schema}.job (
   name text not null,

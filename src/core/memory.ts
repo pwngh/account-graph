@@ -1,3 +1,4 @@
+import type { DetailField, DetailSaid, Details } from './details.ts'
 import { affectedMisses, callTraces, creditSubject, ownerOf, partyOf, reopenWaits, stopCallJob, withoutGuesses } from './call-party.ts'
 import { randomUUID } from 'node:crypto'
 import { malformed } from '../contract/fault.ts'
@@ -45,6 +46,9 @@ export function createMemoryStore() {
   const byCluster = new KeptMap<Subject, Set<Subject>>(journal)
   const sightings = new KeptMap<Subject, Sighting[]>(journal)
   const created = new KeptMap<Subject, { createdAt: number; at: number; key: string }>(journal)
+  const details = new KeptMap<Subject, Partial<Record<DetailField, DetailSaid>>>(journal)
+  // A phone number or an email beside its hash, while somebody holds it.
+  const shown = new KeptMap<Identifier, string>(journal)
   const touches = new KeptMap<Subject, { touch: Touch; call: string | undefined }[]>(journal)
   const separated = new KeptMap<Subject, Set<Subject>>(journal)
   const flows = new KeptMap<string, FlowEdge>(journal)
@@ -229,7 +233,10 @@ export function createMemoryStore() {
       bySubject.get(subject)?.delete(identifier)
       const holders = byIdentifier.get(identifier)
       holders?.delete(subject)
-      if (!holders?.size) byIdentifier.delete(identifier)
+      if (!holders?.size) {
+        byIdentifier.delete(identifier)
+        shown.delete(identifier)
+      }
     }
   }
 
@@ -349,7 +356,10 @@ export function createMemoryStore() {
       for (const identifier of bySubject.get(subject)?.keys() ?? []) {
         const holders = byIdentifier.get(identifier)!
         holders.delete(subject)
-        if (holders.size === 0) byIdentifier.delete(identifier)
+        if (holders.size === 0) {
+          byIdentifier.delete(identifier)
+          shown.delete(identifier)
+        }
       }
       bySubject.delete(subject)
       textStops.delete(subject)
@@ -361,6 +371,7 @@ export function createMemoryStore() {
       factStatements.delete(subject)
       sightings.delete(subject)
       created.delete(subject)
+      details.delete(subject)
       touches.delete(subject)
       for (const [id, outcome] of outcomes) {
         if (outcome.subject !== subject) continue
@@ -473,6 +484,38 @@ export function createMemoryStore() {
       }
       created.set(subject, { createdAt, at, key })
       return true
+    },
+
+    async setDetails(subject, given, at, key) {
+      const kept = { ...details.get(subject) }
+      let changed = false
+      for (const [field, value] of Object.entries(given) as [DetailField, string][]) {
+        const before = kept[field]
+        if (before && later(before, { at, key }) >= 0) continue
+        kept[field] = { value, at, key }
+        changed = true
+      }
+      if (changed) details.set(subject, kept)
+    },
+
+    async setShown(subject, given) {
+      for (const [identifier, value] of given) if (bySubject.get(subject)?.has(identifier)) shown.set(identifier, value)
+    },
+
+    async detailsOf(subjects) {
+      const found = new Map<Subject, Details>()
+      for (const subject of subjects) {
+        const kept = details.get(subject)
+        const of: Details = kept ? Object.fromEntries(Object.entries(kept).map(([field, said]) => [field, said.value])) : {}
+        // The number and the email it was seen with last. A tie goes to the smaller identifier, as in PostgreSQL.
+        const held = [...(bySubject.get(subject)?.values() ?? [])].filter((edge) => shown.has(edge.identifier)).sort((a, b) => b.last - a.last || (a.identifier < b.identifier ? -1 : 1))
+        const phone = held.find((edge) => !edge.identifier.startsWith('email:'))
+        const email = held.find((edge) => edge.identifier.startsWith('email:'))
+        if (phone) of.phone = shown.get(phone.identifier)!
+        if (email) of.email = shown.get(email.identifier)!
+        if (Object.keys(of).length > 0) found.set(subject, of)
+      }
+      return found
     },
 
     async createdAtStands(subject, createdAt, at, key) {
@@ -1003,7 +1046,10 @@ export function createMemoryStore() {
           const holders = byIdentifier.get(identifier)!
           own.delete(identifier)
           holders.delete(subject)
-          if (!holders.size) byIdentifier.delete(identifier)
+          if (!holders.size) {
+            byIdentifier.delete(identifier)
+            shown.delete(identifier)
+          }
           if (!own.size) {
             bySubject.delete(subject)
             assign(subject, undefined)
@@ -1428,7 +1474,10 @@ export function createMemoryStore() {
     },
 
     async addDecision(decision) {
-      if (decision.action === 'forget') created.delete(decision.about[0]!)
+      if (decision.action === 'forget') {
+        created.delete(decision.about[0]!)
+        details.delete(decision.about[0]!)
+      }
       decisions.push({ ...decision, about: [...decision.about] })
     },
 
@@ -1483,7 +1532,7 @@ export function createMemoryStore() {
   }
 
   /** Every collection, copied together, so what two of them share stays shared. */
-  const collections = { bySubject, byIdentifier, profiles, hidden, withdrawals, factStatements, ignored, labels, byComponent, byCluster, sightings, created, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, reservedBySubject, reservedByIdentifier, callLines, lineKinds, texts, textStops, phoneProfiles, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
+  const collections = { bySubject, byIdentifier, profiles, hidden, withdrawals, factStatements, ignored, labels, byComponent, byCluster, sightings, created, details, shown, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, reservedBySubject, reservedByIdentifier, callLines, lineKinds, texts, textStops, phoneProfiles, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
   const snapshot = () => structuredClone({ ...collections, lastEvent, epoch, writes, built, jobs: outbox.jobs, ops: ops.kept })
 
   let tail: Promise<unknown> = Promise.resolve()

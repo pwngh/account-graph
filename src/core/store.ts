@@ -3,6 +3,7 @@ import type { GraphEvent } from '../contract/api.ts'
 import type { Delivery, EventHead, NewEvent } from './events.ts'
 import type { Receipt } from './receipts.ts'
 import type { Said, SaidOf, Topic } from './said.ts'
+import type { Details } from './details.ts'
 import { byKey } from './said.ts'
 import type { Job, OutboxStore } from './outbox.ts'
 import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Payment, Sighting, Subject, Touch } from '../contract/types.ts'
@@ -115,6 +116,12 @@ export interface Tx {
   /** Keeps the newest creation statement by time and then key. */
   setCreatedAt(subject: Subject, createdAt: number, at: number, key: string): Promise<boolean>
   createdAtStands(subject: Subject, createdAt: number, at: number, key: string): Promise<boolean>
+  /** Keeps what is said of a record itself, as given: its name. Of each field, the newest by time and then key stands. */
+  setDetails(subject: Subject, details: Details, at: number, key: string): Promise<void>
+  /** Keeps a phone number or an email beside its hash, for people to read. Only an identifier this subject holds takes one, and it goes when the last holder does. */
+  setShown(subject: Subject, shown: ReadonlyMap<Identifier, string>): Promise<void>
+  /** What is kept of each of these exact subjects that has any: its name, and of the numbers and emails kept for it to read, the one it was seen with last. */
+  detailsOf(subjects: readonly Subject[]): Promise<Map<Subject, Details>>
   /** Which lines can speak about texts for these subjects, including an earlier STOP from a withdrawn line. */
   textNumbers(subjects: readonly Subject[]): Promise<TextNumber[]>
   /** Both visible and withdrawn edges can establish who shared a phone before a withdrawal. */

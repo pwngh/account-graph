@@ -7,6 +7,7 @@ import type { Feed, KeptAlert, OpsStore } from '../core/ops.ts'
 import type { Job, JobState, OutboxStore } from '../core/outbox.ts'
 import type { GraphEvent } from '../contract/api.ts'
 import type { Receipt } from '../core/receipts.ts'
+import type { Details } from '../core/details.ts'
 import type { SaidOf, Topic } from '../core/said.ts'
 import type { AddedSightings, Store, Tx } from '../core/store.ts'
 import { CLICK_IDS } from '../core/touch.ts'
@@ -296,7 +297,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         await hideEdges(db, hidden)
         const ids = hidden.map(row => row.identifier)
         await db.query(`with gone as (delete from ${t('edge')} where subject = $1 and identifier = any($2::text[]) returning identifier)
-          update ${t('identifier')} set fanout = fanout - 1 where id in (select identifier from gone)`, [subject, ids])
+          update ${t('identifier')} set fanout = fanout - 1, shown = case when fanout > 1 then shown end where id in (select identifier from gone)`, [subject, ids])
         await db.query(`delete from ${t('identifier')} where id = any($1::text[]) and fanout = 0 and not ignored`, [ids])
       }
       return hidden.map(row => row.identifier)
@@ -335,13 +336,13 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       }
       await db.query(`delete from ${t('said')} where topic = 'party' and data->>'subject' = $1 and ($2::text[] is null or about = any($2))`, [subject, only ?? null])
       if (only) return callJobs
-      await db.query(`with created as (delete from ${t('profile_created')} where subject = $1)
+      await db.query(`with created as (delete from ${t('profile_created')} where subject = $1), details as (delete from ${t('detail')} where subject = $1)
         , facts as (delete from ${t('fact_withdrawal')} where subject = $1), hidden as (delete from ${t('withdrawn_edge')} where subject = $1)
         , stops as (delete from ${t('text_stop')} where subject = $1 or line = $1), phones as (delete from ${t('text_phone_profile')} where subject = $1) delete from ${t('call_evidence')} where subject = $1`, [subject])
       if (!ids.length) await dropCallNotices(db, ids, [subject], [], [creditSubject(subject)])
       const { rows: left } = await db.query(
         `with gone as (delete from ${t('edge')} where subject = $1 returning identifier)
-         update ${t('identifier')} set fanout = fanout - 1 where id in (select identifier from gone) returning id, fanout`,
+         update ${t('identifier')} set fanout = fanout - 1, shown = case when fanout > 1 then shown end where id in (select identifier from gone) returning id, fanout`,
         [subject],
       )
       // What nobody holds any more goes too, unless it is muted, because a mute is a decision and stands for whoever holds it next.
@@ -435,6 +436,38 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
          on conflict (subject) do update set created_at = excluded.created_at, at = excluded.at, key = excluded.key
          where (p.at, p.key) < (excluded.at, excluded.key) returning 1`, [subject, createdAt, at, key])
       return rows.length > 0 || this.createdAtStands(subject, createdAt, at, key)
+    },
+
+    async setDetails(subject, given, at, key) {
+      const fields = Object.keys(given)
+      if (fields.length === 0) return
+      await db.query(
+        `insert into ${t('detail')} as d (subject, field, value, at, key) select $1, f, v, $4, $5 from unnest($2::text[], $3::text[]) g(f, v)
+         on conflict (subject, field) do update set value = excluded.value, at = excluded.at, key = excluded.key where (d.at, d.key) < (excluded.at, excluded.key)`,
+        [subject, fields, Object.values(given), at, key])
+    },
+
+    async setShown(subject, given) {
+      if (given.size === 0) return
+      await db.query(`update ${t('identifier')} i set shown = g.value from unnest($2::text[], $3::text[]) g(id, value) where i.id = g.id and i.shown is distinct from g.value
+        and exists (select from ${t('edge')} e where e.subject = $1 and e.identifier = i.id)`, [subject, [...given.keys()], [...given.values()]])
+    },
+
+    async detailsOf(subjects) {
+      const found = new Map<Subject, Details>()
+      if (subjects.length === 0) return found
+      // What is said of the record itself, then the number and the email it was seen with last.
+      const { rows } = await db.query(
+        `select subject, field, value from ${t('detail')} where subject = any($1::text[])
+         union all
+         select subject, field, shown from (
+           select distinct on (e.subject, field) e.subject, case when starts_with(i.id, 'email:') then 'email' else 'phone' end as field, i.shown
+           from ${t('edge')} e join ${t('identifier')} i on i.id = e.identifier
+           where e.subject = any($1::text[]) and i.shown is not null
+           order by e.subject, field, e.last_at desc, i.id collate "C"
+         ) seen`, [subjects])
+      for (const row of rows) found.set(row.subject, { ...found.get(row.subject), [row.field]: row.value })
+      return found
     },
 
     async createdAtStands(subject, createdAt, at, key) {
@@ -976,7 +1009,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         if (next) await db.query(`update ${t('edge')} set first_at = $3, last_at = $4, sightings = $5 where subject = $1 and identifier = $2`, [subject, identifier, next.first, next.last, next.count])
         else {
           await db.query(`delete from ${t('edge')} where subject = $1 and identifier = $2`, [subject, identifier])
-          await db.query(`update ${t('identifier')} set fanout = fanout - 1 where id = $1`, [identifier])
+          await db.query(`update ${t('identifier')} set fanout = fanout - 1, shown = case when fanout > 1 then shown end where id = $1`, [identifier])
         }
       }
       if (changes.length) {

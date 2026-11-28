@@ -7,7 +7,7 @@ import { canonical } from '../contract/json.ts'
 import { no, ok } from '../contract/outcome.ts'
 import type { Decided, Outcome } from '../contract/outcome.ts'
 import type { AttributedTouch, Candidate, Counterparty, Identifier, Reason, Subject, Touch } from '../contract/types.ts'
-import { callState, followUp, recordCall, ringing, settleCall, settleLead } from './calls.ts'
+import { callState, followUp, HIDDEN, recordCall, ringing, settleCall, settleLead } from './calls.ts'
 import type { CallOptions, Call } from './calls.ts'
 import type { Engine, Inside, Parts } from './engine.ts'
 import { cursorOf, seqOf } from './events.ts'
@@ -228,6 +228,23 @@ export function createSix(engine: Engine, options: SixOptions) {
 
   const jobsOf = async (inside: Inside, transactionId: string): Promise<Delivery[]> => (inside.outbox ? (await inside.outbox.get(transactionId)).map(delivery) : [])
 
+  /** A number beside its hash, under either kind a line check can give it, and the record the graph makes of that number. One that cannot be read, or was withheld, is no number. */
+  function shownNumber(theirs: string | undefined): { line?: Subject; shown: [Identifier, string][] } {
+    if (theirs === undefined) return { shown: [] }
+    try {
+      const phone = normalizePhone(theirs, country)
+      const hash = hashPhone(phone, country)
+      return HIDDEN.has(phone) ? { shown: [] } : { line: `caller:${hash}`, shown: [[`phone:${hash}`, phone], [`voip:${hash}`, phone]] }
+    } catch {
+      return { shown: [] }
+    }
+  }
+  /** Keeps the other side's number of a call or a text, on the record the graph made of that number, where that record holds it. */
+  async function keepNumber(tx: Tx, theirs: string | undefined): Promise<void> {
+    const { line, shown } = shownNumber(theirs)
+    if (line) await tx.setShown(line, new Map(shown))
+  }
+
   /** Writes one entry, or where it was written before says how it stands. */
   async function write(inside: Inside, entry: RecordEntry, again: boolean): Promise<Values[RecordEntry['type']]> {
     const { graph, outbox, service } = inside
@@ -242,6 +259,12 @@ export function createSix(engine: Engine, options: SixOptions) {
         if (found.identifiers.length === 0 && !entry.speaker) throw Object.assign(malformed('No fact could be used'), { refusal: { reason: 'NO_FACT_USED', notes: found.notes } })
         const { notes, speakers } = await service.identify({ subject: entry.subject, ...entry.facts, at: entry.at, ...(entry.event && { event: entry.event }), ...(entry.speaker && { speaker: entry.speaker }) }, entry.key)
         const stands = entry.createdAt === undefined || await inside.tx.setCreatedAt(entry.subject, entry.createdAt, entry.at, entry.key)
+        // What they are called, as given. The name is kept of the record. A number and an email are kept once, beside their hash.
+        // What somebody else said of themselves, as a speaker, is not this record's.
+        const { name, phone, email: address } = entry.facts
+        const full = name && `${name.first} ${name.last}`.replace(/\s+/g, ' ').trim()
+        if (full) await inside.tx.setDetails(entry.subject, { name: full }, entry.at, entry.key)
+        await inside.tx.setShown(entry.subject, new Map([...shownNumber(phone).shown, ...(address === undefined ? [] : [[email(address), address.trim()] as [Identifier, string]])]))
         // Of whoever speaks too. Once they are deleted, a late retry must not bring them back.
         return { value: { changes: inside.changes, notes }, subjects: [entry.subject, ...speakers], stands }
       }
@@ -302,6 +325,7 @@ export function createSix(engine: Engine, options: SixOptions) {
         const { type: _, key, result, ...rest } = entry
         const call: Call = { id: key, ...rest, ...result }
         const recorded = await recordCall(graph, call, { ...service.calling(), said: { key: `call ${entry.at} ${canonical(result ?? null)}`, at: entry.at } })
+        await keepNumber(inside.tx, entry.direction === 'inbound' ? entry.from : entry.to)
         // Of two reports at one time, the same one stands whichever came first.
         const stands = !result || newest(await inside.tx.saidOf('result', key))?.key === `call ${entry.at} ${canonical(result)}`
         const line = !again && await inside.tx.callLine(key)
@@ -336,6 +360,7 @@ export function createSix(engine: Engine, options: SixOptions) {
       case 'text': {
         const { type: _, key, ...rest } = entry
         const recorded = await recordText(graph, { id: key, ...rest }, service.textOptions())
+        await keepNumber(inside.tx, entry.direction === 'inbound' ? entry.from : entry.to)
         return { value: { subject: recorded.subject, flags: recorded.flags, counted: recorded.counted, ...(recorded.visitor && { visitor: recorded.visitor }), ...(recorded.optOutAdded && { optOutAdded: true }) }, subjects: [recorded.subject], existed: recorded.duplicate }
       }
       case 'consent': {

@@ -6,9 +6,13 @@ The graph stores identifiers, campaign visits, calls, outcomes and consent. [`fo
 
 Hashed data here is **pseudonymous**: anyone who holds the original value can identify the person. Protect the database as you would the list it was made from.
 
+The graph also keeps what people are called, so the reviewer screen can say who a person is: each record's name, and each phone number and email beside its hash. These are plain personal data.
+
 | Data | Stored as | Reversible |
 | --- | --- | --- |
 | Email, phone, postal address, in a `profile`, a `call`, a `text` or a `conversion` | A hash of the normalized value | By guessing. The set of phone numbers is small enough to hash in full, and a known email can be hashed and compared. The hashes match those of ad platforms, so they carry no secret. |
+| Name of a `profile` | As given, on the record it belongs to, with the time and key of the entry that said it. The newest statement stands. Matching reads only the hashes. | Yes. It is plain. `forget` deletes it with the record. |
+| Phone and email of a `profile`, and the other side's number of a `call` or a `text` | Once, beside the hash of the same value, written when the record the entry is about holds that hash, and kept while any record holds it. A phone is kept in its normalized form, and an email as typed. One that made no identifier, such as a switchboard number, is not kept. | Yes. They are plain. Each goes when the last record that holds it is forgotten or has it withdrawn. |
 | An identifier you write under `facts.identifiers` | As written, for any kind. Send emails and phones as `email` and `phone`, which are hashed. | Yes, unless you hashed it. |
 | Name | Keyed hashes of it, of the full names it may stand for and of its first letter, only under a policy that uses names | Only with `IDENTIFIER_SECRET`. There are few first names and 26 letters, so with it every one can be tried. |
 | Date of birth | Keyed hashes of it, of its year and of its day and month, only under a policy that keeps people apart by it | Only with `IDENTIFIER_SECRET`. There are few dates, so with it every one can be tried. |
@@ -17,8 +21,8 @@ Hashed data here is **pseudonymous**: anyone who holds the original value can id
 | Browser | The id in its first-party cookie | It identifies a browser, and a person once something links the two. |
 | IP address | As written. IPv6 is kept as its /64 | Yes. |
 | Ad clicks, campaign ids, the parameters you named, landing pages without their query | As received | They identify what was clicked. |
-| Calls | Time, duration, result, your number, and the caller as a hash. Call content is not stored. | As a phone number. |
-| Texts | Time, direction, your number, flags such as `opt_out`, and the other side as a hash. What was said is not stored. | As a phone number. |
+| Calls | Time, duration, result, your number, and the caller as a hash. The caller's number is also kept, beside its hash. Call content is not stored. | As a phone number. |
+| Texts | Time, direction, your number, flags such as `opt_out`, and the other side as a hash. The other side's number is also kept, beside its hash. What was said is not stored. | As a phone number. |
 | Steps and their values | With the ids you gave | By you. |
 | Decisions | Author, time, ids concerned, and the reason as typed | Yes. |
 | Matching fact statements on records | Profile ordering keys on matching facts and withdrawal keys, in their original form so simultaneous statements can be ordered by bytes. Use opaque keys. The folded fact keeps its latest profile key after sighting history is pruned. | Yes, to a database reader. Phone and email values are stored as their usual hashes. |

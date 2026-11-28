@@ -91,6 +91,7 @@ test('a signed callback and a recorded call use the same SQL write budget', asyn
     assert.deepEqual(saved(), [entry.key, 'call:' + entry.key, 2])
     // The final trip increments the write counter and commits in two SQL statements.
     const sql = statements.flatMap(query => query.split(';').filter(part => part.trim()))
-    assert.ok(sql.length <= 51, `${path}: ${sql.length} statements in ${statements.length} trips`)
+    // One of them keeps the caller's number beside its hash.
+    assert.ok(sql.length <= 52, `${path}: ${sql.length} statements in ${statements.length} trips`)
   }
 })

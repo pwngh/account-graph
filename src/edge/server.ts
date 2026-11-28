@@ -900,6 +900,12 @@ export function createHandler(core: Core, options: HandlerOptions) {
         }
         return { version }
       }
+      case 'POST /called': {
+        // What to call the people a page lists. Asked for in a body, so no ID is in an address.
+        const { subjects } = await json(request)
+        if (!Array.isArray(subjects) || subjects.length > 2000 || subjects.some((each) => typeof each !== 'string' || each.length === 0 || each.length > 512)) throw new Refusal(400, '`subjects` must be up to 2,000 IDs')
+        return graph.called(subjects)
+      }
       case 'GET /clusters':
         return graph.clusters(50, Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(Number(url.searchParams.get('offset')) || 0))))
       case 'POST /find':
