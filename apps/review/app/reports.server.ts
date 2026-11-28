@@ -216,10 +216,12 @@ export async function sayOfCall(request: Request) {
     // The time is the form's own, from when the page was read, so the same form sent twice is one statement. A page left open for a day is read again first.
     const at = Number(field('at'))
     const now = graphTime()
-    if (!call || !key || key.length > 150 || (intent !== 'reached' && intent !== 'not_lead') || !Number.isSafeInteger(at) || at > now + 60_000 || at < now - 86_400_000) return data({ error: 'Reopen Calls and try again.' }, { status: 400 })
+    if (!call || !key || key.length > 150 || (intent !== 'reached' && intent !== 'not_lead') || !Number.isSafeInteger(at) || at > now + 60_000 || at < now - 86_400_000) return data({ error: 'Reload the page and try again.' }, { status: 400 })
+    // One page read can say this of several calls, so the call is part of the key. A call's ID may be long, and a key may not.
+    const said = key + '/' + createHash('sha256').update(call).digest('hex').slice(0, 16)
     const entry = intent === 'reached'
-      ? { type: 'call_update' as const, key: key + '/reached', at, call, change: { kind: 'returned' as const, reachedAt: at, by: session.name } }
-      : { type: 'restatement' as const, key: key + '/not-lead', at, of: { type: 'call' as const, key: call }, change: { kind: 'not_lead' as const, why: field('why') === 'spam' ? 'spam' as const : 'other' as const, by: session.name } }
+      ? { type: 'call_update' as const, key: said + '/reached', at, call, change: { kind: 'returned' as const, reachedAt: at, by: session.name } }
+      : { type: 'restatement' as const, key: said + '/not-lead', at, of: { type: 'call' as const, key: call }, change: { kind: 'not_lead' as const, why: field('why') === 'spam' ? 'spam' as const : 'other' as const, by: session.name } }
     let result
     try {
       result = (await graph.record({ entries: [entry] }, { signal: request.signal })).results[0]!
@@ -228,9 +230,8 @@ export async function sayOfCall(request: Request) {
       if ((error as { code?: string }).code === 'AUTH.FORBIDDEN') return data({ error: 'This graph server does not take this from a reviewer. Update it, or record it from your own system.' }, { status: 403 })
       throw error
     }
-    if (!result.ok) return data({ error: result.reason === 'UNKNOWN_REFERENCE' ? 'The graph no longer has this call. Reload Calls.' : 'The graph refused this (' + result.reason + ').' }, { status: 409 })
-    const said = intent === 'reached' ? 'Recorded: the caller was reached. Their missed calls no longer wait.' : 'Recorded: not a lead. The call is out of the counts.'
-    if (field('_enhanced') === '1') return { saved: said }
+    if (!result.ok) return data({ error: result.reason === 'UNKNOWN_REFERENCE' ? 'The graph no longer has this call. Reload the page.' : 'The graph refused this (' + result.reason + ').' }, { status: 409 })
+    if (field('_enhanced') === '1') return { saved: intent === 'reached' ? 'Recorded: the caller was reached. Their missed calls no longer wait.' : 'Recorded: not a lead. The call is out of the counts.' }
     const url = new URL(request.url)
     // Without a script the page is read again, at the same days and filter, with the next call open.
     url.searchParams.delete('pick')

@@ -216,6 +216,55 @@ test('a reviewer takes a missed caller off the waiting list from Calls: reached,
   assert.equal((await post(reached, { cookie, origin: 'https://elsewhere.example' })).status, 403)
 })
 
+test('a Board card for a caller who waits has the same two forms, and one page read can say it of two callers', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const board = async () => (await fetch(firm.graph + '/review/api/board?days=90', { headers: { authorization: 'Bearer demo' } })).json()
+  const { at } = await board()
+  const missed = (key, from, hours) => ({ type: 'call', key, at: at - hours * 3600_000, direction: 'inbound', from, to: '+15550100102', duration: 20, result: { answered: false, waited: 20 } })
+  // Three callers wait. The second called twice, and what is said of them is said of the older call.
+  const written = await fetch(firm.graph + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ entries: [missed('waits-1', '+15550100061', 3), missed('waits-2', '+15550100062', 5), missed('waits-2-again', '+15550100062', 2), missed('waits-3', '+15550100063', 4)] }) })
+  const subjects = (await written.json()).results.map(result => result.ok && result.value.subject)
+  assert.ok(subjects.every(Boolean))
+  const waits = async () => (await board()).columns[0].rows.map(row => row.missed).filter(id => id?.startsWith('waits-')).sort()
+  // What a service writes is on the Board within moments. What a reviewer says is there at once, as the end of this test finds.
+  for (let tries = 0; tries < 50 && (await waits()).length < 3; tries++) await new Promise(resolve => setTimeout(resolve, 100))
+  assert.deepEqual(await waits(), ['waits-1', 'waits-2', 'waits-3'])
+  // Only a card in Missed calls has the forms. Each is in a popover its own button opens, so it shows with no script, and it is named by the call it is about.
+  const html = (await (await fetch(firm.graph + '/board/90', { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
+  const cards = [...html.matchAll(/<li><div class="top"><a\b[^>]*\btitle="([^"]+)"[\s\S]*?<\/li>/g)].filter(match => match[0].includes('class="board-acts"'))
+  assert.equal(cards.length, (await board()).columns[0].rows.length)
+  const ids = new Set()
+  const formsOf = Object.fromEntries(cards.map(([card, subject]) => {
+    const found = [...card.matchAll(/<button type="button" class="say" popoverTarget="([^"]+)">([^<]+)<\/button><div class="card-pop say-pop" popover="auto" id="([^"]+)" role="dialog" aria-labelledby="([^"]+)"><div class="detail-head"><h4 id="([^"]+)">Missed call, <time dateTime="([^"]+)"[^>]*>[^<]+<\/time><\/h4><button type="button" class="detail-shut" popoverTarget="([^"]+)" popoverTargetAction="hide" aria-label="Close">×<\/button><\/div><form\b[^>]*\baction="\/board\/90"[^>]*\bmethod="post"[^>]*><input type="hidden" name="intent" value="(reached|not_lead)"\/><input type="hidden" name="call" value="([^"]+)"\/><input type="hidden" name="key" value="([0-9a-f-]{36})"\/><input type="hidden" name="at" value="(\d+)"\/>/gi)]
+      .map(([, opens, label, id, labelled, heading, time, shuts, intent, call, key, at]) => ({ opens, label, id, labelled, heading, time, shuts, intent, call, key, at }))
+    assert.deepEqual(found.map(form => [form.label, form.intent, form.opens === form.id && form.shuts === form.id && form.labelled === form.heading]), [['Reached them', 'reached', true], ['Not a lead', 'not_lead', true]], subject)
+    assert.equal(found[0].call, found[1].call, 'both forms of a card are of one call')
+    for (const form of found) ids.add(form.id).add(form.heading)
+    // The link's title is the ID, then how the person is shown.
+    return [subject.split(' ')[0], found]
+  }))
+  assert.equal(ids.size, cards.length * 4, 'every popover and heading has an ID of its own')
+  const [one, twice, third] = subjects.filter((subject, i) => i !== 2).map(subject => formsOf[subject])
+  assert.deepEqual([one[0].call, twice[0].call, third[0].call], ['waits-1', 'waits-2', 'waits-3'])
+  assert.equal(twice[0].time, new Date(at - 5 * 3600_000).toISOString(), 'the form names the older call by its time')
+  assert.ok(one[0].key === twice[0].key && one[0].key === third[0].key, 'the cards are of one page read')
+  const post = fields => fetch(firm.graph + '/board/90', { method: 'POST', headers: { cookie, origin: firm.graph }, body: new URLSearchParams(fields), redirect: 'manual' })
+  const strip = ({ intent, call, key, at }) => ({ intent, call, key, at })
+  // Reached, of two callers from one page read, and the first of them sent twice. The older call was returned, so the newer one no longer waits either.
+  for (const form of [one[0], twice[0], one[0]]) {
+    const answer = await post(strip(form))
+    assert.equal(answer.status, 303)
+    assert.equal(answer.headers.get('location'), '/board/90')
+  }
+  assert.deepEqual(await waits(), ['waits-3'])
+  // Not a lead, from the third card. A page with scripts is told what was recorded, to show above the columns.
+  assert.match(await (await post({ ...strip(third[1]), why: 'spam', _enhanced: '1' })).text(), /Recorded: not a lead/)
+  assert.deepEqual(await waits(), [])
+})
+
 test('a term has its definition beside it on every page, in the page from the start', async t => {
   const firm = await startFirm({}, { quick: true })
   t.after(() => firm.close())

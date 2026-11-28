@@ -1006,6 +1006,26 @@ test('a provider is told to ask again while the database is away, and a decision
   }
 })
 
+test('a reviewer who says a caller was reached is shown a Board without them', async () => {
+  let now = NOW
+  const { graph, local, base, close } = await http({ now: () => now })
+  try {
+    const { engine } = await internalsOf(local)!()
+    const read = engine.graph.board
+    let made = 0
+    // Working it out takes a second, so the answer is good for four more, whatever a service writes meanwhile.
+    engine.graph.board = (...given) => ((made += 1), (now += 1000), read(...given))
+    assert.ok((await graph.record({ entries: [{ type: 'call', key: 'm1', at: NOW - 3_600_000, direction: 'inbound', from: '+15558675310', to: '+15551230001', duration: 20, result: { answered: false } }] })).results[0]!.ok)
+    const waiting = async () => ((await (await fetch(`${base}/review/api/board`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any).columns[0].rows.map((row: any) => row.missed)
+    assert.deepEqual([await waiting(), await waiting(), made], [['m1'], ['m1'], 1])
+    const said = await fetch(`${base}/v1/record`, { method: 'POST', headers: { authorization: 'Bearer reviewer' }, body: JSON.stringify({ entries: [{ type: 'call_update', key: 'r1', at: now, call: 'm1', change: { kind: 'returned', reachedAt: now, by: 'dana' } }] }) })
+    assert.equal(((await said.json()) as any).results[0].ok, true)
+    assert.deepEqual([await waiting(), made], [[], 2])
+  } finally {
+    await close()
+  }
+})
+
 test('answers of a report are shared until something is written', async () => {
   let now = NOW
   const { graph, local, close } = await memory({ now: () => now })

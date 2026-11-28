@@ -1,10 +1,10 @@
 import './reports.css'
 import { createContext, Fragment, useContext, useEffect, useId, useRef, useState } from 'react'
 import { Form, Link, useFetcher } from 'react-router'
-import { CalledContext, PageHead, Parts, PeriodForm, Table, Tiles, Time, Subject, ZoneContext, knownOf, stamp, useNamed } from './shared'
+import { Answer, CalledContext, PageHead, Parts, PeriodForm, Table, Tiles, Time, Subject, ZoneContext, knownOf, stamp, useNamed } from './shared'
 import { amount, brief, callTone, cameFrom, dayOf, dayWords, detailReply, hourOf, lasted, percent, subjectHash, ticksOf, tieWords, WHAT } from './report-words'
 import { GLYPHS, Glyph, looksLike } from './marks'
-import { Bars, CallInbox, Change } from './call-panels'
+import { Bars, CallInbox, Change, NotLead, SayOfCall } from './call-panels'
 import { Health } from './health'
 import { told } from './story'
 import { Term } from './terms'
@@ -80,9 +80,16 @@ function Age({ at, now, late = false }) {
 function Person({ row, column, board, card }) {
   const arrival = (cameFrom(row) || 'Unattributed') + (row.language ? ' · ' + row.language : '')
   const call = row.call
+  const snapshot = useContext(reportSnapshot)
+  // Somebody waiting on a call back can be taken off the list here, where they are first seen. It is said of their oldest call that still waits.
+  // The card's chip is of their newest call, so each form names the call it is about by its time, which is the time the row has waited since.
+  const which = <>Missed call, <Time at={row.at} short/></>
+  const acts = row.missed && <div className="board-acts" role="group" aria-label="This call">
+    <SayOfCall key={row.missed + '/reached'} look="pop" title={which} intent="reached" call={row.missed} formKey={snapshot} at={board.at} label="Reached them"><p>Records that you reached this caller. Their missed calls no longer wait. It is recorded under your name.</p></SayOfCall>
+    <SayOfCall key={row.missed + '/not-lead'} look="pop" title={which} intent="not_lead" call={row.missed} formKey={snapshot} at={board.at} label="Not a lead"><NotLead/></SayOfCall></div>
   return <li><div className="top"><Subject id={row.subject} journey/><Age at={row.at} now={board.at} late={row.late}/><Detail card={card}/></div>
     <div className="board-meta reason"><span title={arrival}>{arrival}</span>{row.value > 0 && <b>{amount(row.value)} {row.currency}</b>}</div>
-    <div className="board-chips">{column.step === null && row.step && <span className="chip muted">{row.step}</span>}<span className={'chip ' + (call ? callTone(call.state) : 'muted')}>{call ? (call.direction === 'outbound' ? 'Outbound' : 'Inbound') + ' · ' + REACHED[call.state] : 'No calls'}</span></div></li>
+    <div className="board-chips">{column.step === null && row.step && <span className="chip muted">{row.step}</span>}<span className={'chip ' + (call ? callTone(call.state) : 'muted')}>{call ? (call.direction === 'outbound' ? 'Outbound' : 'Inbound') + ' · ' + REACHED[call.state] : 'No calls'}</span></div>{acts}</li>
 }
 /** A sender nobody has answered: how long ago they wrote, where they came from, and how many texts wait. */
 function Unanswered({ text, at, card }) {
@@ -92,6 +99,11 @@ function Unanswered({ text, at, card }) {
     <div className="board-chips"><span className="chip related">{amount(text.unanswered)} unanswered</span></div></li>
 }
 function Board({ data }) {
+  // What was said of a call from a card is answered above the columns, because the card leaves its column once it is said.
+  const said = useFetcher({ key: 'said-of-call' })
+  // The button that was pressed leaves with its card, so whoever works by keyboard is put at the answer.
+  const answer = useRef(null)
+  useEffect(() => { if (said.state === 'idle' && said.data?.saved && document.activeElement === document.body) answer.current?.focus() }, [said.state, said.data])
   const { board, cards } = data
   const periods = [[1,'Today'],[7,'7 days'],[30,'30 days'],[90,'90 days'],[365,'1 year']]
   const late = board.columns.reduce((sum, column) => sum + (column.late ?? 0), 0)
@@ -101,6 +113,7 @@ function Board({ data }) {
     <dl className="tiles">{data.metrics.map((key,i) => <Metric key={key} card={cards[key]} term={[['board'], ['overdue', board.openHours ? 'Limits count open hours.' : undefined], undefined, ['advanced']][i]} tone={i === 1 && late > 0 && 'apart'} note={i === 1 && board.columns.every(col => col.late === null) && 'No limits set'}/>)}</dl><Range from={board.from} to={board.day} timeZone={board.timeZone}/>
     <p className={board.days === 1 ? 'meta' : 'sr-only'} id="board-period">{ACTIVE}</p>
     {board.unplaced > 0 && <p className="meta">{amount(board.unplaced)} more at steps outside STAGES</p>}{board.columns.length === 1 && <p>Set STAGES to add a column for each step.</p>}</section>
+    <div className="said" tabIndex="-1" ref={answer}><Answer result={said.data}/></div>
     <div className="board wide" tabIndex="0" role="region" aria-label="Columns">{board.columns.map((column, i) => {
       const name = column.step === null ? 'Missed calls' : column.step.toLowerCase() === 'missed calls' ? column.step + ', a step' : column.step
       const counts = [amount(column.people) + (column.people === 1 ? ' person' : ' people'), column.fresh > 0 && amount(column.fresh) + ' new', column.late > 0 && amount(column.late) + ' over ' + lasted(column.wait), column.done > 0 && amount(column.done) + (column.step === null ? ' reached' : ' advanced') + ' today']

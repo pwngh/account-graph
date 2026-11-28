@@ -529,6 +529,8 @@ export interface BoardRow extends Omit<BoardPlace, 'call'> {
   touch?: AttributedTouch
   /** From their furthest step, their newest call, or else that arrival. */
   language?: string
+  /** The ID of their oldest missed call that still waits for a call back, where they have one. What staff say of the wait is said of this call. */
+  missed?: string
 }
 
 export interface Board {
@@ -2559,7 +2561,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
             const { credited } = creditOf(ask.subject, ask.at, ask.call)
             const call = newest && calls.get(newest.id)
             const language = place.outcome?.tags?.language ?? call?.tags?.language ?? touchTag(credited?.campaignOnly ? undefined : credited, 'language')
-            rows.push({ ...rest, ...(call && { call }), ...(credited && { touch: credited }), ...(language !== undefined && { language }) })
+            rows.push({ ...rest, ...(call && { call }), ...(credited && { touch: credited }), ...(language !== undefined && { language }), ...(miss && { missed: miss.id }) })
           }
           shown.push({ ...column, rows })
         }
