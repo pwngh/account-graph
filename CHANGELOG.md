@@ -6,6 +6,9 @@
 
 - `ADS_TEST_RECEIVER` sends every conversion request to an ad platform, and its token requests, to an address on this machine. `tools/ads-receiver.ts` answers as each platform does and prints what it was sent.
 - The image installs `pg` and the packages it needs at the versions in `package-lock.json`. It took the newest `pg` 8 at each build.
+- The server's log lines begin with their time, and it logs one line per request, one per conversion a platform rejects for good, and `stopping` and `stopped`. A stop ends within ten seconds.
+- A rejection alert counts the rejections held back in the ten minutes since the last one. They were told of nowhere.
+- A refused address check is logged with its status only. Smarty's answer could quote the address.
 - `account-graph.tpl` installs the browser collector through Tag Manager with form, page and event settings and stops collection when either storage consent is withdrawn.
 - The tests replay Twilio’s published signature and response examples for the ad and lookup providers. A loopback receiver checks the graph’s event signature and unsigned alert.
 - `live-check` runs one named check, lists the data it sends and exits unsuccessfully on missing credentials or an inconclusive result. Dummy credentials require an explicit flag.

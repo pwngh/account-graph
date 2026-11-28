@@ -1444,7 +1444,7 @@ test('a postal address is checked with Smarty and counts only when confirmed to 
   // An answer that is not a list of candidates is read as no match, not as a crash.
   const odd = createAddressVerifier({ authId: 'id', authToken: 'token', fetch: (async () => new Response('{"unexpected":true}')) as typeof fetch })
   assert.equal(await odd({ street: '1 Main St' }), undefined)
-  await assert.rejects(verify({ street: 'broke' }), /Smarty rejected the address check with 402/)
+  await assert.rejects(verify({ street: 'broke' }), (error: Error) => error.message === 'Smarty rejected the address check with 402')
   await assert.rejects(verify({ street: '  ' }), TypeError)
 
   // Only the hash of the delivery point is kept, and only for an address that can belong to a household.

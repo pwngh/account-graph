@@ -250,6 +250,27 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(await store.ops.undelivered(), [])
     })
 
+    test('rejections held back by the ten minutes are counted in the next alert', async () => {
+      const { make, clock, posted, store } = await fresh()
+      const ops = make()
+      const failures = async (prefix: string, count: number) => {
+        const jobs = []
+        for (let i = 0; i < count; i++) jobs.push((await store.outbox.add({ transactionId: `${prefix}-${i}`, subject: 'contact:1', at: T0, target: 'test', action: 'test', due: T0, state: 'failed', attempts: 1, note: 'rejected', keys: {} }))!)
+        await ops.failed(jobs, store)
+      }
+      await failures('first', 1)
+      clock.now += 60_000
+      await failures('held', 3)
+      assert.equal(posted.length, 1)
+      clock.now += 10 * 60_000
+      await failures('later', 1)
+      assert.equal(posted.length, 2)
+      assert.match(posted[1]!, /^account-graph: 1 conversion rejected\.\n3 more were rejected since the last alert\.\n• later-0 to test: rejected\n/)
+      clock.now += 10 * 60_000
+      await failures('again', 1)
+      assert.doesNotMatch(posted[2]!, /since the last alert/)
+    })
+
     test('a rejected batch forgets a call counted beyond the ten named failures', async () => {
       const { graph, store } = await fresh()
       const id = 'unnamed'

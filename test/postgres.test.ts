@@ -273,6 +273,13 @@ if (!url) {
         assert.deepEqual([policy.builtWith, policy.due, policy.changed, policy.rules.kinds.badge], [null, true, ['badge', 'phone'], { weight: 0.5, dilution: 0, cap: 3, halfLife: 'none' }])
         assert.match((await ask('/review/api/pulse', 'review')).headers.get('etag')!, /^"\d+-[0-9a-f]{12}-50"$/)
         for (const gone of ['/rebuild', '/verify', '/stats', '/prune']) assert.equal((await ask(gone, 'service')).status, 404)
+        // A line per request, with no query in it.
+        await ask('/review/api/subject?subject=private-subject', 'review')
+        assert.ok(lines.some((line) => /^GET \/review\/api\/policy 200 \d+ms$/.test(line)), lines.join('\n'))
+        assert.ok(lines.some((line) => line.startsWith('GET /review/api/subject ')) && !lines.some((line) => line.includes('private-subject')))
+        // An encoded part of a path is left out too.
+        await ask('/collect%3Femail%3Dpat%40example.org', 'review')
+        assert.ok(lines.some((line) => line.startsWith('GET /… ')) && !lines.some((line) => line.includes('example.org')), lines.join('\n'))
       } finally {
         await running.close()
       }

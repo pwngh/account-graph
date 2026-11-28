@@ -425,7 +425,14 @@ export async function serve(env: Env, log: (line: string) => void = console.log)
     throw new Error(`Cannot start:\n  ${(error as Error).message}`)
   }
   const edge = createEdge(graph, edging)
-  const server = createServer(edge)
+  // One line for each request: its method, its path without the query, the answer and how long it took. A query can hold what a person typed,
+  // and so can an encoded or long part of a path, so such a part is left out.
+  const server = createServer((request, response) => {
+    const started = performance.now()
+    const path = (request.url ?? '').split(/[?#]/, 1)[0]!.split('/').map((part) => (part.includes('%') || part.length > 40 ? '…' : part)).join('/')
+    response.once('close', () => log(`${request.method} ${path} ${response.statusCode}${response.writableFinished ? '' : ' cut off'} ${Math.round(performance.now() - started)}ms`))
+    return edge(request, response)
+  })
   await new Promise<void>((resolve, reject) => server.once('error', reject).listen(asked, host, resolve))
   const { port } = server.address() as AddressInfo
 
@@ -456,6 +463,9 @@ export async function serve(env: Env, log: (line: string) => void = console.log)
     },
   }
 }
+
+/** How long a stop may take before the process ends anyway. Compose gives it fifteen seconds. */
+const STOP_WITHIN = 10_000
 
 /** Runs one command and says what came of it. */
 export async function command(env: Env, args: readonly string[], log: (line: string) => void = console.log): Promise<void> {
@@ -540,11 +550,24 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     const args = process.argv.slice(2)
     if (args.length > 0) await command(process.env, args)
     else {
-      const running = await serve(process.env)
-      for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => void running.close().then(() => process.exit(0)))
+      // Each line says when, so an operator can read the log against the clock.
+      const log = (line: string) => console.log(`${new Date().toISOString()} ${line}`)
+      const running = await serve(process.env, log)
+      // The last line is written out before the process ends.
+      const end = (line: string, code: number) => process.stdout.write(`${new Date().toISOString()} ${line}\n`, () => process.exit(code))
+      let stopping = false
+      for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => {
+        // A second signal waits for the first stop.
+        if (stopping) return
+        stopping = true
+        log(`stopping on ${signal}`)
+        // Inside a container's grace time. A send cut off here goes again at the next start, and the platform keeps it once.
+        setTimeout(() => end('stopped before every send had an answer. They are sent again at the next start', 1), STOP_WITHIN).unref()
+        void running.close().then(() => end('stopped', 0))
+      })
     }
   } catch (error) {
-    console.error(String((error as Error)?.message ?? error))
+    console.error(`${process.argv.length > 2 ? '' : `${new Date().toISOString()} `}${String((error as Error)?.message ?? error)}`)
     process.exit(1)
   }
 }

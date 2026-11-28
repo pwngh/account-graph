@@ -407,6 +407,7 @@ After its receipt is pruned, a key is new again. A conversion, call, text, payme
 | --- | --- |
 | `GET /health` | `{"ok":true}` once the database answers. Needs no token. Use it for load balancer checks. |
 | `/review#/health` | Feeds and the time of each one's last record, job runs, undelivered alerts, pool usage, deliveries by state, whether a rebuild is due, and a [stop on sends](#stopping-sends) with its reason and time |
+| The server's log | Each line begins with its time in UTC. One line per request: method, path without its query, status and milliseconds. One line per conversion a platform rejects for good: transaction, platform and reason. `stopping` and `stopped` around a shutdown |
 
 ## Events
 
@@ -460,7 +461,7 @@ Set `ALERT_WEBHOOK` to a private receiver, such as a Slack incoming webhook, tha
 
 | Event | Message content | Frequency |
 | --- | --- | --- |
-| A platform rejects a conversion, or its retries run out | Transaction, platform and reason, up to ten per message | At most once in ten minutes |
+| A platform rejects a conversion, or its retries run out | Transaction, platform and reason, up to ten per message. The next message counts those rejected in the ten minutes after one | At most once in ten minutes |
 | The outbox cannot run, so conversions are paused | The reason, such as a database outage | At most once in ten minutes |
 | Sends are paused with `account-graph sends pause` | The reason given | Each time |
 | Campaign costs cannot be read, so the report's costs become stale | Platform and reason | At most once in ten minutes per platform |
@@ -571,7 +572,7 @@ The Health view lists the background jobs: the outbox, each cost import, the aud
 
 ## Shutdown
 
-On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes in progress, and closes its database connections. If a conversion's send is interrupted, the next start sends it again. Check the receiving platform's deduplication rules and reconcile ambiguous deliveries.
+On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes in progress, and closes its database connections. It ends within ten seconds, whether or not every send has an answer, and Compose gives it fifteen. If a conversion's send is interrupted, the next start sends it again. Check the receiving platform's deduplication rules and reconcile ambiguous deliveries.
 
 ## Environment variables
 
