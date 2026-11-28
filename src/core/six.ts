@@ -724,7 +724,7 @@ export function createSix(engine: Engine, options: SixOptions) {
           const { a, b } = request
           const [home, link, separated] = await Promise.all([graph.cluster(a), graph.links(a).then((links) => links.find((each) => each.subject === b)), graph.conflicts([a, b])])
           return {
-            together: a === b || Boolean(home?.members.includes(b)),
+            together: Boolean(home?.members.includes(b)),
             separated: separated.some(({ how, rests: [x, y] }) => how === 'recorded' && ((x === a && y === b) || (x === b && y === a))),
             link: link ? { score: link.score, level: link.level, kinds: kinds(link.reasons), ...(link.conflict && { conflict: link.conflict }), ...(link.unconfirmed && { unconfirmed: link.unconfirmed }) } : null,
           }

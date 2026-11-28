@@ -364,9 +364,9 @@ export interface LookupValue {
   party: ((PartyStatement | { readonly role: 'excluded'; readonly by: string; readonly at: number }) & { readonly key: string }) | null
   record: RecordView | null
   transfers: { readonly counterparties: readonly Tied[]; readonly rings: readonly Ring[] }
-  /** What the person wrote, the newest first, at most 100: form messages and inbound texts of the records in their group. */
   /** Whether two records are one person now, and what they share. `link` is null where they share nothing that counts. */
   pair: { readonly together: boolean; readonly separated: boolean; readonly link: { readonly score: number; readonly level: Level; readonly kinds: readonly string[]; readonly conflict?: 'birth' | 'given'; readonly unconfirmed?: true } | null }
+  /** What the person wrote, the newest first, at most 100: form messages and inbound texts of the records in their group. */
   messages: { readonly messages: readonly { readonly from: 'lead' | 'text'; readonly id: string; readonly subject: string; readonly at: number; readonly text: string; readonly cut: boolean }[] }
 }
 /** Why is said by kind. No identifier leaves the graph, because most are hashes of an email or a phone. */

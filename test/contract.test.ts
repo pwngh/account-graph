@@ -585,6 +585,8 @@ everywhere('a pair says whether two records are one person, whether they were ke
   const joined = await pair('contact:p1', 'contact:p2')
   assert.deepEqual([joined.together, joined.separated, joined.link?.level, joined.link?.kinds], [true, false, 'same', ['email']])
   assert.deepEqual(await pair('contact:p1', 'contact:p3'), { together: false, separated: false, link: null })
+  // A record the graph does not have is with nobody, not even itself.
+  assert.deepEqual(await pair('contact:none', 'contact:none'), { together: false, separated: false, link: null })
   assert.deepEqual((await pair('contact:p3', 'contact:p4')).link?.kinds, ['phone'])
   await graph.decide({ key: 'apart', at: AT, by: 'dana', action: 'split', pairs: [{ a: 'contact:p3', b: 'contact:p4' }] })
   // Kept apart, what they share links nothing.
