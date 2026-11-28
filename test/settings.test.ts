@@ -28,13 +28,18 @@ test('a setting written another way, or a flag that is not true or false, stops 
     [{ FORGET_ADD: 'true' }, 'FORGET_ADD is not a setting. Did you mean FORGET_ADS?'],
     [{ forget_ads: 'true' }, 'forget_ads is not a setting. Did you mean FORGET_ADS?'],
     [{ RECIEPT_SECRETS: 'x' }, 'RECIEPT_SECRETS is not a setting. Did you mean RECEIPT_SECRETS?'],
+    [{ CALL_TIP_SECONDS: '600' }, 'CALL_TIP_SECONDS is not a setting. Did you mean CALL_TAP_SECONDS?'],
+    [{ GOOGLE_ADS_CONVERSIONS: '0' }, 'GOOGLE_ADS_CONVERSIONS must be true or false'],
     [{ CHANGE_WEBHOOK: 'https://example.org' }, 'CHANGE_WEBHOOK is now WEBHOOK_URL'],
   ] as const) {
     assert.deepEqual(settingProblems(env), [said])
     assert.throws(() => configFrom({ ...base, ...env }), (error: Error) => error.message.includes(said))
   }
   // What a machine or a container sets for itself is left alone.
-  const own = { HOME: '/home/x', PATH: '/bin', HOSTNAME: 'box', NODE_VERSION: '22.0.0', NODE_ENV: 'production', GOOGLE_APPLICATION_CREDENTIALS: '/k.json', TERM: 'xterm', YARN_VERSION: '1' }
+  const own = { HOME: '/home/x', PATH: '/bin', HOSTNAME: 'box', NODE_VERSION: '22.0.0', NODE_ENV: 'production', GOOGLE_APPLICATION_CREDENTIALS: '/k.json', TERM: 'xterm', YARN_VERSION: '1',
+    MAXMIND_PORT: 'tcp://10.0.0.9:80', MAXMIND_SERVICE_HOST: '10.0.0.9', DATABASE_SSL: 'false', PGHOST: 'db' }
   assert.deepEqual(settingProblems(own), [])
+  // Windows reads a name in any case, so there that is the setting itself.
+  assert.deepEqual(settingProblems({ database_url: 'postgres://db/graph' }, 'win32'), [])
   assert.doesNotThrow(() => configFrom({ ...base, ...own, FORGET_ADS: 'false', MICROSOFT_SANDBOX: '' }))
 })

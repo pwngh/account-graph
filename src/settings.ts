@@ -32,22 +32,24 @@ export const SETTINGS = {
 /** Names that were settings once. The server says what took their place. */
 const RETIRED: Record<string, string> = { CHANGE_WEBHOOK: 'WEBHOOK_URL', CHANGE_SECRET: 'WEBHOOK_SECRET' }
 
-/** How many single-letter changes turn one name into the other. */
-function distance(a: string, b: string): number {
-  let row = Array.from({ length: b.length + 1 }, (_, i) => i)
-  for (let i = 1; i <= a.length; i++) {
-    const next = [i]
-    for (let j = 1; j <= b.length; j++) next.push(Math.min(row[j]! + 1, next[j - 1]! + 1, row[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1)))
-    row = next
-  }
-  return row[b.length]!
+/** Whether one name is the other with one letter added, dropped or changed, or two next to each other swapped. */
+function oneOff(a: string, b: string): boolean {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false
+  let i = 0
+  while (i < a.length && i < b.length && a[i] === b[i]) i++
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1) || (a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2))
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1)
 }
 
+/** Names a container platform makes for the services beside it, such as `MAXMIND_PORT` or `REDIS_SERVICE_HOST`. */
+const PLATFORM = /_(PORT|SERVICE_HOST|SERVICE_PORT)(_|$)/
+
 /**
- * What is wrong with the settings as named and typed: a flag that is not `true` or `false`, a retired name, and a name that is a
- * setting written another way, such as `FORGET_ADD` or `forget_ads`. Other names, such as `HOME` or `NODE_VERSION`, are nobody's business.
+ * What is wrong with the settings as named and typed: a flag that is not `true` or `false`, even one whose feature is off, a retired
+ * name, and a name that is a setting with one letter wrong or in another case, such as `FORGET_ADD` or `forget_ads`. Other names, such as
+ * `HOME`, `NODE_VERSION` or `DATABASE_SSL`, are nobody's business.
  */
-export function settingProblems(env: Readonly<Record<string, string | undefined>>): string[] {
+export function settingProblems(env: Readonly<Record<string, string | undefined>>, platform: string = process.platform): string[] {
   const wrong: string[] = []
   const known = Object.keys(SETTINGS)
   for (const [name, value] of Object.entries(env)) {
@@ -56,8 +58,9 @@ export function settingProblems(env: Readonly<Record<string, string | undefined>
     if (kind === 'flag' && value !== 'true' && value !== 'false') wrong.push(`${name} must be true or false`)
     if (kind !== undefined) continue
     if (Object.hasOwn(RETIRED, name)) wrong.push(`${name} is now ${RETIRED[name]}`)
-    else if (name.includes('_') && name.length >= 8) {
-      const near = known.find((each) => each === name.toUpperCase()) ?? known.find((each) => distance(each, name) <= 2)
+    else if (name.includes('_') && name.length >= 8 && !PLATFORM.test(name)) {
+      // Windows reads a name in any case, so there a name in another case is the setting itself.
+      const near = (platform === 'win32' ? undefined : known.find((each) => each === name.toUpperCase())) ?? known.find((each) => oneOff(each, name))
       if (near) wrong.push(`${name} is not a setting. Did you mean ${near}?`)
     }
   }
