@@ -126,6 +126,7 @@
 
 ### Attribution and reporting
 
+- An `arrival` with only a `landing` address is credited by the click ids and tags in its query. The address is kept without the query.
 - `report` and `lookup` read base identifier counts when their PostgreSQL snapshot contains no withdrawn call evidence.
 - `report` assigns confirmed calls, callbacks and call values to their stated owner and counts that owner with explicitly merged duplicate records.
 - `campaignCredit` identifies the campaign when an eligible visitor’s tap, code or pool number credits a confirmed call. The visitor’s private arrival details stay off that callback or pipeline row.
