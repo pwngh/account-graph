@@ -140,6 +140,7 @@
 - The email kept of a record for reading is the one written, in lowercase. It was the form Google matches, without the dots of a Gmail address.
 - `record` `consent` keeps every answer about advertising, and the newest stands. Global Privacy Control is an answer.
 - `FORGET_ADS`, or `platforms: 'retract'` for one deletion, asks platforms that support it to retract conversions.
+- A deletion that asks platforms sends Google each conversion again with a value of zero, by the click and keys it was sent with. Only Microsoft was asked before. Meta and TikTok are told nothing.
 
 ### Events
 

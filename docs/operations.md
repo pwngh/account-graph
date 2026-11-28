@@ -627,7 +627,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | --- | --- | --- |
 | `PAUSE_AFTER_FAILURES` | `0` | Conversions that fail for good within an hour before [sends stop](#stopping-sends) by themselves. `0` never stops them. |
 | `OUTBOX_DELAY_MS` | `0` | Delay before the first send of a new outcome. The click is chosen when it is sent, so a tie a reviewer undoes during the delay never reaches the platform. |
-| `FORGET_ADS` | none | `true` requests the supported adjustment when a person is [deleted](privacy.md#data-at-ad-platforms). Google can reduce value to zero while the count remains. |
+| `FORGET_ADS` | none | `true` requests the supported adjustment when a person is [deleted](privacy.md#data-at-ad-platforms). Microsoft retracts the conversion. Google is sent a value of zero, and the count remains. Meta and TikTok are told nothing. |
 | `WEBHOOK_URL`, `WEBHOOK_SECRET` | none | URL that receives [events](#webhook), and the secret that signs each post. Set both. |
 | `ALERT_WEBHOOK` | none | URL that receives alerts, as `{"text": "…"}`. |
 | `AUDIT_HEAD_HOURS` | `0` | Posts the newest audit hash to `ALERT_WEBHOOK` at this interval, at least one hour. Requires `ALERT_WEBHOOK`. `0` disables it. |
