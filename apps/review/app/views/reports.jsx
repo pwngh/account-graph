@@ -1,6 +1,6 @@
 import './reports.css'
 import { createContext, Fragment, useContext, useEffect, useId, useRef, useState } from 'react'
-import { Form, Link, useFetcher } from 'react-router'
+import { Form, Link, useFetcher, useLocation, useSearchParams } from 'react-router'
 import { Answer, CalledContext, PageHead, Parts, PeriodForm, Table, Tiles, Time, Subject, ZoneContext, knownOf, stamp, useNamed } from './shared'
 import { amount, brief, callTone, cameFrom, dayOf, dayWords, detailReply, hourOf, lasted, percent, subjectHash, ticksOf, tieWords, WHAT } from './report-words'
 import { GLYPHS, Glyph, looksLike } from './marks'
@@ -172,10 +172,17 @@ const RULER = 42
  * Events by kind and time: a lane for each kind, a mark for each event, and a number where several are too close to tell apart.
  * The marks are placed as shares of the width, so the drawing is as sharp at any size and needs no script.
  */
-function Chart({ events, groups, cards }) {
+function Chart({ events, groups, cards, zoom }) {
   const zone = useContext(ZoneContext)
-  const marks = events.filter(e => e.entry.at > 0)
-  if (!marks.length) return null
+  const [query] = useSearchParams()
+  const { pathname } = useLocation()
+  const marks = events.filter(e => e.entry.at > 0 && e.entry.at >= zoom.from)
+  // Each zoom is an address, so it works without scripts. A zoom that would show all of it is not offered.
+  const zoomTo = name => { const q = new URLSearchParams(query); q.delete('pick'); if (name === 'All') q.delete('zoom'); else q.set('zoom', name); return pathname + (q.size ? '?' + q : '') }
+  const zooms = ['All', ...zoom.spans]
+  const zooming = zooms.length > 1 && <nav className="segments" aria-label="Zoom">{zooms.map(name => <Link key={name} to={zoomTo(name)} aria-current={zoom.at === name ? 'true' : undefined} preventScrollReset>{name}</Link>)}</nav>
+  // With every mark of the zoom hidden by the type filters, the zoom can still be changed.
+  if (!marks.length) return zooming ? <section aria-label="Journey chart" className="chart"><div className="chart-head">{zooming}</div></section> : null
   const tracks = kinds.filter(kind => marks.some(e => e.entry.kind === kind))
   const low = marks[0].entry.at
   const high = marks.at(-1).entry.at
@@ -192,7 +199,7 @@ function Chart({ events, groups, cards }) {
     mark.click()
   }
   const heaps = groups.filter(group => group.count > 1 && tracks.includes(group.kind))
-  return <section aria-label="Journey chart" className="chart"><div className="chart-head"><span className="meta">{stamp(low, zone)} – {stamp(high, zone)}</span>{heaps.length > 0 && <span className="row chart-heaps">{heaps.map(group => <span key={group.card} className="meta">{cards[group.card]?.title}<Detail id={group.card} card={cards[group.card]} title={cards[group.card]?.title}/></span>)}</span>}</div>
+  return <section aria-label="Journey chart" className="chart"><div className="chart-head">{zooming}<span className="meta">{stamp(low, zone)} – {stamp(high, zone)}</span>{heaps.length > 0 && <span className="row chart-heaps">{heaps.map(group => <span key={group.card} className="meta">{cards[group.card]?.title}<Detail id={group.card} card={cards[group.card]} title={cards[group.card]?.title}/></span>)}</span>}</div>
     <div className="chart-body"><div className="names"><div className="ruler"/>{tracks.map(kind => <div key={kind} className={'name ' + kind}><Glyph kind={kind}/><span>{WHAT[kind]}</span><span className="count">{amount(marks.filter(e => e.entry.kind === kind).length)}</span></div>)}</div>
     <div className="track"><svg className="plot" width="100%" height={tall} role="group" aria-label="Events by type and time">
       {ticksOf(low, high, zone).map(tick => <g key={tick.at}><line className="rule" x1={x(tick.at)} x2={x(tick.at)} y1={RULER} y2={tall}/>{tick.over && <text className="tick over" x={x(tick.at)} dx="6" y="19">{tick.over}</text>}<text className="tick" x={x(tick.at)} dx="6" y="35">{tick.text}</text></g>)}
@@ -225,9 +232,9 @@ function Journey({ data }) {
   }
   return <><section><PageHead view="journey" title={<bdi title={which}>{named(which)}</bdi>}><Link className="button" to={subjectHash(which)}>Account</Link></PageHead>{known}
     <Tiles items={[[ 'Events', amount(data.events.length) + (journey.next === null ? '' : '+')], [['IDs', 'journeyIds'], amount(Object.keys(journey.subjects).length)], dates.length > 0 && ['First event', <Time at={dates[0]} short/>], dates.length > 0 && ['Last event', <Time at={dates.at(-1)} short/>, dates.at(-1) > dates[0] && lasted(dates.at(-1) - dates[0]) + ' later'] ]}/>{journey.more > 0 && <p className="meta">{amount(journey.more)} more IDs are not shown.</p>}
-    <Chart events={visible} groups={data.groups} cards={cards}/></section><section><h2>Timeline</h2><Answer result={said.data}/>
+    <Chart events={visible} groups={data.groups} cards={cards} zoom={data.zoom}/></section><section><h2>Timeline</h2><Answer result={said.data}/>
     {enhanced && <div className="row filters" role="group" aria-label="Show">{kinds.filter(kind => data.events.some(e => e.entry.kind === kind)).map(kind => <label key={kind} className={kind}><input type="checkbox" checked={!hidden.includes(kind)} onChange={() => setHidden(hidden.includes(kind) ? hidden.filter(k => k !== kind) : [...hidden,kind])}/><Glyph kind={kind}/>{WHAT[kind]}<span className="count">{amount(data.events.filter(e => e.entry.kind === kind).length)}</span></label>)}</div>}
-    {days.size === 0 && <p className="muted">All event types are hidden.</p>}<div className="wide timeline"><ol className="journey">{[...days].map(([day, events]) => <li className="day" key={day}><h3>{day}</h3><ol>{events.map(({entry, mark, call, wait}, i) => <li className="timeline-entry" key={mark ?? i} id={call ? 'call-' + encodeURIComponent(entry.call.id) : undefined}><span className="num">{entry.at > 0 ? <time dateTime={new Date(entry.at).toISOString()} title={stamp(entry.at, zone)}>{hourOf(entry.at, zone)}</time> : <span className="muted">No data</span>}</span><span className={'chip kind ' + entry.kind}><Glyph kind={looksLike(entry)}/>{WHAT[entry.kind]}</span><div className="what"><Story entry={entry} icon={call && <Detail card={cards[call]}/>} at={data.at} records={data.records}/></div><div className="why"><Subject id={entry.subject}/>{mark && <Detail card={cards[mark]} id={mark} title={WHAT[entry.kind] + ' details'}/>}{wait && <Detail card={cards[wait]} id={wait} title={cards[wait]?.title}/>}<span className="reason">{tieWords(journey.subjects[entry.subject],which)}</span></div></li>)}</ol></li>)}</ol></div>{journey.next != null && <Link className="button" to={data.canonical + '?before=' + journey.next}>Show earlier</Link>}</section></>
+    {days.size === 0 && <p className="muted">All event types are hidden.</p>}<div className="wide timeline"><ol className="journey">{[...days].map(([day, events]) => <li className="day" key={day}><h3>{day}</h3><ol>{events.map(({entry, mark, call, wait}, i) => <li className="timeline-entry" key={mark ?? i} id={call ? 'call-' + encodeURIComponent(entry.call.id) : undefined}><span className="num">{entry.at > 0 ? <time dateTime={new Date(entry.at).toISOString()} title={stamp(entry.at, zone)}>{hourOf(entry.at, zone)}</time> : <span className="muted">No data</span>}</span><span className={'chip kind ' + entry.kind}><Glyph kind={looksLike(entry)}/>{WHAT[entry.kind]}</span><div className="what"><Story entry={entry} icon={call && <Detail card={cards[call]}/>} at={data.at} records={data.records}/></div><div className="why"><Subject id={entry.subject}/>{mark && <Detail card={cards[mark]} id={mark} title={WHAT[entry.kind] + ' details'}/>}{wait && <Detail card={cards[wait]} id={wait} title={cards[wait]?.title}/>}<span className="reason">{tieWords(journey.subjects[entry.subject],which)}</span></div></li>)}</ol></li>)}</ol></div>{journey.next != null && <Link className="button" to={data.canonical + '?' + new URLSearchParams({ before: String(journey.next), ...(data.zoom.at !== 'All' && { zoom: data.zoom.at }) })}>Show earlier</Link>}</section></>
 }
 
 const measures = [['calls','All calls'],['answered','Answered'],['missed','Missed'],['voicemail','Voicemail'],['unknown','Unknown'],['waiting','Waiting for result'],['returned','Returned']]
