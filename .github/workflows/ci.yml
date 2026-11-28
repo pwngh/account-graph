@@ -3,6 +3,8 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A run takes about seven minutes. One hung for eighteen.
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
