@@ -1005,8 +1005,9 @@ test('a lead, a call, a text and a conversion each say once that they arrived, a
   ])
   await six.record({ entries: [{ ...entries[0]!, key: 'CA-old' }, { ...entries[2]!, key: 'sale-old' }] as RecordEntry[], history: true })
   assert.equal((await arrived()).length, 4)
-  // Forgetting the caller takes the event of their call with them.
-  await engine.graph.forget(caller)
+  // A call said to be someone's goes with them when they are forgotten, though its line stays.
+  await six.record({ entries: [{ type: 'call_update', key: 'whose', at: AT + 1, call: 'CA1', change: { kind: 'party', role: 'self', subject: 'contact:9', by: 'desk' } }] })
+  await engine.graph.forget('contact:9')
   assert.deepEqual((await arrived()).map(([type]) => type), ['lead.recorded', 'text.recorded', 'conversion.recorded'])
 })
 
