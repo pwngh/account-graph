@@ -2362,6 +2362,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.touch({ subject: 'b:2', at: hours(80), source: 'mailer', campaign: 'postcard', custom: { lang: 'es' } })
       // A client whose call was missed is first of all somebody to ring back.
       await miss('M1', '+15550100061', hours(30))
+      await miss('M1-again', '+15550100061', hours(26))
       await graph.observe([{ subject: 'c:1', identifiers: [`phone:${hashPhone('+15550100061')}`, 'email:c'], at: hours(90) }])
       await step('c:1', 'client', hours(90), 400)
       // A miss that was returned today is done, and one from a hidden number cannot be returned.
@@ -2377,7 +2378,10 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       ])
       assert.deepEqual([board.unplaced, board.day, board.from], [1, '2023-11-14', '2023-08-17'])
       const [missed, , client] = board.columns
-      assert.deepEqual([missed!.rows[0]!.step, missed!.rows[0]!.outcome?.value, missed!.rows[0]!.call?.id, missed!.rows[0]!.language, missed!.rows[0]!.late], ['client', 400, 'M1', 'es', true])
+      assert.deepEqual([missed!.rows[0]!.step, missed!.rows[0]!.outcome?.value, missed!.rows[0]!.call?.id, missed!.rows[0]!.language, missed!.rows[0]!.late], ['client', 400, 'M1-again', 'es', true])
+      // The row names the oldest call that waits, so that staff can say it was returned, and it has waited since that call. Nobody at a step has one.
+      assert.equal(missed!.rows[0]!.at, hours(30))
+      assert.deepEqual([missed!.rows[0]!.missed, board.columns.slice(1).flatMap((column) => column.rows).filter((row) => row.missed !== undefined)], ['M1', []])
       assert.deepEqual([client!.rows[0]!.touch?.campaign, client!.rows[0]!.language, client!.rows[1]!.language, client!.rows[2]!.language], ['postcard', 'es', 'en', undefined])
 
       // No limit set: nobody waits too long. Fewer rows: the counts are still of everybody.

@@ -10,11 +10,11 @@ export function loader({ request, url, params }: LoaderFunctionArgs) {
   return loadReport(request, kind, kind === 'journey' ? readSubject(url) ?? params.subject : params.days)
 }
 
-// Two of these pages have forms: Retry on a rejected conversion on Health, and what a reviewer says of a missed call on Calls.
+// Three of these pages have forms: Retry on a rejected conversion on Health, and what a reviewer says of a missed call on Calls and on the Board.
 export async function action({ request, url }: ActionFunctionArgs) {
   const kind = url.pathname.split('/')[1].toLowerCase()
   if (kind === 'health') return retryConversion(request)
-  if (kind === 'calls') return sayOfCall(request)
+  if (kind === 'calls' || kind === 'board') return sayOfCall(request)
   throw new Response('This page has no form.', {status: 405})
 }
 

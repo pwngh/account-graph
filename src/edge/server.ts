@@ -1,7 +1,7 @@
 import { hasPageRules, validPageRules } from './collect.ts'
 import type { PageRules } from './collect.ts'
 import { browserPage, recordPages } from './pages.ts'
-import type { LeadSources } from '../contract/api.ts'
+import type { LeadSources, RecordResponse } from '../contract/api.ts'
 import { LeadConflict, acceptLead, leadBody, signedLead } from './leads.ts'
 import type { RecordLead } from './leads.ts'
 import { FAULT_CODES, fault, malformed } from '../contract/fault.ts'
@@ -726,6 +726,12 @@ export function createHandler(core: Core, options: HandlerOptions) {
       const run = (input: unknown) => core.v1!(name as CallName, input, gone.signal)
       const dispatch = guarded && name === 'record' ? (input: unknown) => recordPages(input, options, run) : run
       const said = owner.role === 'limited' ? await limitedCall(owner, name as CallName, body, dispatch) : await dispatch(body)
+      // A reviewer who says something of a call is shown what came of it, as with a decision. What was worked out before is worked out again.
+      if (owner.role === 'reviewer' && name === 'record' && (said as RecordResponse).results.some((result) => result.ok && !result.value.duplicate)) {
+        decided += 1
+        answers.clear()
+        core.decided?.()
+      }
       // No journey says whom a call was not with, so a reviewer is not told it here.
       if (owner.role === 'reviewer' && name === 'lookup' && body?.kind === 'party' && (said as any)?.role === 'excluded') {
         const { subject: _, ...shown } = said as any
