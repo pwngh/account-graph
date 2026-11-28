@@ -89,7 +89,7 @@ Open `/signin` and enter the token issued to your reviewer name. An address gets
 
 With JavaScript, one event stream stays open as the reviewer moves between reports. One follower per process reads the graph with the events token for every open tab. It starts with the first stream and stops when the last one closes. It follows the graph cursor and checks the write count because some ordinary observations produce no public event. If the graph refuses the events token, the streams end and the page says live updates were interrupted. The reviewer stays signed in. It catches up on history at a fresh connection and asks for one refresh of the open view. A reconnect carries the browser’s last event ID. Stopping the server ends each stream without a sign-out event, and the browser reconnects to the next process. Pages and forms work after an ordinary reload if streaming is unavailable.
 
-A page that reads itself again, after a change or on its first load, keeps what it showed when the graph does not answer, and says "The graph is not answering. This page shows what it last read." The note goes at the next read the graph answers. A page not yet shown in the tab says it could not be opened, as before.
+A page that reads itself again, after a change or on its first load, keeps what it showed when the graph does not answer, and says "The graph is not answering. This page shows what it last read." The note goes at the next read the graph answers, or on another page. Only the page on screen is kept: another page, or this one opened again after leaving it, says it could not be opened, as before.
 
 ## Times
 

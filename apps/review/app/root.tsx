@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useState } from 'react'
 import { Form, Link, Links, Outlet, Scripts, ScrollRestoration, isRouteErrorResponse, useLocation, useMatches, useNavigation, useRouteError, useRevalidator, useRouteLoaderData, type LoaderFunctionArgs } from 'react-router'
-import { GRAPH_AWAY, GRAPH_BACK, remember } from './kept'
+import { AWAY_NOTE, GRAPH_AWAY, GRAPH_BACK, remember } from './kept'
 import { current, reviewerZone } from './auth.server'
 import { runtime } from './runtime.server'
 import { ZoneContext } from './views/shared'
@@ -34,12 +34,15 @@ function Live({path}: {path: string}) {
     return () => stream.close()
   }, [revalidate])
   useEffect(() => {
-    const away = () => setStatus('The graph is not answering. This page shows what it last read.')
-    const back = () => setStatus('')
+    // The note is taken away only where it is the one shown, so a note about the stream stays.
+    const clear = () => setStatus(said => said === AWAY_NOTE ? '' : said)
+    const away = () => setStatus(AWAY_NOTE)
     window.addEventListener(GRAPH_AWAY, away)
-    window.addEventListener(GRAPH_BACK, back)
-    return () => { window.removeEventListener(GRAPH_AWAY, away); window.removeEventListener(GRAPH_BACK, back) }
+    window.addEventListener(GRAPH_BACK, clear)
+    return () => { window.removeEventListener(GRAPH_AWAY, away); window.removeEventListener(GRAPH_BACK, clear) }
   }, [])
+  // Another page is read anew, so the note is not about it.
+  useEffect(() => setStatus(said => said === AWAY_NOTE ? '' : said), [path])
   return <span role="status">{status}</span>
 }
 

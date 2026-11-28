@@ -1,43 +1,34 @@
 import { isRouteErrorResponse, type ClientLoaderFunctionArgs } from 'react-router'
 
 /**
- * What each page last read, by its address, in this browser tab. A page that reads itself again while the graph does not answer keeps
- * what it showed, and says so, where it would otherwise be replaced by the error page. A page opened for the first time has nothing kept,
- * and shows the error as before.
+ * The page this tab shows, as it was read, by its address. When the page reads itself again and the graph does not answer, it keeps what
+ * it showed and says so, where it would otherwise be replaced by the error page. Only the page on screen is kept: another page, or this
+ * one opened again after leaving it, shows the error as before.
  */
-const kept = new Map<string, unknown>()
-const MOST = 10
+let shown: { key: string; data: unknown } | undefined
 const keyOf = (address: string) => {
   const url = new URL(address, 'http://page')
   return url.pathname + url.search
 }
 
-/** Keeps what a page read, as the page shows it. */
+/** Keeps what the page on screen shows. Called once the page is displayed. */
 export function remember(address: string, data: unknown) {
-  if (data === undefined) return
-  const key = keyOf(address)
-  kept.delete(key)
-  kept.set(key, data)
-  if (kept.size > MOST) kept.delete(kept.keys().next().value!)
+  shown = data === undefined ? undefined : { key: keyOf(address), data }
 }
 
-let away = false
-/** Told whether the graph answered the last read of a page. */
+/** The note the page shows while it keeps what it last read. */
+export const AWAY_NOTE = 'The graph is not answering. This page shows what it last read.'
 export const GRAPH_AWAY = 'graph-away', GRAPH_BACK = 'graph-back'
 
 export async function keptThroughOutage({ request, serverLoader }: ClientLoaderFunctionArgs) {
-  const key = keyOf(request.url)
   try {
     const data = await serverLoader()
-    remember(key, data)
-    if (away) window.dispatchEvent(new Event(GRAPH_BACK))
-    away = false
+    window.dispatchEvent(new Event(GRAPH_BACK))
     return data
   } catch (error) {
     const unavailable = (error instanceof Response || isRouteErrorResponse(error)) && error.status === 503
-    if (!unavailable || !kept.has(key)) throw error
-    away = true
+    if (!unavailable || shown?.key !== keyOf(request.url)) throw error
     window.dispatchEvent(new Event(GRAPH_AWAY))
-    return kept.get(key)
+    return shown.data
   }
 }
