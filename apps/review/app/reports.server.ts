@@ -64,6 +64,8 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
       const before = query.get('before')
       if (before && /^\d+$/.test(before)) qs.set('before', before)
       const journey = report.journey = await get('journey', { ...args, ...Object.fromEntries(qs) })
+      // The time this page was read. What is taken back from it is said at this time.
+      report.at = at
       const { entries, subjects, next } = journey
       const atOf = (e: Row) => [e.subject,e.kind,e.at,e.call?.id,e.text?.id,e.outcome?.transactionId,e.decision?.seq,e.event]
       const facts = { entries, ties: subjects, subject: which, at, limits, partial: next !== null, here: true }
@@ -207,6 +209,10 @@ export async function retryConversion(request: Request) {
  * What a reviewer says of a missed call: that the caller was reached, or that the call was nobody's inquiry.
  * It is recorded with the reviewer's own token and signed with their name, so the graph decides whether they may.
  */
+/** What a reviewer can say of a call: two statements, and the two that take them back. */
+const SAYINGS = ['reached', 'not_lead', 'not_reached', 'lead'] as const
+type Saying = typeof SAYINGS[number]
+
 export async function sayOfCall(request: Request) {
   checkOrigin(request)
   return withGraph(request, async (session, graph) => {
@@ -216,12 +222,18 @@ export async function sayOfCall(request: Request) {
     // The time is the form's own, from when the page was read, so the same form sent twice is one statement. A page left open for a day is read again first.
     const at = Number(field('at'))
     const now = graphTime()
-    if (!call || !key || key.length > 150 || (intent !== 'reached' && intent !== 'not_lead') || !Number.isSafeInteger(at) || at > now + 60_000 || at < now - 86_400_000) return data({ error: 'Reload the page and try again.' }, { status: 400 })
+    if (!call || !key || key.length > 150 || !(SAYINGS as readonly string[]).includes(intent) || !Number.isSafeInteger(at) || at > now + 60_000 || at < now - 86_400_000) return data({ error: 'Reload the page and try again.' }, { status: 400 })
     // One page read can say this of several calls, so the call is part of the key. A call's ID may be long, and a key may not.
     const said = key + '/' + createHash('sha256').update(call).digest('hex').slice(0, 16)
-    const entry = intent === 'reached'
-      ? { type: 'call_update' as const, key: said + '/reached', at, call, change: { kind: 'returned' as const, reachedAt: at, by: session.name } }
-      : { type: 'restatement' as const, key: said + '/not-lead', at, of: { type: 'call' as const, key: call }, change: { kind: 'not_lead' as const, why: field('why') === 'spam' ? 'spam' as const : 'other' as const, by: session.name } }
+    const by = session.name
+    const of = { type: 'call', key: call } as const
+    const [entry, saved] = ({
+      reached: [{ type: 'call_update', key: said + '/reached', at, call, change: { kind: 'returned', reachedAt: at, by } }, 'Recorded: the caller was reached. Their missed calls no longer wait.'],
+      not_lead: [{ type: 'restatement', key: said + '/not-lead', at, of, change: { kind: 'not_lead', why: field('why') === 'spam' ? 'spam' : 'other', by } }, 'Recorded: not a lead. The call is out of the counts.'],
+      // Each takes the other statement back. The newest of the two stands, and this page was read after the one it shows.
+      not_reached: [{ type: 'call_update', key: said + '/not-reached', at, call, change: { kind: 'not_returned', by } }, 'Recorded: the report that the caller was reached is taken back.'],
+      lead: [{ type: 'restatement', key: said + '/lead', at, of, change: { kind: 'lead', by } }, 'Recorded: the call is a lead again. It is back in the counts.'],
+    } as const)[intent as Saying]
     let result
     try {
       result = (await graph.record({ entries: [entry] }, { signal: request.signal })).results[0]!
@@ -231,7 +243,9 @@ export async function sayOfCall(request: Request) {
       throw error
     }
     if (!result.ok) return data({ error: result.reason === 'UNKNOWN_REFERENCE' ? 'The graph no longer has this call. Reload the page.' : 'The graph refused this (' + result.reason + ').' }, { status: 409 })
-    if (field('_enhanced') === '1') return { saved: intent === 'reached' ? 'Recorded: the caller was reached. Their missed calls no longer wait.' : 'Recorded: not a lead. The call is out of the counts.' }
+    // The newest statement stands. One said from a page read before a newer one changes nothing, and the reviewer is told so.
+    if ((result.value as { stands?: boolean }).stands === false) return data({ error: 'Something newer was said of this call after this page was read. Reload the page.' }, { status: 409 })
+    if (field('_enhanced') === '1') return { saved }
     const url = new URL(request.url)
     // Without a script the page is read again, at the same days and filter, with the next call open.
     url.searchParams.delete('pick')
