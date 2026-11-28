@@ -72,3 +72,15 @@ test('Python uses the six calls, follows cursors and recovers committed writes a
     assert.equal(attempts[1]!.body, attempts[0]!.body, key)
   }
 })
+
+test('the Python client and outbox pass their own unit tests', async (t) => {
+  const probe = spawnSync('python3', ['--version'])
+  if ((probe.error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') return t.skip('python3 is needed for the Python unit tests')
+  // The standard library's runner, so nothing is installed. Each test file starts its own fakes.
+  const ran = spawnSync('python3', ['-B', '-m', 'unittest', 'discover', '-s', 'clients/python/tests', '-p', 'test_*.py'], {
+    env: { PATH: process.env.PATH, PYTHONPATH: resolve('clients/python'), PYTHONNOUSERSITE: '1' }, encoding: 'utf8', timeout: 120_000,
+  })
+  assert.equal(ran.status, 0, ran.stderr.slice(-4000))
+  assert.match(ran.stderr, /^Ran \d+ tests? in /m)
+  assert.match(ran.stderr, /^OK/m)
+})
