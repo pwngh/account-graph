@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # Builds the server. Run it with a PostgreSQL address, a token and a receipt secret; see docs/operations.md.
 FROM node:22-alpine AS build
 WORKDIR /app
