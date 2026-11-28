@@ -35,6 +35,8 @@ import type { Workers } from './workers.ts'
 export interface Keeping {
   /** Takes the policy given as the database's, where it differs. Clusters must then be rebuilt. */
   adopt?: boolean
+  /** Opens only a schema that already holds a graph, and makes none. Commands use it, so a wrong name is not taken for an empty graph. */
+  existing?: boolean
   log?: (line: string) => void
 }
 
@@ -113,6 +115,17 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
     const store: PostgresStore = createPostgresStore(made as unknown as Pool, options.schema, { lockTimeout: timeout })
     // The statements of an upgrade have no time limit.
     const patient = new pg.Pool({ connectionString: options.databaseUrl, connectionTimeoutMillis: timeout, max: 1 })
+    if (keeping.existing) {
+      const schema = options.schema ?? 'account_graph'
+      const { rows } = await patient.query('select to_regclass($1) is not null as there', [`"${schema.replaceAll('"', '""')}".subject`]).catch(async (error) => {
+        await patient.end()
+        throw error
+      })
+      if (!rows[0]?.there) {
+        await Promise.all([patient.end(), made.end()])
+        throw fault(FAULT_CODES.CONFIG.MISMATCH, `There is no graph in schema "${schema}" of this database. Set GRAPH_SCHEMA to the schema that holds it.`)
+      }
+    }
     const applied = await createPostgresStore(patient as unknown as Pool, options.schema).migrate().finally(() => patient.end())
     log(applied.length > 0 ? `database upgraded: ${applied.join(', ')}` : 'database is up to date')
     return store

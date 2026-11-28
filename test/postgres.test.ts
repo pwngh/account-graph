@@ -283,6 +283,23 @@ if (!url) {
       } finally {
         await running.close()
       }
+      // Counted and kept, then refused for a day to come, then pruned.
+      const counts = async () => JSON.parse((await (async () => { const out: string[] = []; await command(own, ['stats'], (line) => out.push(line)); return out[0]! })())).graph
+      // A sighting long ago, which a prune of any later day takes.
+      await createGraph(createPostgresStore(pool, schema)).observe({ subject: 'account:old', identifiers: ['email:old'], at: 1 })
+      const before = await counts()
+      const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+      const dry: string[] = []
+      await command(own, ['prune', '--before', tomorrow, '--dry-run', '--force'], (line) => dry.push(line))
+      assert.deepEqual(Object.keys(JSON.parse(dry[0]!)), ['dryRun', 'pruned', 'events', 'receipts'])
+      assert.ok(JSON.parse(dry[0]!).pruned > 0, dry[0])
+      assert.deepEqual(await counts(), before)
+      await assert.rejects(command(own, ['prune', '--before', tomorrow]), /after today/)
+      assert.deepEqual(await counts(), before)
+      // A schema with no graph is named, and nothing is made there.
+      const elsewhere = `${schema}_absent`
+      await assert.rejects(command({ ...own, GRAPH_SCHEMA: elsewhere }, ['verify']), /no graph in schema/)
+      assert.equal((await pool.query('select count(*)::int as n from information_schema.schemata where schema_name = $1', [elsewhere])).rows[0].n, 0)
       const said: string[] = []
       await command(own, ['rebuild'], (line) => said.push(line))
       await command(own, ['verify'], (line) => said.push(line))

@@ -704,7 +704,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([(await store.outbox.get('t')).length, (await graph.history('account:1')).length], [1, 1])
       await graph.forget('account:1', { seen: (await graph.decisions()).length })
       assert.deepEqual([(await store.outbox.get('t')).length, (await graph.history('account:1')).length], [0, 0])
-      // A prune names a time, which is nobody's id.
+      // A prune names a time, which is nobody's id. A dry run counts, and leaves it all, the decision too.
+      await graph.observe({ subject: 'account:old', identifiers: ['device:old'], at: 1 })
+      const [held, decided] = [await graph.history('account:old'), (await graph.decisions()).length]
+      assert.ok((await graph.prune(T0, undefined, true)) > 0)
+      assert.deepEqual([await graph.history('account:old'), (await graph.decisions()).length, (await graph.audit()).sound], [held, decided, true])
       await graph.prune(1)
       await graph.forget('1', { seen: (await graph.decisions()).length - 1 })
       await assert.rejects(graph.join('account:5', 'account:6', { seen: 0.5 }), TypeError)
