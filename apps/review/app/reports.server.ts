@@ -258,7 +258,7 @@ export async function sayOfCall(request: Request) {
       if (picked && typed && picked !== typed && picked !== field('was')) return wrong('Choose a record from the list or give an ID, not both.')
       const subject = typed || picked
       // A call named for an ID nobody has would be in no history at all.
-      if (subject.length > 300 || madeByGraph(subject) || !(await graph.lookup({ kind: 'find', text: subject }, { signal: request.signal })).subjects.includes(subject)) return wrong('No record has this ID. Check it and save again.')
+      if (subject.length > 300 || madeByGraph(subject) || !(await reviewGet(request, session, 'subject', { subject })).known) return wrong('No record has this ID. Check it and save again.')
       // The statement that stands is read now, and must be the one the page showed. Then the graph takes this one only if that one still stands.
       const stands = await graph.lookup({ kind: 'party', call }, { signal: request.signal }) as { key: string; role: string; subject?: string; by: string; at: number } | null
       const changed = data({ error: 'Somebody said who this call was with after this page was read. Reload the page.' }, { status: 409 })
