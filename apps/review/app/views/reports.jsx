@@ -124,8 +124,21 @@ function Board({ data }) {
 }
 
 const kinds = Object.keys(WHAT)
-function Story({ entry, icon }) {
-  return <>{told(entry, icon).map((part,i) => <Fragment key={i}>{part}</Fragment>)}</>
+function Story({ entry, icon, at }) {
+  return <>{told(entry, icon).map((part,i) => <Fragment key={i}>{part}</Fragment>)}{at != null && <TakeBack entry={entry} at={at}/>}</>
+}
+/**
+ * What a reviewer said of a call can be taken back from the call's row: that it was not a lead, or that the caller was reached.
+ * A return the phone system saw is not a statement, and has nothing to take back.
+ */
+function TakeBack({ entry, at }) {
+  const snapshot = useContext(reportSnapshot)
+  if (entry.kind !== 'call') return null
+  const which = <>Call, <Time at={entry.at} short/></>
+  if (entry.notLead) return <SayOfCall look="pop" title={which} intent="lead" call={entry.call.id} formKey={snapshot} at={at} label="Take back"><p>Takes back that this call was not a lead. It is counted again, and it waits for a call back if nobody returned it. It is recorded under your name.</p></SayOfCall>
+  // The statement is on the call it was said of, which is the oldest that waited then. A later miss it covered says "reported" too, and has no link, so that the form names the call it changes.
+  if (entry.followUp?.state === 'returned' && entry.followUp.reported && entry.followUp.by === entry.call.id) return <SayOfCall look="pop" title={which} intent="not_reached" call={entry.followUp.by} formKey={snapshot} at={at} label="Take back"><p>Takes back the report that this caller was reached. Their missed calls wait again, unless the phone system saw a call that returned them. It is recorded under your name.</p></SayOfCall>
+  return null
 }
 const LANE = 36
 const RULER = 42
@@ -164,6 +177,7 @@ function Chart({ events, groups, cards }) {
 }
 function Journey({ data }) {
   const { journey, which, cards } = data
+  const said = useFetcher({ key: 'said-of-call' })
   const [hidden, setHidden] = useState([])
   const [enhanced, setEnhanced] = useState(false)
   const zone = useContext(ZoneContext)
@@ -185,9 +199,9 @@ function Journey({ data }) {
   }
   return <><section><PageHead view="journey" title={<bdi title={which}>{named(which)}</bdi>}><Link className="button" to={subjectHash(which)}>Account</Link></PageHead>{known}
     <Tiles items={[[ 'Events', amount(data.events.length) + (journey.next === null ? '' : '+')], [['IDs', 'journeyIds'], amount(Object.keys(journey.subjects).length)], dates.length > 0 && ['First event', <Time at={dates[0]} short/>], dates.length > 0 && ['Last event', <Time at={dates.at(-1)} short/>, dates.at(-1) > dates[0] && lasted(dates.at(-1) - dates[0]) + ' later'] ]}/>{journey.more > 0 && <p className="meta">{amount(journey.more)} more IDs are not shown.</p>}
-    <Chart events={visible} groups={data.groups} cards={cards}/></section><section><h2>Timeline</h2>
+    <Chart events={visible} groups={data.groups} cards={cards}/></section><section><h2>Timeline</h2><Answer result={said.data}/>
     {enhanced && <div className="row filters" role="group" aria-label="Show">{kinds.filter(kind => data.events.some(e => e.entry.kind === kind)).map(kind => <label key={kind} className={kind}><input type="checkbox" checked={!hidden.includes(kind)} onChange={() => setHidden(hidden.includes(kind) ? hidden.filter(k => k !== kind) : [...hidden,kind])}/><Glyph kind={kind}/>{WHAT[kind]}<span className="count">{amount(data.events.filter(e => e.entry.kind === kind).length)}</span></label>)}</div>}
-    {days.size === 0 && <p className="muted">All event types are hidden.</p>}<div className="wide timeline"><ol className="journey">{[...days].map(([day, events]) => <li className="day" key={day}><h3>{day}</h3><ol>{events.map(({entry, mark, call, wait}, i) => <li className="timeline-entry" key={mark ?? i} id={call ? 'call-' + encodeURIComponent(entry.call.id) : undefined}><span className="num">{entry.at > 0 ? <time dateTime={new Date(entry.at).toISOString()} title={stamp(entry.at, zone)}>{hourOf(entry.at, zone)}</time> : <span className="muted">No data</span>}</span><span className={'chip kind ' + entry.kind}><Glyph kind={looksLike(entry)}/>{WHAT[entry.kind]}</span><div className="what"><Story entry={entry} icon={call && <Detail card={cards[call]}/>}/></div><div className="why"><Subject id={entry.subject}/>{mark && <Detail card={cards[mark]} id={mark} title={WHAT[entry.kind] + ' details'}/>}{wait && <Detail card={cards[wait]} id={wait} title={cards[wait]?.title}/>}<span className="reason">{tieWords(journey.subjects[entry.subject],which)}</span></div></li>)}</ol></li>)}</ol></div>{journey.next != null && <Link className="button" to={data.canonical + '?before=' + journey.next}>Show earlier</Link>}</section></>
+    {days.size === 0 && <p className="muted">All event types are hidden.</p>}<div className="wide timeline"><ol className="journey">{[...days].map(([day, events]) => <li className="day" key={day}><h3>{day}</h3><ol>{events.map(({entry, mark, call, wait}, i) => <li className="timeline-entry" key={mark ?? i} id={call ? 'call-' + encodeURIComponent(entry.call.id) : undefined}><span className="num">{entry.at > 0 ? <time dateTime={new Date(entry.at).toISOString()} title={stamp(entry.at, zone)}>{hourOf(entry.at, zone)}</time> : <span className="muted">No data</span>}</span><span className={'chip kind ' + entry.kind}><Glyph kind={looksLike(entry)}/>{WHAT[entry.kind]}</span><div className="what"><Story entry={entry} icon={call && <Detail card={cards[call]}/>} at={data.at}/></div><div className="why"><Subject id={entry.subject}/>{mark && <Detail card={cards[mark]} id={mark} title={WHAT[entry.kind] + ' details'}/>}{wait && <Detail card={cards[wait]} id={wait} title={cards[wait]?.title}/>}<span className="reason">{tieWords(journey.subjects[entry.subject],which)}</span></div></li>)}</ol></li>)}</ol></div>{journey.next != null && <Link className="button" to={data.canonical + '?before=' + journey.next}>Show earlier</Link>}</section></>
 }
 
 const measures = [['calls','All calls'],['answered','Answered'],['missed','Missed'],['voicemail','Voicemail'],['unknown','Unknown'],['waiting','Waiting for result'],['returned','Returned']]

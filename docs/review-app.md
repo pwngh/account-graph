@@ -97,7 +97,7 @@ The server writes every time on the page. On the first load with JavaScript, the
 | Address | Contents |
 | --- | --- |
 | `/accounts`, `/accounts/:subject` | Accounts overview, cluster diagram, links, record dates, evidence and reviewer actions. |
-| `/journey/:subject` | Timeline and chart for the person. |
+| `/journey/:subject` | Timeline and chart for the person. A call shown as reported returned, or as not a lead, has Take back. |
 | `/board/:days` | Missed calls and people by their furthest step. A card in Missed calls has the same Reached them and Not a lead as Calls. |
 | `/calls` | Missed calls, call outcomes, coverage and supporting detail. On the open missed call a reviewer records Reached them or Not a lead, signed with their name. The graph server must be one that takes these from a reviewer. |
 | `/decide` | The queue of pending matches beside the open pair: the two records side by side, the evidence, what joining would do, and Join, Separate and Skip with the J, K and S keys. `/decide?pair=` opens one pair. It says when pairs among older sightings are not in the queue, and links to the original screen, whose Check older records reaches them. |

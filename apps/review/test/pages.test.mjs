@@ -265,6 +265,77 @@ test('a Board card for a caller who waits has the same two forms, and one page r
   assert.deepEqual(await waits(), [])
 })
 
+test('what a reviewer said of a call is taken back from the call in the caller\'s history', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const { at } = await (await fetch(firm.graph + '/review/api/board?days=90', { headers: { authorization: 'Bearer demo' } })).json()
+  const day = at => new Date(at).toISOString().slice(0, 10)
+  const hours = n => at - n * 3600_000
+  const call = (key, from, to, when, direction, answered) => ({ type: 'call', key, at: when, direction, from, to, duration: answered ? 60 : 20, result: { answered } })
+  // One caller missed twice. Another missed once, and the phone system saw the call that returned them.
+  const written = await fetch(firm.graph + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ entries: [
+    call('waits-1', '+15550100061', '+15550100102', hours(5), 'inbound', false), call('waits-1-again', '+15550100061', '+15550100102', hours(2), 'inbound', false),
+    call('rung-1', '+15550100062', '+15550100102', hours(4), 'inbound', false), call('rung-back', '+15550100102', '+15550100062', hours(3), 'outbound', true)] }) })
+  const results = (await written.json()).results
+  assert.ok(results.every(result => result.ok), JSON.stringify(results))
+  const [subject, , other] = results.map(result => result.value.subject)
+  const journey = '/journey/' + encodeURIComponent(subject)
+  const calls = '/calls?from=' + day(at - 86400_000) + '&to=' + day(at)
+  const waits = async () => (await (await fetch(firm.graph + '/review/api' + calls, { headers: { authorization: 'Bearer demo' } })).json()).calls.map(call => call.id).filter(id => /^(waits|rung)-/.test(id)).sort()
+  const post = (path, fields) => fetch(firm.graph + path, { method: 'POST', headers: { cookie, origin: firm.graph }, body: new URLSearchParams(fields), redirect: 'manual' })
+  const page = async path => (await (await fetch(firm.graph + path, { headers: { cookie } })).text()).replaceAll('<!-- -->', '').replaceAll('&amp;', '&')
+  // The forms in a history, each named by its call and opened by a button of its own.
+  const forms = async (path = journey) => [...(await page(path)).matchAll(/<button type="button" class="say" popoverTarget="([^"]+)">Take back<\/button><div class="card-pop say-pop" popover="auto" id="([^"]+)" role="dialog" aria-labelledby="[^"]+"><div class="detail-head"><h4 id="[^"]+">Call, <time dateTime="([^"]+)"[^>]*>[^<]+<\/time><\/h4>[\s\S]*?<form\b[^>]*\baction="([^"]+)"[^>]*\bmethod="post"[^>]*><input type="hidden" name="intent" value="([a-z_]+)"\/><input type="hidden" name="call" value="([^"]+)"\/><input type="hidden" name="key" value="([0-9a-f-]{36})"\/><input type="hidden" name="at" value="(\d+)"\/>/g)]
+    .map(([, opens, id, time, action, intent, call, key, at]) => ({ opens, id, time, action, fields: { intent, call, key, at } }))
+  // Nothing is said of the first caller yet, and nobody stated the second caller's return, so neither history has anything to take back.
+  assert.deepEqual([await waits(), await forms(), await forms('/journey/' + encodeURIComponent(other))], [['waits-1', 'waits-1-again'], [], []])
+
+  // Reached, said as on Calls, between their two calls. The first call is returned and the second still waits.
+  const said = { call: 'waits-1', key: crypto.randomUUID(), at: String(hours(3)) }
+  assert.equal((await post('/calls', { ...said, intent: 'reached' })).status, 303)
+  assert.deepEqual(await waits(), ['waits-1-again'])
+  const [reached, ...more] = await forms()
+  assert.deepEqual([more, reached.opens === reached.id, reached.action, reached.time, reached.fields.intent, reached.fields.call], [[], true, journey, new Date(hours(5)).toISOString(), 'not_reached', 'waits-1'])
+  // The history beside their open call on Calls has the same form, and it posts to Calls.
+  const list = await page(calls)
+  const open = list.match(new RegExp('<a\\b[^>]*\\bhref="(/calls\\?[^"]+)#call-history"[^>]*\\btitle="' + subject + '[ "]'))?.[1] ?? list.match(new RegExp('<a\\b[^>]*\\btitle="' + subject + '[ "][^>]*\\bhref="(/calls\\?[^"]+)#call-history"'))?.[1]
+  assert.ok(open, 'the caller who still waits is in the list')
+  const [beside, ...rest] = await forms(open)
+  assert.deepEqual([rest, beside.action, beside.fields.intent, beside.fields.call], [[], open, 'not_reached', 'waits-1'])
+
+  // Somebody else takes it back and says it again, after this page was read. This page's form is older than what stands, and says so the first time it is sent.
+  const later = n => ({ call: 'waits-1', key: crypto.randomUUID(), at: String(Number(reached.fields.at) + n) })
+  assert.equal((await post('/calls', { ...later(1), intent: 'not_reached' })).status, 303)
+  assert.deepEqual(await waits(), ['waits-1', 'waits-1-again'])
+  assert.equal((await post('/calls', { ...later(2), intent: 'reached' })).status, 303)
+  assert.deepEqual(await waits(), [])
+  const stale = await post(journey, { ...reached.fields, _enhanced: '1' })
+  assert.equal(stale.status, 409)
+  assert.match(await stale.text(), /Something newer was said of this call/)
+  assert.deepEqual(await waits(), [])
+  // That report covers both calls. Only the call it was said of has the form, and sending it twice is one statement.
+  // A page read from here on is later than every time this test made up.
+  await new Promise(resolve => setTimeout(resolve, 10))
+  const [again, ...none] = await forms()
+  assert.deepEqual([none, again.time, again.fields.call], [[], new Date(hours(5)).toISOString(), 'waits-1'])
+  for (let twice = 0; twice < 2; twice++) {
+    const back = await post(journey, again.fields)
+    assert.deepEqual([back.status, back.headers.get('location')], [303, journey])
+  }
+  assert.deepEqual([await waits(), await forms()], [['waits-1', 'waits-1-again'], []])
+
+  // Not a lead, and a lead again.
+  assert.equal((await post('/calls', { call: 'waits-1', key: crypto.randomUUID(), at: again.fields.at, intent: 'not_lead' })).status, 303)
+  assert.deepEqual(await waits(), ['waits-1-again'])
+  await new Promise(resolve => setTimeout(resolve, 10))
+  const [lead, ...others] = await forms()
+  assert.deepEqual([others, lead.fields.intent, lead.fields.call], [[], 'lead', 'waits-1'])
+  assert.match(await (await post(journey, { ...lead.fields, _enhanced: '1' })).text(), /Recorded: the call is a lead again/)
+  assert.deepEqual([await waits(), await forms()], [['waits-1', 'waits-1-again'], []])
+})
+
 test('a term has its definition beside it on every page, in the page from the start', async t => {
   const firm = await startFirm({}, { quick: true })
   t.after(() => firm.close())

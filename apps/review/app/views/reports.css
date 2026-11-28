@@ -97,8 +97,9 @@ a.sort:hover { color: var(--ink); }
 .board .top .link, .inbox-who, .queue-names span { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
 /* What can be said of a waiting call, on its card: two quiet links under the last line, each opening a form over the page. */
 .board-acts { display: flex; flex-wrap: wrap; gap: 0 12px; margin-top: 4px; }
-.board-acts .say { height: auto; min-height: 0; line-height: 1.7; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--faint); font: inherit; font-size: var(--small); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
-.board-acts .say:hover { color: var(--ink); }
+.say { height: auto; min-height: 0; line-height: 1.7; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--faint); font: inherit; font-size: var(--small); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.say:hover { color: var(--ink); }
+.what > .say { margin-left: 8px; }
 .say-pop form { display: grid; gap: 10px; }
 .said:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; border-radius: 4px; }
 .say-pop p { margin: 0; }
