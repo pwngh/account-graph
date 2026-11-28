@@ -3,6 +3,7 @@ import { after, test } from 'node:test'
 import pg from 'pg'
 import { FAULT_CODES, hasCode } from '../src/contract/fault.ts'
 import { createGraph, defaultPolicy, policyHash } from '../tools/internals.ts'
+import { accountGraph } from '../src/index.ts'
 import { createPostgresStore, upgrades } from '../src/store/postgres.ts'
 import { command, serve } from '../src/bin.ts'
 import { malformedSuite } from './malformed.suite.ts'
@@ -245,6 +246,60 @@ if (!url) {
       // Seen again, it is counted from one.
       await graph.observe({ subject: 'c', identifiers: ['email:a', 'phone:muted'], at: 2 })
       assert.deepEqual((await pool.query(`select fanout, ignored from ${schema}.identifier where id in ('email:a', 'phone:muted') order by id`)).rows, [{ fanout: 1, ignored: false }, { fanout: 1, ignored: true }])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  test('the commands for sends, events, staff links, alerts, retries and samples say what they did', async () => {
+    const schema = `ag_test_${process.pid}_commands`
+    const env = { DATABASE_URL: url, IDENTIFIER_SECRET: 'i'.repeat(32), RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', LINK_SECRET: 'l'.repeat(32) }
+    const run = async (args: string[], more: Record<string, string> = {}) => { const out: string[] = []; await command({ ...env, ...more }, args, (line) => out.push(line)); return out.join('\n') }
+    try {
+      await createPostgresStore(pool, schema).migrate()
+      // A stop on sends holds, says why and since when, and goes.
+      assert.deepEqual(JSON.parse(await run(['sends'])), { paused: false })
+      const paused = JSON.parse(await run(['sends', 'pause', 'checking', 'a', 'tie']))
+      assert.deepEqual([paused.paused, paused.reason, Number.isNaN(Date.parse(paused.since))], [true, 'checking a tie', false])
+      assert.equal(JSON.parse(await run(['sends'])).reason, 'checking a tie')
+      assert.deepEqual(JSON.parse(await run(['sends', 'resume'])), { paused: false })
+      await assert.rejects(run(['sends', 'pause']), /Usage: account-graph sends pause REASON/)
+      await assert.rejects(run(['sends', 'stop']), /Usage: account-graph sends \[pause REASON \| resume\]/)
+      // A new history of events loses every cursor of the old one.
+      const graph = accountGraph({ databaseUrl: url, schema, receiptSecrets: ['r'.repeat(32)], identifierSecret: 'i'.repeat(32), workers: false })
+      try {
+        const first = await graph.events({ after: null, limit: 1 })
+        assert.ok(first.ok)
+        const before = first.value.cursor
+        assert.match(await run(['events', 'new-epoch']), /^history \w+ begins: every cursor is lost$/)
+        const lost = await graph.events({ after: before, limit: 1 })
+        assert.deepEqual([lost.ok, !lost.ok && lost.reason], [false, 'CURSOR_LOST'])
+        assert.ok((await graph.events({ after: null, limit: 1 })).ok, 'the new history reads from its start')
+      } finally {
+        await graph.close()
+      }
+      await assert.rejects(run(['events']), /Usage: account-graph events new-epoch/)
+      // A staff link carries its mark, and needs the link secret.
+      assert.match(await run(['staff-link', 'https://example.org/team']), /^https:\/\/example\.org\/team\?ag_staff=[\w.-]+$/)
+      await assert.rejects(run(['staff-link', 'https://example.org/team'], { LINK_SECRET: '' }), /Usage: account-graph staff-link URL, with LINK_SECRET set/)
+      // A test alert with no webhook says there is none.
+      assert.deepEqual(JSON.parse(await run(['alerts', 'test'])), { delivered: false, error: 'No webhook is set. Set ALERT_WEBHOOK.' })
+      // A retry of a conversion nobody queued says so, as does one with no platform set up.
+      await assert.rejects(run(['retry', 'nope-1']), /No ad platform is configured/)
+      const meta = { META_PIXEL_ID: '555', META_ACCESS_TOKEN: 'made-up', META_SITE_URL: 'https://example.org' }
+      await assert.rejects(run(['retry', 'nope-1'], meta), /No conversion nope-1 was queued for an ad platform/)
+      await assert.rejects(run(['retry']), /Usage: account-graph retry CONVERSION/)
+      // A conversion queued for Meta: a failed send goes back in line, another platform is named, and one that arrived has nothing to retry.
+      const jobs = createPostgresStore(pool, schema).outbox
+      const job = (transactionId: string, state: 'failed' | 'sent') => ({ transactionId, target: 'meta', subject: 'contact:1', at: 1, action: 'Lead', keys: {}, state, attempts: 8, due: 1 })
+      await jobs.add(job('failed-1', 'failed'))
+      await jobs.add(job('sent-1', 'sent'))
+      await assert.rejects(run(['retry', 'failed-1', 'google'], meta), /Conversion failed-1 was not queued for google\. It was for meta/)
+      assert.deepEqual(JSON.parse(await run(['retry', 'failed-1', 'meta'], meta)).map((each: { state: string, target: string }) => [each.target, each.state]), [['meta', 'pending']])
+      await assert.rejects(run(['retry', 'sent-1'], meta), /Conversion sent-1 has no failed or skipped send to retry/)
+      // A sample of joins is a sheet with its header, even of an empty graph, and refuses a size that is none.
+      assert.equal((await run(['sample-joins', '--size', '5', '--seed', 'x'])).split('\n')[0], 'a,b,score,reasons,same')
+      await assert.rejects(run(['sample-joins', '--size', '0']), /Usage: account-graph sample-joins/)
     } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }

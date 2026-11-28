@@ -4,6 +4,7 @@
 
 ### Providers
 
+- `retry` with nothing to put back stops and says why. It printed `[]` and succeeded for a mistyped conversion or platform. Breaking: it exits 1 for a conversion whose sends all arrived, where it exited 0.
 - `ADS_TEST_RECEIVER` sends every conversion request to an ad platform, and its token requests, to an address on this machine. `tools/ads-receiver.ts` answers as each platform does and prints what it was sent.
 - The image installs `pg` and the packages it needs at the versions in `package-lock.json`. It took the newest `pg` 8 at each build.
 - The server's log lines begin with their time, and it logs one line per request, one per conversion a platform rejects for good, and `stopping` and `stopped`. A stop ends within ten seconds.

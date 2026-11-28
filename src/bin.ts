@@ -526,7 +526,15 @@ export async function command(env: Env, args: readonly string[], log: (line: str
         const [id, platform] = rest
         if (!id) usage('retry CONVERSION [PLATFORM]')
         if (!engine.outbox) throw new Error('No ad platform is configured')
-        return show((await engine.outbox.retry(id!, platform)).map(({ keys: _, metaUserAgent: __, ...job }) => job))
+        const again = await engine.outbox.retry(id!, platform)
+        // Nothing put back is said, so a mistyped ID or platform is not taken for a retry that worked.
+        if (again.length === 0) {
+          const queued = await engine.outbox.get(id!)
+          if (queued.length === 0) throw new Error(`No conversion ${id} was queued for an ad platform`)
+          if (platform && !queued.some((job) => job.target === platform)) throw new Error(`Conversion ${id} was not queued for ${platform}. It was for ${queued.map((job) => job.target).join(', ')}`)
+          throw new Error(`Conversion ${id} has no failed or skipped send${platform ? ` to ${platform}` : ''} to retry`)
+        }
+        return show(again.map(({ keys: _, metaUserAgent: __, ...job }) => job))
       }
       case 'stats':
         return show({ graph: await engine.graph.counts(), ...(engine.outbox && { outbox: await engine.outbox.counts() }) })
