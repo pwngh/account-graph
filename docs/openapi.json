@@ -8595,6 +8595,202 @@
                   "additionalProperties": false
                 },
                 {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": {
+                      "type": "number",
+                      "const": 1
+                    },
+                    "seq": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "lead.recorded"
+                    },
+                    "at": {
+                      "$ref": "#/components/schemas/At"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "subject"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "seq",
+                    "type",
+                    "at",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": {
+                      "type": "number",
+                      "const": 1
+                    },
+                    "seq": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "call.recorded"
+                    },
+                    "at": {
+                      "$ref": "#/components/schemas/At"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "call": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        },
+                        "direction": {
+                          "type": "string",
+                          "enum": [
+                            "inbound",
+                            "outbound"
+                          ]
+                        },
+                        "state": {
+                          "$ref": "#/components/schemas/CallState"
+                        }
+                      },
+                      "required": [
+                        "call",
+                        "subject",
+                        "direction",
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "seq",
+                    "type",
+                    "at",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": {
+                      "type": "number",
+                      "const": 1
+                    },
+                    "seq": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "text.recorded"
+                    },
+                    "at": {
+                      "$ref": "#/components/schemas/At"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        },
+                        "direction": {
+                          "type": "string",
+                          "enum": [
+                            "inbound",
+                            "outbound"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "subject",
+                        "direction"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "seq",
+                    "type",
+                    "at",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": {
+                      "type": "number",
+                      "const": 1
+                    },
+                    "seq": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "conversion.recorded"
+                    },
+                    "at": {
+                      "$ref": "#/components/schemas/At"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "conversion": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        },
+                        "stage": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "conversion",
+                        "subject",
+                        "stage"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "seq",
+                    "type",
+                    "at",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                },
+                {
                   "$ref": "#/components/schemas/UnrecognizedEvent"
                 }
               ]
@@ -9080,6 +9276,202 @@
                   "hash",
                   "sound",
                   "brokenAt"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "seq",
+              "type",
+              "at",
+              "data"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "schemaVersion": {
+                "type": "number",
+                "const": 1
+              },
+              "seq": {
+                "type": "number"
+              },
+              "type": {
+                "type": "string",
+                "const": "lead.recorded"
+              },
+              "at": {
+                "$ref": "#/components/schemas/At"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "key",
+                  "subject"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "seq",
+              "type",
+              "at",
+              "data"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "schemaVersion": {
+                "type": "number",
+                "const": 1
+              },
+              "seq": {
+                "type": "number"
+              },
+              "type": {
+                "type": "string",
+                "const": "call.recorded"
+              },
+              "at": {
+                "$ref": "#/components/schemas/At"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "call": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "inbound",
+                      "outbound"
+                    ]
+                  },
+                  "state": {
+                    "$ref": "#/components/schemas/CallState"
+                  }
+                },
+                "required": [
+                  "call",
+                  "subject",
+                  "direction",
+                  "state"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "seq",
+              "type",
+              "at",
+              "data"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "schemaVersion": {
+                "type": "number",
+                "const": 1
+              },
+              "seq": {
+                "type": "number"
+              },
+              "type": {
+                "type": "string",
+                "const": "text.recorded"
+              },
+              "at": {
+                "$ref": "#/components/schemas/At"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "inbound",
+                      "outbound"
+                    ]
+                  }
+                },
+                "required": [
+                  "text",
+                  "subject",
+                  "direction"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "seq",
+              "type",
+              "at",
+              "data"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "schemaVersion": {
+                "type": "number",
+                "const": 1
+              },
+              "seq": {
+                "type": "number"
+              },
+              "type": {
+                "type": "string",
+                "const": "conversion.recorded"
+              },
+              "at": {
+                "$ref": "#/components/schemas/At"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "conversion": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "stage": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "conversion",
+                  "subject",
+                  "stage"
                 ],
                 "additionalProperties": false
               }

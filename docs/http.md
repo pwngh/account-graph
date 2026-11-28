@@ -443,6 +443,12 @@ A cursor is opaque. It names the history of the database as well as a place in i
 | `feed.quiet` | `feed`, `last`, `hours` |
 | `callback.overdue` | `call`, `subject`, `missedAt`, `attempts`, `source`, `campaign`, `campaignId` |
 | `audit.head` | `seq`, `hash`, `sound`, `brokenAt` |
+| `lead.recorded` | `key`, `subject` |
+| `call.recorded` | `call`, `subject`, `direction`, `state` |
+| `text.recorded` | `text`, `subject`, `direction` |
+| `conversion.recorded` | `conversion`, `subject`, `stage` |
+
+The four `.recorded` events say that an entry arrived the first time it was recorded, from a lead source, a phone provider or your own services. An entry sent again says nothing, and neither does a `record` with `history: true`. They carry IDs and no contact details. A deletion takes them with the person.
 
 ## Faults
 
