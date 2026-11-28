@@ -49,6 +49,10 @@ export async function loadCard(request: Request, kind?: string, which?: string) 
   return { card: cards[item], canonical: page ? canonical + '?column=' + page.column + '&from=' + page.from + '#column-' + page.column : canonical }
 }
 
+const DAY = 86_400_000
+/** How far back each zoom of the Journey chart reaches from its last event. */
+const ZOOMS = { Month: 30 * DAY, Week: 7 * DAY, Day: DAY }
+
 export async function prepareReport(kind: ReportKind, which: string | undefined, query: URLSearchParams, read: Read, selected?: string, at = Date.now()) {
   const cache = new Map<string, Promise<any>>()
   const get = (path: string, query: Record<string, string> = {}) => {
@@ -92,12 +96,19 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
         const wait = entry.kind === 'call' && entry.followUp?.delay >= 0 ? add('chart.wait', id, { ...entry, pick: true }) : undefined
         return { entry, mark: entry.at > 0 ? add('chart.mark', id, { ...facts, entry }) : undefined, call, wait }
       })
-      const positive = (entries as Row[]).filter(e => e.at > 0)
+      // The chart can show the last month, week or day of the journey, as the original screen's zoom does. The list below it is whole.
+      const zoom = query.get('zoom') ?? ''
+      const span = ZOOMS[zoom as keyof typeof ZOOMS]
+      if (span) qs.set('zoom', zoom)
+      const dated = (entries as Row[]).filter(e => e.at > 0)
+      const last = dated.at(-1)?.at ?? 0
+      const positive = span ? dated.filter(e => e.at >= last - span) : dated
+      report.zoom = { at: span ? zoom : 'All', from: span ? last - span : 0, spans: Object.keys(ZOOMS).filter(name => (dated[0]?.at ?? last) < last - ZOOMS[name as keyof typeof ZOOMS]) }
       const low = positive[0]?.at ?? 0
       const high = positive.at(-1)?.at ?? low
       const groups = new Map<string, any[]>()
       for (const event of report.events) {
-        if (!event.mark) continue
+        if (!event.mark || event.entry.at < report.zoom.from) continue
         const bin = Math.round((event.entry.at - low) / Math.max(1, high - low) * 42)
         const k = event.entry.kind + '/' + bin
         if (!groups.has(k)) groups.set(k, [])

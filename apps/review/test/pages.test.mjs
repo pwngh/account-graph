@@ -362,6 +362,30 @@ test('the history of a caller names the reviewer who reported them reached', asy
   assert.match(after, /Reported by dana, with no call/)
 })
 
+test('the Journey chart zooms to the last month, week or day, and the list stays whole', async t => {
+  const firm = await startFirm({}, { quick: true })
+  t.after(() => firm.close())
+  const login = await fetch(firm.graph + '/signin', { method: 'POST', headers: { origin: firm.graph }, body: new URLSearchParams({ token: 'demo' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const { at } = await (await fetch(firm.graph + '/review/api/board?days=90', { headers: { authorization: 'Bearer demo' } })).json()
+  const subject = 'visitor:zoom'
+  const written = await fetch(firm.graph + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service-demo', 'content-type': 'application/json' }, body: JSON.stringify({ entries:
+    [60 * 24, 10 * 24, 2 * 24, 1].map((hours, i) => ({ type: 'arrival', key: 'zoom-' + i, at: at - hours * 3600_000, subject, source: 'google', campaign: 'Zoom ' + i })) }) })
+  assert.ok((await written.json()).results.every(result => result.ok))
+  const page = async query => (await (await fetch(firm.graph + '/journey/' + encodeURIComponent(subject) + query, { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
+  const visits = html => Number(html.match(/<div class="name visit">[\s\S]*?<span class="count">(\d+)<\/span>/)?.[1])
+  const zooms = html => [...(html.match(/<nav class="segments" aria-label="Zoom">([\s\S]*?)<\/nav>/)?.[1] ?? '').matchAll(/<a[^>]*>([A-Za-z]+)<\/a>/g)].map(([link, name]) => name + (link.includes('aria-current') ? '*' : ''))
+  const all = await page('')
+  assert.deepEqual([zooms(all), visits(all)], [['All*', 'Month', 'Week', 'Day'], 4])
+  const week = await page('?zoom=Week')
+  assert.deepEqual([zooms(week), visits(week)], [['All', 'Month', 'Week*', 'Day'], 2])
+  assert.equal(visits(await page('?zoom=Day')), 1)
+  // The list below is every event, whatever the chart shows.
+  for (const i of [0, 1, 2, 3]) assert.match(week, new RegExp('Zoom ' + i))
+  // A zoom that is not one is the whole chart.
+  assert.deepEqual(zooms(await page('?zoom=Year')), ['All*', 'Month', 'Week', 'Day'])
+})
+
 test('a reviewer says which record a call was with, and the call moves to the history of that record', async t => {
   const firm = await startFirm({}, { quick: true })
   t.after(() => firm.close())

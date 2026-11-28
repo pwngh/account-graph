@@ -67,6 +67,7 @@
 
 ### People
 
+- The review app's Journey chart zooms to the last month, week or day of the journey, as on the original screen.
 - A phone number thins its evidence by the most records of one type that hold it, not by all of them. A `caller:`, a `lead:` and a `contact:` record on one number stay joined, where the third record ended the join. Three records of one type are three people, as before. Breaking: groups are due a rebuild after the upgrade. Run `account-graph rebuild`.
 - A name is always hashed: a record given a name keeps one `called:` key of the whole name under every policy, as a note that links nothing. The policy still decides whether a name counts as evidence.
 - A `profile` with a name and nothing else is recorded, where it was refused with `NO_FACT_USED`. `called` is a reserved kind. Breaking: a custom kind named `called` must be renamed, and a policy cannot give `called` a cap, a group, `corroborates` or `relates`.
