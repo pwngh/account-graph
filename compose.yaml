@@ -24,7 +24,9 @@ services:
       - '${GRAPH_PORT:-8080}:8080'
     environment:
       DATABASE_URL: postgres://postgres:graph@postgres:5432/graph
-      SERVICE_TOKENS: ${SERVICE_TOKENS:-[]}
+      # Named tokens, each limited to the calls it lists. This one lets the review app follow changes and nothing else, and
+      # REVIEW_EVENTS_TOKEN sets its token here and in the app at once. A list of your own replaces this one, so keep the entry in it.
+      SERVICE_TOKENS: ${SERVICE_TOKENS:-[{"name":"review-app","token":"${REVIEW_EVENTS_TOKEN:-change-me-review-events-token}","calls":{"events":true}}]}
       LEADS:
       GRAPH_TOKEN: ${GRAPH_TOKEN:-change-me-service-token}
       RECEIPT_SECRETS: ${RECEIPT_SECRETS:-change-me-receipt-secret-change-me}
@@ -131,8 +133,8 @@ services:
       REVIEW_SESSION_SECRET: ${REVIEW_SESSION_SECRET:-change-me-review-session-secret-now}
       # The address reviewers open. Left out, it is the address each request came to. Set it behind a proxy.
       REVIEW_ORIGIN: ${REVIEW_ORIGIN:-}
-      # Lets an open page update by itself.
-      REVIEW_EVENTS_TOKEN: ${GRAPH_TOKEN:-change-me-service-token}
+      # Lets an open page update by itself. It is the named token above, which reads events and nothing else.
+      REVIEW_EVENTS_TOKEN: ${REVIEW_EVENTS_TOKEN:-change-me-review-events-token}
       REVIEW_LEGACY_URL: ${REVIEW_LEGACY_URL:-}
       # With a proxy of your own in front: true, or the number of proxies.
       REVIEW_TRUST_PROXY: ${REVIEW_TRUST_PROXY:-}

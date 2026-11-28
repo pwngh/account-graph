@@ -839,7 +839,8 @@ export function createHandler(core: Core, options: HandlerOptions) {
     path = `${request.method} ${url.pathname.slice('/review/api'.length)}`
     const owner = ownerOf(request.headers.authorization)
     if (!owner) throw new Refusal(401, 'Missing or invalid token')
-    if (owner.role === 'limited') throw new Refusal(403, 'The token does not open this route')
+    // A named service that may read events may also ask whether anything has changed, which is how a screen follows them. Nothing else of the screen's is its to read.
+    if (owner.role === 'limited' && !(path === 'GET /pulse' && owner.calls.events === true)) throw new Refusal(403, 'The token does not open this route')
     storable([...url.searchParams.values()])
     const subject = url.searchParams.get('subject') ?? ''
     if (remember && SLOW_ROUTES.has(path)) return remembered(url, response, () => route(request, response, false))

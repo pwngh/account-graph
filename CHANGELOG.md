@@ -149,6 +149,7 @@
 
 ### Edge and operations
 
+- A named service token with `events` may read `GET /review/api/pulse`, so the review app follows changes with a token that reads nothing else. `compose.yaml` gives it one, `review-app`, in place of the service token.
 - The review app has an image, `apps/review/Dockerfile`, and `compose.yaml` starts it on port 3100 (`REVIEW_PORT`), published on this machine only (`REVIEW_BIND`).
 - `node tools/stack-check.ts` signs in to a running stack as a reviewer and opens each page. CI runs it on the composed stack.
 - The review app refuses a `REVIEW_SESSION_SECRET` that begins with `change-me` when `REVIEW_ORIGIN` is outside your own machine, and treats an empty `REVIEW_ORIGIN` as not set.
