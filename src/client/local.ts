@@ -117,7 +117,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
     const patient = new pg.Pool({ connectionString: options.databaseUrl, connectionTimeoutMillis: timeout, max: 1 })
     if (keeping.existing) {
       const schema = options.schema ?? 'account_graph'
-      const { rows } = await patient.query('select to_regclass($1) is not null as there', [`"${schema.replaceAll('"', '""')}".subject`]).catch(async (error) => {
+      const { rows } = await patient.query("select exists (select from pg_tables where schemaname = $1 and tablename = 'subject') as there", [schema]).catch(async (error) => {
         await patient.end()
         throw error
       })

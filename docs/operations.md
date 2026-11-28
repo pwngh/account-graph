@@ -47,11 +47,9 @@ Compose passes the variables in [Environment variables](#environment-variables) 
 | `account-graph` | Serves, and runs the workers |
 | `account-graph rebuild` | Takes the policy that is set, and works every cluster out again |
 | `account-graph verify` | Compares the stored clusters with a full recompute. Reads every edge. |
-| `account-graph prune --before 2026-05-01` | Deletes old sightings, events and [receipts](#receipts). [Privacy](privacy.md#deletion) has the full list. `--dry-run` counts what would go and deletes nothing. A day after today is refused without `--force`, because it deletes everything. |
+| `account-graph prune --before 2026-05-01` | Deletes old sightings, events and [receipts](#receipts). [Privacy](privacy.md#deletion) has the full list. `--dry-run` counts what would go and deletes nothing. A day after today is refused without `--force`, because it takes every sighting and event there is. |
 | `account-graph retry client-1001 google` | Queues a conversion's failed and skipped deliveries again, for one platform or all |
 | `account-graph stats` | Counts what the graph holds, and deliveries by state |
-
-A command opens only a schema that holds a graph. Pointed at another, it stops and names the schema, and makes nothing there. Only the server makes a new graph.
 | `account-graph alerts test` | Posts a test alert |
 | `account-graph staff-link https://example.org/team` | Makes an address that marks a browser as [staff](#staff-traffic) |
 | `account-graph events new-epoch` | Begins a new history of events, after a [restore](#backups) |
@@ -59,6 +57,8 @@ A command opens only a schema that holds a graph. Pointed at another, it stops a
 | `account-graph sends resume` | Lets sends go again on the next pass. `account-graph sends` says whether they are paused. |
 | `account-graph sample-joins --size 300 --seed 2026-11` | Writes a random sample of the graph's own joins as CSV, for [checking by hand](#checking-joins-by-hand) |
 | `account-graph score-joins checked.csv` | Scores a checked sample. Needs no database. |
+
+A command opens only a schema that holds a graph. Pointed at another, it stops and names the schema, and makes nothing there. Only the server makes a new graph.
 
 Each command reads the server's environment variables, upgrades the database as a server does, and ends. The workers stay off.
 

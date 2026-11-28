@@ -295,6 +295,9 @@ if (!url) {
       assert.ok(JSON.parse(dry[0]!).pruned > 0, dry[0])
       assert.deepEqual(await counts(), before)
       await assert.rejects(command(own, ['prune', '--before', tomorrow]), /after today/)
+      // A day not on the calendar is refused, and both are refused before the database is opened, even a schema with no graph.
+      await assert.rejects(command(own, ['prune', '--before', '2026-02-30']), /Usage/)
+      await assert.rejects(command({ ...own, GRAPH_SCHEMA: `${schema}_never` }, ['prune', '--before', tomorrow]), /after today/)
       assert.deepEqual(await counts(), before)
       // A schema with no graph is named, and nothing is made there.
       const elsewhere = `${schema}_absent`
