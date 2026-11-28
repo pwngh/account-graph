@@ -131,6 +131,10 @@ Only Google and Meta have automatic cost readers. Other platforms can use manual
 
 Every six hours, the normal worker reads from seven UTC days ago through today. For optional conversion metrics enable `GOOGLE_ADS_CONVERSIONS=true` or set `META_ADS_CONVERSIONS` to the chosen Insights action type. To reconcile existing spend, compare the same account, reporting day, currency, metric and attribution window with the provider. See [Google metrics](https://developers.google.com/google-ads/api/fields/v26/metrics) and [Meta action stats](https://developers.facebook.com/docs/marketing-api/reference/ads-action-stats/).
 
+## Loading your past
+
+To load the sales, calls and payments you already have, send them with `"history": true` beside `entries` in the `record` request. They are recorded and counted in every report, and nothing is queued for an ad platform, now or later. Without it, a sale young enough for a platform to accept is sent however old it is, so three months of history would tell the platform of every sale again.
+
 ## What sending does
 
 | Condition | Job outcome |

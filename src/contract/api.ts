@@ -28,6 +28,8 @@ export type At = number
 export interface RecordRequest {
   /** 1 to 100. One at a time, in order, one transaction each. A later entry sees what an earlier one committed, and one refusal undoes nothing. */
   readonly entries: readonly RecordEntry[]
+  /** The entries are a load of the past. They are recorded and counted as any others, and nothing is sent to an ad platform for them, now or later. */
+  readonly history?: boolean
 }
 
 /** `key` is yours, 1 to 200 characters, and unique within its `type`. The graph never mints one. A `conversion` key may not begin with `call:`, `text:` or `page:`. */

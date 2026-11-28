@@ -180,7 +180,7 @@ const REQUEST = {
   record: (value: unknown, path: string) => {
     const { entries } = value as { entries?: unknown }
     if (Array.isArray(entries) && entries.length > 100) throw fault(FAULT_CODES.INPUT.TOO_LARGE, 'A request records at most 100 entries')
-    shape({ entries: list(byField('type', ENTRIES), 1, 100) })(value, path)
+    shape({ entries: list(byField('type', ENTRIES), 1, 100), 'history?': boolean })(value, path)
   },
   decide: byField('action', (() => {
     const deciding = { key, at, by: string(1, 100), 'reason?': string(1, 1000), 'seen?': integer(0, Number.MAX_SAFE_INTEGER), action: any }

@@ -2609,6 +2609,19 @@
             "description": "1 to 100. One at a time, in order, one transaction each. A later entry sees what an earlier one committed, and one refusal undoes nothing.",
             "minItems": 1,
             "maxItems": 100
+          },
+          "history": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "const": false
+              },
+              {
+                "type": "boolean",
+                "const": true
+              }
+            ],
+            "description": "The entries are a load of the past. They are recorded and counted as any others, and nothing is sent to an ad platform for them, now or later."
           }
         },
         "required": [
