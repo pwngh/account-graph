@@ -48,7 +48,7 @@ Compose passes the variables in [Environment variables](#environment-variables) 
 | `account-graph rebuild` | Takes the policy that is set, and works every cluster out again |
 | `account-graph verify` | Compares the stored clusters with a full recompute. Reads every edge. |
 | `account-graph prune --before 2026-05-01` | Deletes old sightings, events and [receipts](#receipts). [Privacy](privacy.md#deletion) has the full list. `--dry-run` counts what would go and deletes nothing. A day after today is refused without `--force`, because it takes every sighting and event there is. |
-| `account-graph retry client-1001 google` | Queues a conversion's failed and skipped deliveries again, for one platform or all |
+| `account-graph retry client-1001 google` | Queues a conversion's failed and skipped deliveries again, for one platform or all. Where none is put back it stops and says why: no such conversion, not one for that platform, or nothing failed or skipped |
 | `account-graph stats` | Counts what the graph holds, and deliveries by state |
 | `account-graph alerts test` | Posts a test alert |
 | `account-graph staff-link https://example.org/team` | Makes an address that marks a browser as [staff](#staff-traffic) |
