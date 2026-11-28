@@ -707,7 +707,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // A prune names a time, which is nobody's id. A dry run counts, and leaves it all, the decision too.
       await graph.observe({ subject: 'account:old', identifiers: ['device:old'], at: 1 })
       const [held, decided] = [await graph.history('account:old'), (await graph.decisions()).length]
-      assert.ok((await graph.prune(T0, undefined, true)) > 0)
+      // A sighting is pruned by when it was written. A day far ahead would take every one.
+      assert.ok((await graph.prune(9e15, undefined, true)) > 0)
       assert.deepEqual([await graph.history('account:old'), (await graph.decisions()).length, (await graph.audit()).sound], [held, decided, true])
       await graph.prune(1)
       await graph.forget('1', { seen: (await graph.decisions()).length - 1 })
