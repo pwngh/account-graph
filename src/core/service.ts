@@ -2,7 +2,7 @@ import { malformed } from '../contract/fault.ts'
 import type { Change, Identifier, Outcome, Subject } from '../contract/types.ts'
 import type { CallOptions } from './calls.ts'
 import type { Graph } from './graph.ts'
-import { birthKeys, email, hashPhone, identifier, ip, nameKeys, nameParts, normalizePhone, phoneOfType, withoutPhoneExtension } from './identifiers.ts'
+import { birthKeys, calledKey, email, hashPhone, identifier, ip, nameKeys, nameParts, normalizePhone, phoneOfType, withoutPhoneExtension } from './identifiers.ts'
 import { withStage } from './ladder.ts'
 import type { Ladder } from './ladder.ts'
 import { fakePhone, placeholderEmail, sharedMailbox } from './lookups.ts'
@@ -234,7 +234,9 @@ export function createService(graph: Graph, options: ServiceOptions) {
     // A placeholder's date can contradict another date but cannot by itself confirm a second placeholder.
     const facts = [...born.map((id) => placeholder && id.startsWith('birth:') ? id + missing : id), ...(apart.includes('given') && typeof body.name?.first === 'string' ? givenKeys(options.identifierSecret, body.name.first, placeholder ? body.subject ?? '' : undefined) : []),
       // Whether a name has several words is kept only where it can tell two records apart, and says no more than that.
-      ...(graph.rules.records && typeof body.name?.first === 'string' && body.name.first.trim().split(/\s+/).length > 1 ? (['compound:yes'] as Identifier[]) : [])]
+      ...(graph.rules.records && typeof body.name?.first === 'string' && body.name.first.trim().split(/\s+/).length > 1 ? (['compound:yes'] as Identifier[]) : []),
+      // The whole name, kept of a record under every policy, as a note. Asking who somebody may be writes nothing, so it is not asked with it.
+      ...(saving && typeof body.name?.first === 'string' && typeof body.name?.last === 'string' ? [calledKey(options.identifierSecret, body.name.first, body.name.last)].filter((id): id is Identifier => id !== undefined) : [])]
     if (identifiers.length === 0 && !(saving && (facts.length > 0 || none)) && notes.phone !== PLACEHOLDER && notes.email === undefined) throw malformed('At least one identifying field is required')
     identifiers.push(...facts)
     return { identifiers, notes, at: (body.at ?? now()) as number }

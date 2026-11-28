@@ -85,6 +85,7 @@ The default policy has no groups, and one corroborating kind, `named`. [Presets]
 | `place` | 0 | 0 | none | Note: where an address places a visit |
 | `opened` | 0 | 0 | none | Note: a browser opened the link sent to this person |
 | `dialed` | 0 | 0 | none | Note: the number a visitor tapped, or a recorded call |
+| `called` | 0 | 0 | none | Note: the whole name a record was given, kept under every policy |
 
 Notes give no evidence and link nothing.
 

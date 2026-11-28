@@ -3,7 +3,7 @@ import { createHash, createHmac } from 'node:crypto'
 import type { Identifier } from '../contract/types.ts'
 
 /** Callers cannot supply the graph's own review, call and name evidence as profile identifiers. */
-export const RESERVED = new Set(['behalf', 'named', 'ward', 'given', 'dated', 'initial', 'compound', 'person', 'perhaps', 'review', 'link', 'carry', 'opened', 'lease', 'dial', 'text', 'place', 'birth', 'dialed'])
+export const RESERVED = new Set(['called', 'behalf', 'named', 'ward', 'given', 'dated', 'initial', 'compound', 'person', 'perhaps', 'review', 'link', 'carry', 'opened', 'lease', 'dial', 'text', 'place', 'birth', 'dialed'])
 
 export function withdrawable(id: Identifier): boolean {
   const kind = id.slice(0, id.indexOf(':'))
@@ -209,6 +209,18 @@ export function nameKeys(secret: string, first: string, last: string, known: { z
   const born = birthday(known.dob)
   if (born) keys.push(key('born', born))
   return keys
+}
+
+/**
+ * The key of a whole name, kept of every record that is given one, whatever the policy does with names. It is a note that links
+ * nothing: a name alone is nobody's. It is made with the secret, because names are few enough to guess. Something written in place
+ * of a name has none.
+ */
+export function calledKey(secret: string, first: string, last: string): Identifier | undefined {
+  if (typeof secret !== 'string' || secret.length < 32) throw malformed('A name key requires a secret of at least 32 characters')
+  const name = nameParts(first, last)
+  if (!name || name.some((part) => !part)) return undefined
+  return `called:${createHmac('sha256', secret).update(JSON.stringify(['called', ...name])).digest('hex')}`
 }
 
 /** The key of a date of birth, by which two people are told apart. It links nothing, and is made with a secret because dates are few enough to guess. */

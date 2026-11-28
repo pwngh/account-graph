@@ -66,6 +66,8 @@
 
 ### People
 
+- A name is always hashed: a record given a name keeps one `called:` key of the whole name under every policy, as a note that links nothing. The policy still decides whether a name counts as evidence.
+- A `profile` with a name and nothing else is recorded, where it was refused with `NO_FACT_USED`. `called` is a reserved kind. Breaking: a custom kind named `called` must be renamed, and a policy cannot give `called` a cap, a group, `corroborates` or `relates`.
 - The graph keeps what people are called, for people to read: the name of a `profile` on its record, and a phone number or an email once, beside its hash. A `call` or a `text` keeps the other side's number the same way. Matching still reads only the hashes.
 - `forget` deletes a record's name with it, and a number or an email goes when its last holder does.
 - `POST /review/api/called` takes up to 2,000 IDs and answers what to call each: the name, phone and email kept of the records in its group, and for a record the graph made of a browser or a phone, the record of your own that stands for it.

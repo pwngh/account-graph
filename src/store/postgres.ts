@@ -12,6 +12,7 @@ import type { SaidOf, Topic } from '../core/said.ts'
 import type { AddedSightings, Store, Tx } from '../core/store.ts'
 import { CLICK_IDS } from '../core/touch.ts'
 import { schemaSql } from './schema.ts'
+import { defaultPolicy } from '../core/policy.ts'
 import type { CallResult, CallTime, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, KeptWords, Labels, Lease, Moved, NotLead, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
 
 /** Every ad click id a touch carries, as the index on them has it. */
@@ -1919,9 +1920,10 @@ interface Upgrade {
  * id, and never edit one that has shipped.
  *
  * Until the first release the schema itself is edited, so its step is named
- * by a mark of its text. A database made from another text is then refused,
- * and is never run on a shape this code does not expect.
+ * by a mark of its text and of the kinds the graph writes. A database made
+ * from another text, or kept under other kinds, is then refused, and is
+ * never run on a shape or a policy this code does not expect.
  */
 export function upgrades(schema = 'account_graph'): Upgrade[] {
-  return [{ id: 1, name: `the schema ${createHash('sha256').update(schemaSql('s')).digest('hex').slice(0, 8)}`, sql: schemaSql(schema) }]
+  return [{ id: 1, name: `the schema ${createHash('sha256').update(schemaSql('s')).update(JSON.stringify(Object.keys(defaultPolicy.kinds).sort())).digest('hex').slice(0, 8)}`, sql: schemaSql(schema) }]
 }

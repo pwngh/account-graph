@@ -137,6 +137,8 @@ export const defaultPolicy: Policy = {
     place: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // Notes, not evidence. They are what is known of a person that cannot be two people's. They link nothing.
     birth: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+    // The whole name a record was given, kept under every policy. A name alone is nobody's, so it links nothing.
+    called: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     given: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     initial: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     dated: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
@@ -158,7 +160,7 @@ export const defaultPolicy: Policy = {
 export const UNNAMED: readonly string[] = ['visitor', 'caller', 'call']
 
 /** The kinds that are notes. The graph counts on them linking nothing, so a setting may not give them weight. */
-const NOTES = new Set(['opened', 'place', 'dialed', 'initial', 'dated', 'compound', 'person', 'perhaps', ...FACTS])
+const NOTES = new Set(['opened', 'place', 'dialed', 'initial', 'dated', 'compound', 'person', 'perhaps', 'called', ...FACTS])
 const LEVELS = ['same', 'related', 'bridge'] as const
 const FIELDS = ['weight', 'dilution', 'cap', 'halfLife'] as const
 const OPTIONAL = ['group', 'corroborates', 'relates'] as const
@@ -195,6 +197,8 @@ export function policyProblems(given: unknown): string[] {
       if (rule.corroborates !== undefined && rule.corroborates !== true) wrong.push(`kind "${kind}" requires its corroborates as true, or left out`)
       if (rule.relates !== undefined && rule.relates !== true) wrong.push(`kind "${kind}" requires its relates as true, or left out`)
       if (NOTES.has(kind) && rule.weight && !(given.records && (kind === 'person' || kind === 'perhaps'))) wrong.push(`kind "${kind}" is a note and links nothing, so its weight must stay 0`)
+      // The whole name is held by everybody of that name. Nothing a setting says may make two of them count for each other.
+      if (kind === 'called' && (rule.cap || rule.group !== undefined || rule.corroborates !== undefined || rule.relates !== undefined)) wrong.push('kind "called" is the note of a whole name and links nothing, so its cap stays 0 and it takes no group, corroborates or relates')
     }
   }
   if (wrong.length > 0) return wrong
